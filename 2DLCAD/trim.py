@@ -1,7 +1,11 @@
 import math
 import tkinter as tk
+import sys
 from tkinter import simpledialog
 
+
+IS_MAC = sys.platform == "darwin"
+BUTTON_FG = "black" if IS_MAC else "white"
 
 class TrimManager:
     """Manages trimming/cutting lines at specified positions."""
@@ -340,7 +344,7 @@ class TrimManager:
             text="Apply (Enter)",
             command=self._apply_trim,
             bg="#404040",
-            fg="white",
+            fg=BUTTON_FG,
             relief="flat",
             font=("Segoe UI", 9),
             padx=10,
@@ -349,7 +353,24 @@ class TrimManager:
             activebackground="#606060",
             activeforeground="white"
         )
-        apply_btn.pack(fill="x", padx=10, pady=(4, 10))
+        apply_btn.pack(fill="x", padx=10, pady=(4, 5))
+
+        # Cancel button
+        cancel_btn = tk.Button(
+            self.menu_frame,
+            text="Cancel (Esc)",
+            command=self.cancel,
+            bg="#A04040",
+            fg=BUTTON_FG,
+            relief="flat",
+            font=("Segoe UI", 9),
+            padx=10,
+            pady=6,
+            cursor="hand2",
+            activebackground="#C05050",
+            activeforeground="white"
+        )
+        cancel_btn.pack(fill="x", padx=10, pady=(0, 10))
 
         # Position in top-right corner (lower and narrower)
         self.menu_frame.place(relx=1.0, rely=0.0, x=-20, y=20, anchor="ne", width=200)

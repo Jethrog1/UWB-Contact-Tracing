@@ -12,7 +12,12 @@ from trim import TrimManager
 import features
 import snap
 
+import sys
+
 EPS = 1e-9
+
+IS_MAC = sys.platform == "darwin"
+BUTTON_FG = "black" if IS_MAC else "white"
 
 ##############################################################################
 # TODO #                                                                 #####
@@ -194,6 +199,8 @@ class DropdownMenu:
             activebackground="white",
             activeforeground="#7A7A7A"
         )
+        if hasattr(btn, "cget") and btn.cget("text") and IS_MAC:
+             btn.configure(fg=BUTTON_FG)
         btn.bind("<Enter>", lambda e: btn.config(bg=self.hover_bg))
         btn.bind("<Leave>", lambda e: btn.config(bg=self.hover_bg, fg="white"))
 
@@ -602,28 +609,28 @@ class FloorPlanCAD:
 
         self.cursor_btn = tk.Button(
             right, text="Cursor", command=self.set_cursor_mode,
-            bg="#606060", fg="white", relief="flat",
+            bg="#606060", fg=BUTTON_FG, relief="flat",
             padx=10, pady=5, cursor="hand2"
         )
         self.cursor_btn.pack(side="left", padx=(0, 10))
 
         self.line_btn = tk.Button(
             right, text="Lines", command=self.set_line_mode,
-            bg="#404040", fg="white", relief="flat",
+            bg="#404040", fg=BUTTON_FG, relief="flat",
             padx=10, pady=5, cursor="hand2"
         )
         self.line_btn.pack(side="left", padx=(0, 10))
 
         self.vertex_btn = tk.Button(
             right, text="Manipulate Vertex", command=self.set_vertex_mode,
-            bg="#404040", fg="white", relief="flat",
+            bg="#404040", fg=BUTTON_FG, relief="flat",
             padx=10, pady=5, cursor="hand2"
         )
         self.vertex_btn.pack(side="left", padx=(0, 10))
 
         self.dim_btn = tk.Button(
             right, text="Dimension", command=self.set_dim_mode,
-            bg="#404040", fg="white", relief="flat",
+            bg="#404040", fg=BUTTON_FG, relief="flat",
             padx=10, pady=5, cursor="hand2"
         )
         self.dim_btn.pack(side="left", padx=(0, 10))
@@ -631,7 +638,7 @@ class FloorPlanCAD:
         # Rotate button
         self.rotate_btn = tk.Button(
             right, text="Rotate", command=self.activate_rotate,
-            bg="#404040", fg="white", relief="flat",
+            bg="#404040", fg=BUTTON_FG, relief="flat",
             padx=10, pady=5, cursor="hand2"
         )
         self.rotate_btn.pack(side="left", padx=(0, 10))
@@ -639,7 +646,7 @@ class FloorPlanCAD:
         # NEW: Trim button
         self.trim_btn = tk.Button(
             right, text="Trim", command=self.activate_trim,
-            bg="#404040", fg="white", relief="flat",
+            bg="#404040", fg=BUTTON_FG, relief="flat",
             padx=10, pady=5, cursor="hand2"
         )
         self.trim_btn.pack(side="left", padx=(0, 12))
@@ -720,7 +727,7 @@ class FloorPlanCAD:
 
         tk.Button(
             zoom_frame, text="-", command=self.zoom_out,
-            bg="#404040", fg="white", relief="flat",
+            bg="#404040", fg=BUTTON_FG, relief="flat",
             width=3, cursor="hand2"
         ).pack(side="left", padx=2)
 
@@ -732,13 +739,13 @@ class FloorPlanCAD:
 
         tk.Button(
             zoom_frame, text="+", command=self.zoom_in,
-            bg="#404040", fg="white", relief="flat",
+            bg="#404040", fg=BUTTON_FG, relief="flat",
             width=3, cursor="hand2"
         ).pack(side="left", padx=2)
 
         tk.Button(
             zoom_frame, text="Reset", command=self.zoom_reset,
-            bg="#404040", fg="white", relief="flat",
+            bg="#404040", fg=BUTTON_FG, relief="flat",
             padx=8, cursor="hand2"
         ).pack(side="left", padx=(10, 0))
 
