@@ -1,0 +1,14 @@
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+.DS_Store
+.idea/
+.vscode/
+"C:\\RTLS/"
+"C:\\RTLS\\User_info/"
+"C:\\RTLS\\XY/"
+debug_zoom.png
+test_dummy.svg
+test_meta.svg
+web-app/
