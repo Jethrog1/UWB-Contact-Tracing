@@ -5,8 +5,9 @@ This application seamlessly links a 2D Vector CAD drafting system to a live RTLS
 
 ## Features
 - **Central Homepage**: Launch either the live RTLS Dashboard or the Vector CAD Drafting Program.
-- **2DLCAD Mapping**: Import PDF and SVG structural references into a highly interactive vector physics grid.
-- **Designate Rooms**: Use select tool to choose lines that make up a room. 
+- **2DLCAD Mapping**: Create 2D floor plan drawings in a custom-made CAD program.
+- **2DLCAD Import/Export**: Import PDF and SVG structural references into a highly interactive vector grid.
+- **Designate Rooms**: Use Select tool to choose floor plan lines for room designation.
 - **Anchor Management**: Set up fixed physical hardware anchors inside rooms. Adjust dimensions via smart inter-distance routing, and manage numbering strictly by local topology (`R[X]A[Y]`).
 - **Live RTLS Real-Time Tracking**: A multi-threaded `QThread` PyQt dashboard connects to PySerial, translating live hardware `(X, Y)` frames seamlessly onto the graphical structural blueprints mapping moving tags instantly.
 
