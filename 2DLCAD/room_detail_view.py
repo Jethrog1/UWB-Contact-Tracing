@@ -52,6 +52,79 @@ class RoomCanvas(QWidget):
         
         # Auto-fit on show
         self._first_show = True
+        
+        # Instruction Overlay
+        from PyQt6.QtWidgets import QHBoxLayout
+        self.instruction_overlay = QWidget(self)
+        self.instruction_overlay.setStyleSheet("""
+            QWidget {
+                background-color: rgba(20, 20, 20, 220);
+                border: 1px solid #444;
+                border-radius: 8px;
+            }
+            QLabel {
+                color: white;
+                font-weight: bold;
+                font-size: 14px;
+                border: none;
+                background: transparent;
+            }
+            QPushButton {
+                background-color: #ef4444;
+                color: white;
+                font-weight: bold;
+                border: none;
+                border-radius: 4px;
+                padding: 4px 12px;
+            }
+            QPushButton:hover { background-color: #dc2626; }
+        """)
+        overlay_layout = QHBoxLayout(self.instruction_overlay)
+        overlay_layout.setContentsMargins(15, 8, 15, 8)
+        self.lbl_instruction = QLabel("Instruction")
+        self.btn_cancel = QPushButton("Cancel")
+        self.btn_cancel.clicked.connect(self.cancel_action)
+        overlay_layout.addWidget(self.lbl_instruction)
+        overlay_layout.addWidget(self.btn_cancel)
+        self.instruction_overlay.hide()
+
+    def set_interaction_mode(self, mode: str):
+        self.mode = mode
+        if mode == "DIST_SELECT_1":
+            self.lbl_instruction.setText("Select stationary anchor")
+            self.instruction_overlay.adjustSize()
+            self._center_overlay()
+            self.instruction_overlay.show()
+        elif mode == "DIST_SELECT_2":
+            self.lbl_instruction.setText("Select an anchor to move")
+            self.instruction_overlay.adjustSize()
+            self._center_overlay()
+            self.instruction_overlay.show()
+        else:
+            self.instruction_overlay.hide()
+        self.update()
+
+    def _center_overlay(self):
+        w = self.instruction_overlay.width()
+        self.instruction_overlay.move(int(self.width() / 2 - w / 2), 20)
+        
+    def cancel_action(self):
+        self.dist_anchor_1 = None
+        self.dist_anchor_2 = None
+        parent = self.parentWidget()
+        while parent and not hasattr(parent, 'set_mode'):
+            parent = parent.parentWidget()
+        if parent:
+            parent.set_mode("PAN")
+            if hasattr(parent, "btn_pan"):
+                parent.btn_pan.setChecked(True)
+        else:
+            self.set_interaction_mode("PAN")
+
+    def keyPressEvent(self, event):
+        if event.key() == Qt.Key.Key_Escape:
+            self.cancel_action()
+        super().keyPressEvent(event)
 
     @staticmethod
     def _dist_point_to_segment(px, py, x1, y1, x2, y2) -> float:
@@ -90,6 +163,7 @@ class RoomCanvas(QWidget):
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
+        self._center_overlay()
         if self._first_show:
             self.fit_in_view()
             self._first_show = False
@@ -605,7 +679,7 @@ class RoomDetailDialog(QDialog):
         self.refresh_anchor_list()
 
     def set_mode(self, mode: str):
-        self.canvas.mode = mode
+        self.canvas.set_interaction_mode(mode)
         if mode == "DIST_SELECT_1":
             self.canvas.dist_anchor_1 = None
             self.canvas.dist_anchor_2 = None
