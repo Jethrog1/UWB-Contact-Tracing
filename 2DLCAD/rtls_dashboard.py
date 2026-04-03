@@ -25,7 +25,7 @@ from PyQt6.QtWidgets import (
     QFileDialog, QMessageBox, QLabel, QWidget,
     QHBoxLayout, QVBoxLayout, QPushButton, QSizePolicy,
     QSplitter, QListWidget, QListWidgetItem, QInputDialog,
-    QToolButton, QButtonGroup, QStackedWidget, QFrame
+    QToolButton, QButtonGroup, QStackedWidget, QFrame, QMenu
 )
 from PyQt6.QtGui import QAction, QIcon, QFont, QColor, QPalette, QPixmap
 from PyQt6.QtCore import Qt, QPointF, QEvent, QTimer, pyqtSignal
@@ -574,6 +574,7 @@ class RTLSDashboard(QMainWindow):
             [
                 ("cad", "Launch 2DLCAD"),
                 ("anchor_mapper", "Anchor Mapper"),
+                ("tag_profiler", "Tag Profiler"),
                 ("rtls_dashboard", "RTLS Dashboard"),
             ],
             current_key=current_key,

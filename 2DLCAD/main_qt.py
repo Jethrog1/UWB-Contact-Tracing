@@ -10,6 +10,7 @@ from PyQt6.QtGui import QAction, QActionGroup, QFont, QFontDatabase, QIcon, QCol
 from PyQt6.QtCore import Qt, QSize, QRect, QPoint, QEasingCurve, QPropertyAnimation, QParallelAnimationGroup, QSequentialAnimationGroup, QTimer
 from utils.font_utils import get_default_font_family
 from workspace_switcher import WorkspaceSwitcher
+from tag_profiler import TagProfilerWorkspace
 
 # Local Imports
 from cad_core import Line, Viewport
@@ -273,6 +274,7 @@ class HomeScreen(QWidget):
         self.btn_new_plan = None
         self.btn_anchor_mapper = None
         self.btn_rtls_dashboard = None
+        self.btn_tag_profiler = None
         self.hero_badge = None
         self.hero_title = None
         self.hero_copy = None
@@ -311,8 +313,6 @@ class HomeScreen(QWidget):
         self.intro_outline.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
         self.intro_outline.hide()
         self.intro_outline.raise_()
-
-        QTimer.singleShot(0, self.play_intro_animation)
 
     def _build_hero_panel(self):
         panel = QFrame()
@@ -378,6 +378,7 @@ class HomeScreen(QWidget):
         tool_specs = [
             ("Launch 2DLCAD", "Start a fresh CAD workspace for drawing and editing 2D floor plans.", "✦", "CREATE"),
             ("Launch Anchor Mapper", "Load SVG floor plans, define rooms, place anchors, and save room data.", "⚓", "CONFIGURE"),
+            ("Launch Tag Profiler", "Capture tag-specific identity, device, calibration, and status fields for JSON export.", "▣", "PROFILE"),
             ("Launch RTLS Dashboard", "Open prepared projects and monitor live RTLS behavior in a focused viewer.", "◉", "TRACK"),
         ]
 
@@ -388,7 +389,8 @@ class HomeScreen(QWidget):
 
         self.btn_new_plan = self.launch_cards[0]
         self.btn_anchor_mapper = self.launch_cards[1]
-        self.btn_rtls_dashboard = self.launch_cards[2]
+        self.btn_tag_profiler = self.launch_cards[2]
+        self.btn_rtls_dashboard = self.launch_cards[3]
 
         layout.addWidget(card_host)
         layout.addStretch(1)
@@ -635,7 +637,7 @@ class HomeScreen(QWidget):
     def showEvent(self, event):
         super().showEvent(event)
         if not self._intro_played_once:
-            QTimer.singleShot(0, self.play_intro_animation)
+            self.play_intro_animation()
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
@@ -2083,10 +2085,12 @@ class MainWindow(QMainWindow):
         self.home_screen.btn_new_plan.clicked.connect(self.go_to_cad)
         self.home_screen.btn_anchor_mapper.clicked.connect(self.open_anchor_mapper)
         self.home_screen.btn_rtls_dashboard.clicked.connect(self.open_rtls_dashboard)
+        self.home_screen.btn_tag_profiler.clicked.connect(self.open_tag_profiler)
 
         workspace_items = [
             ("cad", "Launch 2DLCAD"),
             ("anchor_mapper", "Anchor Mapper"),
+            ("tag_profiler", "Tag Profiler"),
             ("rtls_dashboard", "RTLS Dashboard"),
         ]
         
@@ -2356,6 +2360,18 @@ class MainWindow(QMainWindow):
         self.rtls_dashboard_container.go_home.connect(self.go_to_home)
         self.rtls_dashboard_container.workspace_requested.connect(self._open_workspace_from_key)
         self.stack.addWidget(self.rtls_dashboard_container)
+
+        # --- Page 5: Tag Profiler ---
+        self.tag_profiler_container = TagProfilerWorkspace()
+        self.tag_profiler_container.go_home.connect(self.go_to_home)
+        self.stack.addWidget(self.tag_profiler_container)
+        self.tag_profiler_switcher = WorkspaceSwitcher(
+            self.tag_profiler_container,
+            workspace_items,
+            current_key="tag_profiler",
+            top_offset=64,
+        )
+        self.tag_profiler_switcher.workspace_requested.connect(self._open_workspace_from_key)
         
         # --- Dockable Feature Tree ---
         self.dock_tree = QDockWidget("Feature Manager", self)
@@ -2402,6 +2418,11 @@ class MainWindow(QMainWindow):
         self.dock_tree.hide()
         self._sync_workspace_switchers("rtls_dashboard")
 
+    def open_tag_profiler(self):
+        self.stack.setCurrentWidget(self.tag_profiler_container)
+        self.dock_tree.hide()
+        self._sync_workspace_switchers("tag_profiler")
+
     def _open_workspace_from_key(self, key: str):
         if key == "cad":
             self.go_to_cad()
@@ -2409,17 +2430,22 @@ class MainWindow(QMainWindow):
             self.open_anchor_mapper()
         elif key == "rtls_dashboard":
             self.open_rtls_dashboard()
+        elif key == "tag_profiler":
+            self.open_tag_profiler()
 
     def _sync_workspace_switchers(self, current_key: str):
         self.cad_switcher.set_current_workspace(current_key)
         self.anchor_mapper_container.set_current_workspace(current_key)
         self.rtls_dashboard_container.set_current_workspace(current_key)
+        self.tag_profiler_switcher.set_current_workspace(current_key)
         if current_key != "cad":
             self.cad_switcher.close_panel()
         if current_key != "anchor_mapper":
             self.anchor_mapper_container.close_workspace_switcher()
         if current_key != "rtls_dashboard":
             self.rtls_dashboard_container.close_workspace_switcher()
+        if current_key != "tag_profiler":
+            self.tag_profiler_switcher.close_panel()
 
     def save_as_svg(self):
         """Export the current CAD model to an SVG file."""
@@ -2665,6 +2691,7 @@ class MainWindow(QMainWindow):
         self.cad_switcher.close_panel()
         self.anchor_mapper_container.close_workspace_switcher()
         self.rtls_dashboard_container.close_workspace_switcher()
+        self.tag_profiler_switcher.close_panel()
         
     def sync_feature_tree(self):
         # Block signals to prevent feedback loop during sync
