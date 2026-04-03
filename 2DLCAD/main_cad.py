@@ -174,7 +174,7 @@ class DropdownMenu:
             text=text,
             bg=self.menu_bg,
             fg="white",
-            font=("Segoe UI", 9),
+            font=(get_default_font_family(), 9),
             anchor="w",
             padx=8
         )
@@ -228,7 +228,7 @@ class DropdownMenu:
             text="-",
             command=self._on_zoom_out,
             width=2,
-            font=("Segoe UI", 10)
+            font=(get_default_font_family(), 10)
         )
         self._style_button(zoom_out_btn)
         zoom_out_btn.pack(side="left", padx=(0, 3))
@@ -240,7 +240,7 @@ class DropdownMenu:
             fg="white",
             width=5,
             anchor="center",
-            font=("Segoe UI", 9)
+            font=(get_default_font_family(), 9)
         )
         zoom_display.pack(side="left", padx=(0, 3))
         self.zoom_display_label = zoom_display
@@ -250,7 +250,7 @@ class DropdownMenu:
             text="+",
             command=self._on_zoom_in,
             width=2,
-            font=("Segoe UI", 10)
+            font=(get_default_font_family(), 10)
         )
         self._style_button(zoom_in_btn)
         zoom_in_btn.pack(side="left", padx=(0, 6))
@@ -259,7 +259,7 @@ class DropdownMenu:
             zoom_container,
             text="Reset",
             command=self._on_zoom_reset,
-            font=("Segoe UI", 9),
+            font=(get_default_font_family(), 9),
             padx=6
         )
         self._style_button(reset_btn)
@@ -273,7 +273,7 @@ class DropdownMenu:
             row,
             text="Copy",
             command=self._on_copy,
-            font=("Segoe UI", 9),
+            font=(get_default_font_family(), 9),
             padx=8
         )
         self._style_button(copy_btn)
@@ -283,7 +283,7 @@ class DropdownMenu:
             row,
             text="Paste",
             command=self._on_paste,
-            font=("Segoe UI", 9),
+            font=(get_default_font_family(), 9),
             padx=8
         )
         self._style_button(paste_btn)
@@ -299,7 +299,7 @@ class DropdownMenu:
             variable=self.app.manipulate_line_var,
             onvalue=True,
             offvalue=False,
-            font=("Segoe UI", 9)
+            font=(get_default_font_family(), 9)
         )
         self._style_check(chk1)
         chk1.pack(fill="x")
@@ -310,7 +310,7 @@ class DropdownMenu:
             variable=self.app.snap_axis_var,
             onvalue=True,
             offvalue=False,
-            font=("Segoe UI", 9)
+            font=(get_default_font_family(), 9)
         )
         self._style_check(chk2)
         chk2.pack(fill="x")
@@ -321,7 +321,7 @@ class DropdownMenu:
             variable=self.app.line_match_var,
             onvalue=True,
             offvalue=False,
-            font=("Segoe UI", 9)
+            font=(get_default_font_family(), 9)
         )
         self._style_check(chk3)
         chk3.pack(fill="x")
@@ -334,7 +334,7 @@ class DropdownMenu:
             onvalue=True,
             offvalue=False,
             command=self.app._request_redraw,
-            font=("Segoe UI", 9)
+            font=(get_default_font_family(), 9)
         )
         self._style_check(chk4)
         chk4.pack(fill="x")
@@ -378,7 +378,7 @@ class DropdownMenu:
             row,
             text="Rotate",
             command=self._on_rotate,
-            font=("Segoe UI", 9),
+            font=(get_default_font_family(), 9),
             padx=8
         )
         self._style_button(rotate_btn)
@@ -394,7 +394,7 @@ class DropdownMenu:
             row,
             text="Trim",
             command=self._on_trim,
-            font=("Segoe UI", 9),
+            font=(get_default_font_family(), 9),
             padx=8
         )
         self._style_button(trim_btn)

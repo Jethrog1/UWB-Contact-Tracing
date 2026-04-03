@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="100%" height="100%" viewBox="0 0 1000.0 1000.0" data-cad-min-x="-0.154630767523384" data-cad-min-y="-0.07532552083333333" data-cad-scale="84.11214953271028" data-cad-offset-x="50.0" data-cad-offset-y="285.51128066588785">
+  <rect width="100%" height="100%" fill="#1E1E1E"/>
+  <line x1="50.000" y1="714.489" x2="950.000" y2="714.489" stroke="#4A9EFF" stroke-width="42.05607476635514"/>
+  <line x1="950.000" y1="706.072" x2="950.000" y2="285.511" stroke="#4A9EFF" stroke-width="42.05607476635514"/>
+  <line x1="950.000" y1="285.511" x2="50.000" y2="285.511" stroke="#4A9EFF" stroke-width="42.05607476635514"/>
+  <line x1="50.000" y1="285.511" x2="50.000" y2="714.489" stroke="#4A9EFF" stroke-width="42.05607476635514"/>
+</svg>

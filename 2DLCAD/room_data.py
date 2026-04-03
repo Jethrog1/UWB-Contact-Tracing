@@ -5,17 +5,59 @@ import math
 from PyQt6.QtCore import QPointF, Qt
 from PyQt6.QtGui import QPolygonF
 
+
+def _normalize_segment(seg):
+    x1, y1, x2, y2 = seg
+    a = (round(float(x1), 4), round(float(y1), 4))
+    b = (round(float(x2), 4), round(float(y2), 4))
+    return (a, b) if a <= b else (b, a)
+
+
+def segments_match(segments_a, segments_b, eps=1e-3):
+    if len(segments_a) != len(segments_b):
+        return False
+
+    unmatched = list(segments_b)
+    for seg_a in segments_a:
+        match_index = None
+        for idx, seg_b in enumerate(unmatched):
+            if _segments_equal(seg_a, seg_b, eps):
+                match_index = idx
+                break
+        if match_index is None:
+            return False
+        unmatched.pop(match_index)
+    return not unmatched
+
+
+def _segments_equal(seg_a, seg_b, eps=1e-3):
+    ax1, ay1, ax2, ay2 = seg_a
+    bx1, by1, bx2, by2 = seg_b
+    return (
+        _points_close((ax1, ay1), (bx1, by1), eps) and
+        _points_close((ax2, ay2), (bx2, by2), eps)
+    ) or (
+        _points_close((ax1, ay1), (bx2, by2), eps) and
+        _points_close((ax2, ay2), (bx1, by1), eps)
+    )
+
+
+def _points_close(a, b, eps=1e-3):
+    return abs(float(a[0]) - float(b[0])) <= eps and abs(float(a[1]) - float(b[1])) <= eps
+
 @dataclass
 class Anchor:
-    id: str          # "A0", "A1", "A2", "A3"
-    x: float         # local x-coord in room (metres)
-    y: float         # local y-coord in room (metres)
+    id: str          # Dashboard ID e.g. "R1A0", "R1A1"
+    x: float         # local x-coord in room (feet)
+    y: float         # local y-coord in room (feet)
+    hw_id: str = "" # Physical hardware anchor ID e.g. "A0", "A3" (set by user)
 
 @dataclass
 class Room:
     name: str
     segments: List[Tuple[float, float, float, float]]  # boundary sub-segments in world coords
     anchors: List[Anchor] = field(default_factory=list)
+    rtls_settings: dict = field(default_factory=dict)
     
     # Bounding box in world coordinates
     min_x: float = 0.0
@@ -129,3 +171,6 @@ class Room:
         
     def get_local_polygon(self) -> QPolygonF:
         return QPolygonF(self._local_polygon)
+
+    def normalized_segment_signature(self):
+        return tuple(sorted(_normalize_segment(seg) for seg in self.segments))

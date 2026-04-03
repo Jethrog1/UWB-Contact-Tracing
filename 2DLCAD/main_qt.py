@@ -7,6 +7,7 @@ from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
                              QToolButton, QMenu, QInputDialog, QMessageBox)
 from PyQt6.QtGui import QAction, QActionGroup, QFont, QFontDatabase, QIcon, QColor, QPalette, QPainter, QPen, QPainterPath
 from PyQt6.QtCore import Qt, QSize, QRect
+from utils.font_utils import get_default_font_family
 
 # Local Imports
 from cad_core import Line, Viewport
@@ -82,9 +83,13 @@ class HomeScreen(QWidget):
         btn_new = ModernButton("New Floor Plan", "Create a new 2D floor plan.")
         left_layout.addWidget(btn_new)
         
-        btn_open = ModernButton("Dashboard", "")
-        btn_open.setObjectName("btn_open")
-        left_layout.addWidget(btn_open)
+        btn_mapper = ModernButton("Launch Anchor Mapper", "Load SVG floor plans, define rooms, place anchors, and save room data.")
+        btn_mapper.setObjectName("btn_anchor_mapper")
+        left_layout.addWidget(btn_mapper)
+
+        btn_rtls = ModernButton("Launch RTLS Dashboard", "Load floor plans with room data and run live RTLS tracking.")
+        btn_rtls.setObjectName("btn_rtls_dashboard")
+        left_layout.addWidget(btn_rtls)
         
         left_layout.addStretch()
         
@@ -413,7 +418,7 @@ class CADWidget(QWidget):
             decimals = 0
             if step < 1.0:
                 decimals = abs(int(math.floor(math.log10(step))))
-            fmt = f"{{:.{decimals}f}}m"
+            fmt = f"{{:.{decimals}f}}ft"
             
             # Font for grid labels
             label_font = painter.font()
@@ -1583,8 +1588,10 @@ class MainWindow(QMainWindow):
             if lbl is None: continue
             if "New Floor Plan" in lbl.text():
                 btn.clicked.connect(self.go_to_cad)
-            elif "Open" in lbl.text() or "Dashboard" in lbl.text():
-                btn.clicked.connect(self.open_dashboard)
+            elif "Anchor Mapper" in lbl.text():
+                btn.clicked.connect(self.open_anchor_mapper)
+            elif "RTLS Dashboard" in lbl.text():
+                btn.clicked.connect(self.open_rtls_dashboard)
         
         # --- Page 2: CAD Interface ---
         self.cad_container = QWidget()
@@ -1803,7 +1810,7 @@ class MainWindow(QMainWindow):
         
         self.spin_len = QDoubleSpinBox()
         self.spin_len.setRange(0, 10000)
-        self.spin_len.setSuffix(" m")
+        self.spin_len.setSuffix(" ft")
         self.spin_len.setFixedWidth(80)
         self.spin_len.setStyleSheet("background-color: #333; color: white; border: 1px solid #555;")
         self.spin_len.setEnabled(False)
@@ -1834,10 +1841,15 @@ class MainWindow(QMainWindow):
         
         self.stack.addWidget(self.cad_container)
         
-        # --- Page 3: RTLS Dashboard ---
-        self.dashboard_container = RTLSDashboard()
-        self.dashboard_container.go_home.connect(self.go_to_home)
-        self.stack.addWidget(self.dashboard_container)
+        # --- Page 3: Anchor Mapper ---
+        self.anchor_mapper_container = RTLSDashboard(app_mode=RTLSDashboard.MODE_ANCHOR_MAPPER)
+        self.anchor_mapper_container.go_home.connect(self.go_to_home)
+        self.stack.addWidget(self.anchor_mapper_container)
+
+        # --- Page 4: RTLS Dashboard ---
+        self.rtls_dashboard_container = RTLSDashboard(app_mode=RTLSDashboard.MODE_RTLS)
+        self.rtls_dashboard_container.go_home.connect(self.go_to_home)
+        self.stack.addWidget(self.rtls_dashboard_container)
         
         # --- Dockable Feature Tree ---
         self.dock_tree = QDockWidget("Feature Manager", self)
@@ -1872,9 +1884,11 @@ class MainWindow(QMainWindow):
         self.stack.setCurrentWidget(self.cad_container)
         self.dock_tree.show()
 
-    def open_dashboard(self):
-        """Switch view to the RTLS dashboard."""
-        self.stack.setCurrentWidget(self.dashboard_container)
+    def open_anchor_mapper(self):
+        self.stack.setCurrentWidget(self.anchor_mapper_container)
+
+    def open_rtls_dashboard(self):
+        self.stack.setCurrentWidget(self.rtls_dashboard_container)
 
     def save_as_svg(self):
         """Export the current CAD model to an SVG file."""
@@ -2317,17 +2331,8 @@ if __name__ == '__main__':
     
     # Pick a font family that exists on the current platform to avoid
     # the "qt.qpa.fonts: Populating font family aliases" slow-path warning.
-    import sys as _sys
-    if _sys.platform == "darwin":
-        font_family = "SF Pro Display"   # macOS system font
-        if not QFontDatabase.families().__contains__(font_family):
-            font_family = ".AppleSystemUIFont"
-    elif _sys.platform == "win32":
-        font_family = "Segoe UI"
-    else:
-        font_family = "Ubuntu"
-        if not QFontDatabase.families().__contains__(font_family):
-            font_family = "DejaVu Sans"
+    # Use utility to select an appropriate default font family for the platform
+    font_family = get_default_font_family()
     font = QFont(font_family, 10)
     app.setFont(font)
     

@@ -4,13 +4,15 @@ from typing import List, Tuple, Optional
 from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QWidget, QLabel, 
     QPushButton, QListWidget, QListWidgetItem, QSplitter,
-    QMessageBox, QButtonGroup
+    QMessageBox, QButtonGroup, QTextEdit, QStackedWidget,
+    QSlider, QDoubleSpinBox, QScrollArea
 )
 from PyQt6.QtGui import QPainter, QPainterPath, QPen, QColor, QMouseEvent, QWheelEvent, QBrush, QFont
 from PyQt6.QtCore import Qt, QPointF, QRectF, QPoint, QRect
 
 from cad_core import Viewport
 from room_data import Room, Anchor
+from room_profiles import save_room_profile
 
 ROOM_ZOOM_MIN = 0.05
 ROOM_ZOOM_MAX = 6000.0
@@ -20,10 +22,11 @@ class RoomCanvas(QWidget):
     Local coordinate canvas for a specific Room.
     Origin (0,0) is at the bottom-left of the room's bounding box.
     """
-    def __init__(self, room: Room, all_rooms: List[Room], parent=None):
+    def __init__(self, room: Room, all_rooms: List[Room], parent=None, editable: bool = True):
         super().__init__(parent)
         self.room = room
         self.all_rooms = all_rooms
+        self.editable = editable
         self.setMouseTracking(True)
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         
@@ -36,6 +39,20 @@ class RoomCanvas(QWidget):
         self.mode = "PAN"
         
         self.active_tags = {}
+        self.selected_anchor = None
+
+        # ── RTLS Filter State ──────────────────────────────────
+        self.filter_mode = "None"   # None | EMA | Rolling | Kalman
+        self.tag_height = 0.0       # feet, for 3D range projection
+        self.ema_alpha = 0.3
+        self.roll_n = 8
+        self.kalman_q = 0.1
+        self.kalman_r = 2.0
+
+        self._ema_pos = {}          # {tag_id: (x, y) or None}
+        self._roll_buf = {}         # {tag_id: deque}
+        self._kalman_state = {}     # {tag_id: [[rx],[ry],[vx],[vy]]}
+        self._kalman_P = {}         # {tag_id: 4x4 matrix}
         
         # Colors
         self.bg_color = QColor("#141414")
@@ -136,8 +153,86 @@ class RoomCanvas(QWidget):
         return math.hypot(px - (x1 + t * dx), py - (y1 + t * dy))
 
     def _update_tag(self, tag_id: str, local_x: float, local_y: float):
-        self.active_tags[tag_id] = (local_x, local_y)
+        sx, sy = self.smooth(tag_id, local_x, local_y)
+        self.active_tags[tag_id] = (sx, sy)
         self.update()
+
+    def smooth(self, tag_id: str, x: float, y: float):
+        """Apply the selected smoothing filter to (x, y) and return filtered coords."""
+        if self.filter_mode == "EMA":
+            return self._apply_ema(tag_id, x, y)
+        elif self.filter_mode == "Rolling":
+            return self._apply_rolling(tag_id, x, y)
+        elif self.filter_mode == "Kalman":
+            return self._apply_kalman(tag_id, x, y)
+        return (x, y)
+
+    def _apply_ema(self, t_id, rx, ry):
+        a = self.ema_alpha
+        prev = self._ema_pos.get(t_id)
+        if prev is None:
+            result = (rx, ry)
+        else:
+            result = (a * rx + (1 - a) * prev[0], a * ry + (1 - a) * prev[1])
+        self._ema_pos[t_id] = result
+        return result
+
+    def _apply_rolling(self, t_id, rx, ry):
+        from collections import deque
+        buf = self._roll_buf.get(t_id)
+        if buf is None or buf.maxlen != self.roll_n:
+            old = list(buf or [])
+            buf = deque(old[-self.roll_n:], maxlen=self.roll_n)
+            self._roll_buf[t_id] = buf
+        buf.append((rx, ry))
+        return (sum(p[0] for p in buf) / len(buf), sum(p[1] for p in buf) / len(buf))
+
+    def _apply_kalman(self, t_id, rx, ry):
+        q, r, dt = self.kalman_q, self.kalman_r, 0.05
+        F = [[1,0,dt,0],[0,1,0,dt],[0,0,1,0],[0,0,0,1]]
+        H = [[1,0,0,0],[0,1,0,0]]
+        Q = [[q*dt**3/3,0,q*dt**2/2,0],[0,q*dt**3/3,0,q*dt**2/2],
+             [q*dt**2/2,0,q*dt,0],[0,q*dt**2/2,0,q*dt]]
+        R = [[r,0],[0,r]]
+
+        def mm(A,B): return [[sum(A[i][k]*B[k][j] for k in range(len(B))) for j in range(len(B[0]))] for i in range(len(A))]
+        def ma(A,B): return [[A[i][j]+B[i][j] for j in range(len(A[0]))] for i in range(len(A))]
+        def ms(A,B): return [[A[i][j]-B[i][j] for j in range(len(A[0]))] for i in range(len(A))]
+        def mT(A): return [[A[j][i] for j in range(len(A))] for i in range(len(A[0]))]
+        def eye(n): return [[1 if i==j else 0 for j in range(n)] for i in range(n)]
+        def inv2(A):
+            d = A[0][0]*A[1][1]-A[0][1]*A[1][0] or 1e-9
+            return [[A[1][1]/d,-A[0][1]/d],[-A[1][0]/d,A[0][0]/d]]
+
+        if self._kalman_state.get(t_id) is None:
+            self._kalman_state[t_id] = [[rx],[ry],[0.0],[0.0]]
+            self._kalman_P[t_id] = eye(4)
+
+        x_s = self._kalman_state[t_id]
+        P = self._kalman_P[t_id]
+        xp = mm(F, x_s)
+        Pp = ma(mm(mm(F,P),mT(F)), Q)
+        z = [[rx],[ry]]
+        yk = ms(z, mm(H,xp))
+        S = ma(mm(mm(H,Pp),mT(H)), R)
+        K = mm(mm(Pp,mT(H)), inv2(S))
+        xn = ma(xp, mm(K,yk))
+        Pn = mm(ms(eye(4),mm(K,H)), Pp)
+        self._kalman_state[t_id] = xn
+        self._kalman_P[t_id] = Pn
+        return (xn[0][0], xn[1][0])
+
+    def reset_filter_state(self, tag_id=None):
+        if tag_id:
+            self._ema_pos.pop(tag_id, None)
+            self._roll_buf.pop(tag_id, None)
+            self._kalman_state.pop(tag_id, None)
+            self._kalman_P.pop(tag_id, None)
+        else:
+            self._ema_pos.clear()
+            self._roll_buf.clear()
+            self._kalman_state.clear()
+            self._kalman_P.clear()
 
     def fit_in_view(self):
         W, H = self.width(), self.height()
@@ -170,12 +265,32 @@ class RoomCanvas(QWidget):
             
     def mousePressEvent(self, event: QMouseEvent):
         if event.button() == Qt.MouseButton.LeftButton:
-            if self.mode == "PAN":
-                self._pan_active = True
-                self._pan_last = event.position()
-                self.setCursor(Qt.CursorShape.ClosedHandCursor)
-                event.accept()
-                return
+            if self.mode in ("PAN", "CURSOR"):
+                lx, ly = self.vp.screen_to_world(event.position().x(), event.position().y())
+                hit = self._hit_test_anchor(lx, ly)
+                if hit:
+                    # Select the anchor and highlight it in the sidebar
+                    self.selected_anchor = hit
+                    parent = self.parentWidget()
+                    while parent and not hasattr(parent, 'list_anchors'):
+                        parent = parent.parentWidget()
+                    if parent:
+                        for i in range(parent.list_anchors.count()):
+                            item = parent.list_anchors.item(i)
+                            if item.text().startswith(hit.id):
+                                parent.list_anchors.setCurrentItem(item)
+                                break
+                    self.update()
+                    event.accept()
+                    return
+                else:
+                    # Start pan drag
+                    self.selected_anchor = None
+                    self._pan_active = True
+                    self._pan_last = event.position()
+                    self.setCursor(Qt.CursorShape.ClosedHandCursor)
+                    event.accept()
+                    return
             elif self.mode == "ADD":
                 lx, ly = self.vp.screen_to_world(event.position().x(), event.position().y())
                 self._add_anchor(lx, ly)
@@ -228,7 +343,24 @@ class RoomCanvas(QWidget):
         super().mouseReleaseEvent(event)
 
     def mouseDoubleClickEvent(self, event: QMouseEvent):
-        if self.mode == "DIST_EDIT" and event.button() == Qt.MouseButton.LeftButton:
+        if event.button() == Qt.MouseButton.LeftButton:
+            if not self.editable:
+                event.accept()
+                return
+            # In CURSOR/PAN mode, double-clicking an anchor triggers the edit dialog
+            if self.mode in ("PAN", "CURSOR"):
+                lx, ly = self.vp.screen_to_world(event.position().x(), event.position().y())
+                hit = self._hit_test_anchor(lx, ly)
+                if hit:
+                    parent = self.parentWidget()
+                    while parent and not hasattr(parent, '_edit_anchor_for'):
+                        parent = parent.parentWidget()
+                    if parent:
+                        parent._edit_anchor_for(hit)
+                    event.accept()
+                    return
+
+            # In DIST_EDIT mode, double-click on the distance label edits it
             if hasattr(self, "_last_dist_rect") and self._last_dist_rect.contains(event.position().toPoint()):
                 a1 = self.dist_anchor_1
                 a2 = self.dist_anchor_2
@@ -240,7 +372,7 @@ class RoomCanvas(QWidget):
                 from PyQt6.QtWidgets import QInputDialog
                 val, ok = QInputDialog.getDouble(
                     self, "Edit Distance", 
-                    f"Enter new distance from {a1.id} to {a2.id} (m):",
+                    f"Enter new distance from {a1.id} to {a2.id} (ft):",
                     value=curr_dist, min=0.01, max=1000.0, decimals=3
                 )
                 if ok and val != curr_dist:
@@ -420,6 +552,30 @@ class RoomCanvas(QWidget):
             sx1, sy1 = self.vp.world_to_screen(lx1, ly1)
             sx2, sy2 = self.vp.world_to_screen(lx2, ly2)
             p.drawLine(int(sx1), int(sy1), int(sx2), int(sy2))
+            
+            # Measure & Annotate Physical Walls
+            wall_len = math.hypot(lx2 - lx1, ly2 - ly1)
+            if wall_len > 0.05:
+                mx = (sx1 + sx2) / 2.0
+                my = (sy1 + sy2) / 2.0
+                label = f"{wall_len:.2f}ft"
+                
+                prev_pen = p.pen()
+                p.setFont(QFont("Segoe UI", 9, QFont.Weight.Bold))
+                fm = p.fontMetrics()
+                tw = fm.horizontalAdvance(label)
+                th = fm.height()
+                
+                bg_rect = QRectF(mx - tw/2 - 4, my - th/2 - 2, tw + 8, th + 4)
+                
+                p.setBrush(QBrush(QColor(25, 25, 30, 220)))
+                p.setPen(Qt.PenStyle.NoPen)
+                p.drawRoundedRect(bg_rect, 4, 4)
+                
+                p.setPen(QPen(QColor("#a8a8b3")))
+                p.drawText(int(mx - tw/2), int(my + th/2 - 2), label)
+                
+                p.setPen(prev_pen)
 
         # ── Anchors ────────────────────────────────────────────────────────
         font = p.font()
@@ -435,17 +591,17 @@ class RoomCanvas(QWidget):
             
             p.setPen(Qt.PenStyle.NoPen)
             p.setBrush(QBrush(color))
-            # Decreased size
             p.drawEllipse(QPointF(sx, sy), 5, 5)
+            
+            # Selection ring
+            if a is self.selected_anchor:
+                p.setPen(QPen(Qt.GlobalColor.white, 2))
+                p.setBrush(Qt.BrushStyle.NoBrush)
+                p.drawEllipse(QPointF(sx, sy), 9, 9)
             
             p.setPen(QPen(Qt.GlobalColor.white))
             p.drawText(int(sx) + 8, int(sy) + 4, a.id)
 
-        # ── Room Dimensions Overlay ───────────────────────────────────────────
-        p.setPen(QPen(Qt.GlobalColor.white))
-        p.setFont(QFont("Segoe UI", 12, QFont.Weight.Bold))
-        p.drawText(15, 25, f"Room Dimensions: {self.room.width:.2f}m x {self.room.height:.2f}m")
-        
         # ── Distance Editing Overlay ──────────────────────────────────────────
         if self.mode == "DIST_EDIT" and self.dist_anchor_1 and self.dist_anchor_2:
             a1, a2 = self.dist_anchor_1, self.dist_anchor_2
@@ -461,7 +617,7 @@ class RoomCanvas(QWidget):
             
             p.setPen(QPen(Qt.GlobalColor.white))
             p.setFont(QFont("Segoe UI", 12, QFont.Weight.Bold))
-            text = f"{dist:.2f}m"
+            text = f"{dist:.2f}ft"
             fm = p.fontMetrics()
             rect = fm.boundingRect(text)
             rect.moveCenter(QPoint(int(mx), int(my)))
@@ -491,7 +647,7 @@ class RoomCanvas(QWidget):
                     
                     dist = math.hypot(pos_b[0] - pos_a[0], pos_b[1] - pos_a[1])
                     mx = (s1x + s2x) / 2; my = (s1y + s2y) / 2
-                    label = f"{dist:.2f}m"
+                    label = f"{dist:.2f}ft"
                     p.setFont(QFont("Segoe UI", 10, QFont.Weight.Bold))
                     fm = p.fontMetrics()
                     tw = fm.horizontalAdvance(label); th = fm.height()
@@ -521,13 +677,77 @@ class RoomCanvas(QWidget):
 
         p.end()
 
+class AnchorEditDialog(QDialog):
+    """Single popup to edit an anchor's Hardware ID and local coordinates."""
+    def __init__(self, anchor, ref_anchor, parent=None):
+        super().__init__(parent)
+        self.anchor = anchor
+        self.ref_anchor = ref_anchor
+        self.setWindowTitle(f"Edit Anchor – {anchor.id}")
+        self.setMinimumWidth(320)
+        self.setModal(True)
+        
+        self.setStyleSheet("""
+            QDialog { background-color: #1a1a2e; color: #e0e0f0; }
+            QLabel { font-size: 13px; }
+            QLineEdit {
+                background-color: #12121f;
+                color: #e0e0f0;
+                border: 1px solid #3182CE;
+                border-radius: 4px;
+                padding: 6px;
+                font-size: 13px;
+            }
+            QPushButton {
+                background-color: #2d2d5e;
+                color: #e0e0f0;
+                border-radius: 4px;
+                padding: 8px 16px;
+                font-weight: bold;
+            }
+            QPushButton:hover { background-color: #3a3a7a; }
+            QPushButton#ok_btn { background-color: #3182CE; color: white; }
+            QPushButton#ok_btn:hover { background-color: #2c71b8; }
+        """)
+        
+        from PyQt6.QtWidgets import QFormLayout, QLineEdit, QDialogButtonBox
+        outer = QVBoxLayout(self)
+        outer.setSpacing(12)
+        outer.setContentsMargins(20, 20, 20, 20)
+        
+        form = QFormLayout()
+        form.setSpacing(10)
+        
+        self.field_hw = QLineEdit(anchor.hw_id or "")
+        self.field_hw.setPlaceholderText("e.g. A0, A1, A2, A3")
+        form.addRow("Hardware ID:", self.field_hw)
+        
+        # Show ABSOLUTE coords from room origin (0,0) = bottom-left corner
+        self.field_x = QLineEdit(f"{anchor.x:.3f}")
+        self.field_y = QLineEdit(f"{anchor.y:.3f}")
+        form.addRow("X from room origin (ft):", self.field_x)
+        form.addRow("Y from room origin (ft):", self.field_y)
+        
+        note = QLabel("↳ (0, 0) = room bottom-left corner")
+        note.setStyleSheet("font-size: 10px; color: #888; font-weight: normal;")
+        form.addRow("", note)
+        
+        outer.addLayout(form)
+        
+        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
+        buttons.button(QDialogButtonBox.StandardButton.Ok).setObjectName("ok_btn")
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+        outer.addWidget(buttons)
+
 class RoomDetailDialog(QDialog):
     """
     Dialog popup that hosts the RoomCanvas and an Anchor coordinate list.
     """
-    def __init__(self, room: Room, all_rooms: List[Room], parent=None):
+    def __init__(self, room: Room, all_rooms: List[Room], parent=None, editable: bool = True):
         super().__init__(parent)
         self.room = room
+        self.editable = editable
         self.setWindowTitle(f"Room Detail – {room.name}")
         self.resize(1000, 700)
         
@@ -551,6 +771,11 @@ class RoomDetailDialog(QDialog):
             QListWidget::item {
                 padding: 8px;
                 border-bottom: 1px solid #1a1a2e;
+            }
+            QListWidget::item:selected {
+                background-color: #3182CE;
+                color: white;
+                border-radius: 3px;
             }
             QPushButton {
                 background-color: #2d2d5e;
@@ -576,107 +801,287 @@ class RoomDetailDialog(QDialog):
             }
         """)
 
-        layout = QHBoxLayout(self)
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(0)
-        
+        # ── Top-level layout: banner + content ──────────────────────────────
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(0)
+
+        # ── Banner ─────────────────────────────────────────────────────────
+        banner = QWidget()
+        banner.setFixedHeight(44)
+        banner.setStyleSheet("background-color: #12121f; border-bottom: 1px solid #2d2d5e;")
+        banner_layout = QHBoxLayout(banner)
+        banner_layout.setContentsMargins(12, 0, 12, 0)
+        banner_layout.setSpacing(8)
+
+        lbl_banner = QLabel(f"🏛 Room: {room.name}")
+        lbl_banner.setStyleSheet("font-size: 13px; font-weight: bold; color: #e0e0f0;")
+        banner_layout.addWidget(lbl_banner)
+        banner_layout.addStretch()
+
+        if self.editable:
+            self.btn_tab_tools = QPushButton("🗺️ Anchor Tools")
+            self.btn_tab_tools.setCheckable(True)
+            self.btn_tab_tools.setChecked(True)
+            self.btn_tab_tools.setFixedHeight(30)
+            self.btn_tab_calib = QPushButton("⚙️ Calibration")
+            self.btn_tab_calib.setCheckable(True)
+            self.btn_tab_calib.setFixedHeight(30)
+            tab_group = QButtonGroup(self)
+            tab_group.setExclusive(True)
+            tab_group.addButton(self.btn_tab_tools)
+            tab_group.addButton(self.btn_tab_calib)
+
+            banner_layout.addWidget(self.btn_tab_tools)
+            banner_layout.addWidget(self.btn_tab_calib)
+        outer.addWidget(banner)
+
+        # ── Content area ───────────────────────────────────────────────────
+        content = QWidget()
+        content_layout = QHBoxLayout(content)
+        content_layout.setContentsMargins(0, 0, 0, 0)
+        content_layout.setSpacing(0)
+        outer.addWidget(content, 1)
+
         splitter = QSplitter(Qt.Orientation.Horizontal)
-        layout.addWidget(splitter)
-        
-        # Canvas left
-        self.canvas = RoomCanvas(room, all_rooms, splitter)
+        content_layout.addWidget(splitter)
+
+        self.canvas = RoomCanvas(room, all_rooms, splitter, editable=self.editable)
         splitter.addWidget(self.canvas)
-        
-        # Side panel right
-        side_panel = QWidget(splitter)
-        side_panel.setMinimumWidth(200)
-        side_layout = QVBoxLayout(side_panel)
-        side_layout.setContentsMargins(16, 16, 16, 16)
-        side_layout.setSpacing(10)
-        
-        lbl_title = QLabel(f"Room: {room.name}")
-        
-        mode_layout = QVBoxLayout()
-        mode_layout.setSpacing(5)
-        self.btn_group = QButtonGroup(self)
-        self.btn_group.setExclusive(True)
-        
-        self.btn_pan = QPushButton("✋ Pan")
-        self.btn_pan.setCheckable(True)
-        self.btn_pan.setChecked(True)
-        
-        self.btn_add = QPushButton("📌 Add Anchor")
-        self.btn_add.setCheckable(True)
-        
-        self.btn_del = QPushButton("🗑 Delete Anchor")
-        self.btn_del.setCheckable(True)
-        
-        self.btn_dist = QPushButton("📏 Edit Distance")
-        self.btn_dist.setCheckable(True)
-        
-        self.btn_group.addButton(self.btn_pan)
-        self.btn_group.addButton(self.btn_add)
-        self.btn_group.addButton(self.btn_del)
-        self.btn_group.addButton(self.btn_dist)
-        
-        mode_layout.addWidget(self.btn_pan)
-        mode_layout.addWidget(self.btn_add)
-        mode_layout.addWidget(self.btn_del)
-        mode_layout.addWidget(self.btn_dist)
-        
-        self.btn_fit = QPushButton("🔍 Fit View")
-        self.btn_fit.clicked.connect(self.canvas.fit_in_view)
-        mode_layout.addWidget(self.btn_fit)
-        
-        self.btn_reindex = QPushButton("🔄 Reindex")
-        self.btn_reindex.clicked.connect(self.reindex_anchors)
-        mode_layout.addWidget(self.btn_reindex)
-        
-        self.btn_pan.clicked.connect(lambda: self.set_mode("PAN"))
-        self.btn_add.clicked.connect(lambda: self.set_mode("ADD"))
-        self.btn_del.clicked.connect(lambda: self.set_mode("DELETE"))
-        self.btn_dist.clicked.connect(lambda: self.set_mode("DIST_SELECT_1"))
-        
-        # Remove old instruction label
-        side_layout.addWidget(lbl_title)
-        side_layout.addLayout(mode_layout)
-        
-        self.list_anchors = QListWidget()
-        self.list_anchors.itemDoubleClicked.connect(self._edit_anchor_coords)
-        side_layout.addWidget(self.list_anchors)
-        
-        # ── RTLS Serial ──────────────────────────────────────────────────────────
-        from PyQt6.QtWidgets import QComboBox
-        try:
-            import serial.tools.list_ports
-            ports = [p.device for p in serial.tools.list_ports.comports()]
-        except ImportError:
-            ports = []
-        ports.insert(0, "Virtual MOCK_RTLS")
-            
-        lbl_rtls = QLabel("RTLS Serial Connect")
-        lbl_rtls.setStyleSheet("font-weight: bold; margin-top: 10px;")
-        side_layout.addWidget(lbl_rtls)
+        self.canvas.tag_height = float(self.room.rtls_settings.get("tag_height_ft", 0.0))
+        self.canvas.filter_mode = self.room.rtls_settings.get("filter_mode", "None")
 
-        rtls_layout = QHBoxLayout()
-        self.cb_ports = QComboBox()
-        self.cb_ports.addItems(ports)
-        
-        self.btn_connect = QPushButton("Connect")
-        self.btn_connect.setCheckable(True)
-        self.btn_connect.clicked.connect(self._toggle_rtls)
+        if not self.editable:
+            btn_fit = QPushButton("⊡ Fit View")
+            btn_fit.setFixedHeight(30)
+            btn_fit.setStyleSheet("color: #ffffff; font-weight: bold;")
+            btn_fit.clicked.connect(self.canvas.fit_in_view)
+            banner_layout.addWidget(btn_fit)
 
-        rtls_layout.addWidget(self.cb_ports)
-        rtls_layout.addWidget(self.btn_connect)
-        side_layout.addLayout(rtls_layout)
+            zoom_wrap = QWidget()
+            zoom_lay = QHBoxLayout(zoom_wrap)
+            zoom_lay.setContentsMargins(0, 0, 0, 0)
+            zoom_lay.setSpacing(6)
+            zoom_label = QPushButton("Zoom")
+            zoom_label.setEnabled(False)
+            zoom_label.setFixedHeight(30)
+            zoom_label.setStyleSheet("color: #aeb6ff; font-weight: bold; padding: 6px 10px;")
+            zoom_lay.addWidget(zoom_label)
+            zoom_col = QVBoxLayout()
+            zoom_col.setContentsMargins(0, 0, 0, 0)
+            zoom_col.setSpacing(3)
 
-        btn_close = QPushButton("Done")
-        btn_close.clicked.connect(self.accept)
-        side_layout.addWidget(btn_close)
-        
-        splitter.setSizes([700, 300])
-        
-        self.refresh_anchor_list()
+            btn_zoom_in = QPushButton("+")
+            btn_zoom_in.setFixedSize(30, 18)
+            btn_zoom_in.setStyleSheet("color: #ffffff; font-size: 12px; font-weight: bold; padding: 0px;")
+            btn_zoom_in.clicked.connect(
+                lambda: self.canvas.vp.zoom_at(1.25, self.canvas.width() / 2, self.canvas.height() / 2) or self.canvas.update()
+            )
+            zoom_col.addWidget(btn_zoom_in)
+
+            btn_zoom_out = QPushButton("-")
+            btn_zoom_out.setFixedSize(30, 18)
+            btn_zoom_out.setStyleSheet("color: #ffffff; font-size: 12px; font-weight: bold; padding: 0px;")
+            btn_zoom_out.clicked.connect(
+                lambda: self.canvas.vp.zoom_at(0.8, self.canvas.width() / 2, self.canvas.height() / 2) or self.canvas.update()
+            )
+            zoom_col.addWidget(btn_zoom_out)
+            zoom_lay.addLayout(zoom_col)
+            banner_layout.addWidget(zoom_wrap)
+
+        if self.editable:
+            # ── Stacked sidebar ────────────────────────────────────────────────
+            self.sidebar_stack = QStackedWidget()
+            self.sidebar_stack.setMinimumWidth(220)
+            splitter.addWidget(self.sidebar_stack)
+
+        # ===== Page 0: Anchor Tools =====
+        if self.editable:
+            tools_page = QWidget()
+            tools_layout = QVBoxLayout(tools_page)
+            tools_layout.setContentsMargins(12, 12, 12, 12)
+            tools_layout.setSpacing(8)
+
+            tools_layout.addWidget(QLabel(f"Room: {room.name}"))
+
+            mode_layout = QVBoxLayout()
+            mode_layout.setSpacing(5)
+            self.btn_group = QButtonGroup(self)
+            self.btn_group.setExclusive(True)
+
+            self.btn_pan = QPushButton("🖱 Cursor")
+            self.btn_pan.setCheckable(True)
+            self.btn_pan.setChecked(True)
+            self.btn_add = QPushButton("📌 Add Anchor")
+            self.btn_add.setCheckable(True)
+            self.btn_del = QPushButton("🗑 Delete Anchor")
+            self.btn_del.setCheckable(True)
+            self.btn_dist = QPushButton("📏 Edit Distance")
+            self.btn_dist.setCheckable(True)
+
+            self.btn_group.addButton(self.btn_pan)
+            self.btn_group.addButton(self.btn_add)
+            self.btn_group.addButton(self.btn_del)
+            self.btn_group.addButton(self.btn_dist)
+
+            mode_layout.addWidget(self.btn_pan)
+            mode_layout.addWidget(self.btn_add)
+            mode_layout.addWidget(self.btn_del)
+            mode_layout.addWidget(self.btn_dist)
+
+            self.btn_fit = QPushButton("🔍 Fit View")
+            self.btn_fit.clicked.connect(self.canvas.fit_in_view)
+            mode_layout.addWidget(self.btn_fit)
+            self.btn_reindex = QPushButton("🔄 Reindex")
+            self.btn_reindex.clicked.connect(self.reindex_anchors)
+            mode_layout.addWidget(self.btn_reindex)
+
+            self.btn_pan.clicked.connect(lambda: self.set_mode("CURSOR"))
+            self.btn_add.clicked.connect(lambda: self.set_mode("ADD"))
+            self.btn_del.clicked.connect(lambda: self.set_mode("DELETE"))
+            self.btn_dist.clicked.connect(lambda: self.set_mode("DIST_SELECT_1"))
+
+            tools_layout.addLayout(mode_layout)
+
+            self.list_anchors = QListWidget()
+            self.list_anchors.itemDoubleClicked.connect(self._edit_anchor_coords)
+            tools_layout.addWidget(self.list_anchors)
+
+            from PyQt6.QtWidgets import QComboBox
+            try:
+                import serial.tools.list_ports
+                ports = [p.device for p in serial.tools.list_ports.comports()]
+            except ImportError:
+                ports = []
+            ports.insert(0, "Virtual MOCK_RTLS")
+
+            lbl_rtls = QLabel("RTLS Connect")
+            lbl_rtls.setStyleSheet("font-size: 11px; font-weight: bold; margin-top: 6px;")
+            tools_layout.addWidget(lbl_rtls)
+            rtls_row = QHBoxLayout()
+            self.cb_ports = QComboBox()
+            self.cb_ports.addItems(ports)
+            self.btn_connect = QPushButton("Connect")
+            self.btn_connect.setCheckable(True)
+            self.btn_connect.clicked.connect(self._toggle_rtls)
+            rtls_row.addWidget(self.cb_ports)
+            rtls_row.addWidget(self.btn_connect)
+            tools_layout.addLayout(rtls_row)
+
+            lbl_dbg = QLabel("Serial Debug")
+            lbl_dbg.setStyleSheet("font-size: 9px; color: #888;")
+            tools_layout.addWidget(lbl_dbg)
+            self.debug_log = QTextEdit()
+            self.debug_log.setReadOnly(True)
+            self.debug_log.setMaximumHeight(85)
+            self.debug_log.setStyleSheet("background: #0a0a0a; color: #7ec8e3; font-size: 9px; border: 1px solid #333;")
+            tools_layout.addWidget(self.debug_log)
+
+            btn_save_profile = QPushButton("💾 Save Profile")
+            btn_save_profile.clicked.connect(self._save_room_profile)
+            tools_layout.addWidget(btn_save_profile)
+
+            btn_done = QPushButton("Done")
+            btn_done.clicked.connect(self.accept)
+            tools_layout.addWidget(btn_done)
+
+            self.sidebar_stack.addWidget(tools_page)   # index 0
+
+        # ===== Page 1: RTLS Calibration =====
+            calib_scroll = QScrollArea()
+            calib_scroll.setWidgetResizable(True)
+            calib_scroll.setStyleSheet("QScrollArea { border: none; }")
+            calib_inner = QWidget()
+            calib_layout = QVBoxLayout(calib_inner)
+            calib_layout.setContentsMargins(12, 12, 12, 12)
+            calib_layout.setSpacing(10)
+            calib_scroll.setWidget(calib_inner)
+
+        # Tag height
+            lbl_h = QLabel("📐 Tag Height (ft)")
+            lbl_h.setStyleSheet("font-size: 11px; font-weight: bold;")
+            calib_layout.addWidget(lbl_h)
+            self.spin_height = QDoubleSpinBox()
+            self.spin_height.setRange(0.0, 10.0)
+            self.spin_height.setSingleStep(0.05)
+            self.spin_height.setDecimals(2)
+            self.spin_height.setValue(self.canvas.tag_height)
+            self.spin_height.setStyleSheet("background: #12121f; color: #e0e0f0; border: 1px solid #3182CE; border-radius: 4px; padding: 4px;")
+            self.spin_height.valueChanged.connect(self._on_tag_height_changed)
+            calib_layout.addWidget(self.spin_height)
+
+        # Filter selection
+            lbl_filt = QLabel("🌀 Smoothing Filter")
+            lbl_filt.setStyleSheet("font-size: 11px; font-weight: bold; margin-top: 6px;")
+            calib_layout.addWidget(lbl_filt)
+            filt_grp = QButtonGroup(self)
+            filt_grp.setExclusive(True)
+            filt_row = QHBoxLayout()
+            for mode in ("None", "EMA", "Rolling", "Kalman"):
+                btn = QPushButton(mode)
+                btn.setCheckable(True)
+                if mode == self.canvas.filter_mode:
+                    btn.setChecked(True)
+                btn.setFixedHeight(28)
+                btn.clicked.connect(lambda checked, m=mode: self._set_filter(m))
+                filt_grp.addButton(btn)
+                filt_row.addWidget(btn)
+            calib_layout.addLayout(filt_row)
+
+        # Slider helper
+            def _slider_row(label, lo, hi, default, step, decimals, on_change):
+                row_w = QWidget()
+                row_l = QVBoxLayout(row_w)
+                row_l.setContentsMargins(0, 0, 0, 0)
+                row_l.setSpacing(2)
+                hdr = QHBoxLayout()
+                lbl_s = QLabel(label)
+                lbl_s.setStyleSheet("font-size: 10px;")
+                val_lbl = QLabel(f"{default:.{decimals}f}")
+                val_lbl.setStyleSheet("font-size: 10px; color: #3182CE; font-weight: bold;")
+                hdr.addWidget(lbl_s)
+                hdr.addStretch()
+                hdr.addWidget(val_lbl)
+                sld = QSlider(Qt.Orientation.Horizontal)
+                sld.setRange(int(lo / step), int(hi / step))
+                sld.setValue(int(default / step))
+                sld.valueChanged.connect(lambda v, vl=val_lbl, d=decimals, s=step, f=on_change: (
+                    vl.setText(f"{v * s:.{d}f}"),
+                    f(v * s)
+                ))
+                row_l.addLayout(hdr)
+                row_l.addWidget(sld)
+                return row_w
+
+            calib_layout.addWidget(_slider_row(
+                "EMA α  (0=smooth, 1=raw)", 0.01, 1.0, 0.3, 0.01, 2,
+                lambda v: setattr(self.canvas, 'ema_alpha', v)))
+            calib_layout.addWidget(_slider_row(
+                "Rolling window (frames)", 2, 30, 8, 1, 0,
+                lambda v: setattr(self.canvas, 'roll_n', int(v))))
+            calib_layout.addWidget(_slider_row(
+                "Kalman Q (process noise)", 0.01, 2.0, 0.1, 0.01, 2,
+                lambda v: setattr(self.canvas, 'kalman_q', v)))
+            calib_layout.addWidget(_slider_row(
+                "Kalman R (meas. noise)", 0.1, 10.0, 2.0, 0.1, 1,
+                lambda v: setattr(self.canvas, 'kalman_r', v)))
+
+            btn_reset = QPushButton("🔄 Reset Filter State")
+            btn_reset.clicked.connect(lambda: self.canvas.reset_filter_state())
+            calib_layout.addWidget(btn_reset)
+            calib_layout.addStretch()
+
+            self.sidebar_stack.addWidget(calib_scroll)  # index 1
+
+            # Banner tab connections
+            self.btn_tab_tools.clicked.connect(lambda: self.sidebar_stack.setCurrentIndex(0))
+            self.btn_tab_calib.clicked.connect(lambda: self.sidebar_stack.setCurrentIndex(1))
+
+            splitter.setSizes([700, 280])
+            self.refresh_anchor_list()
+        else:
+            splitter.setSizes([980, 20])
+            self.canvas.fit_in_view()
 
     def set_mode(self, mode: str):
         self.canvas.set_interaction_mode(mode)
@@ -720,37 +1125,58 @@ class RoomDetailDialog(QDialog):
                 rel_y = a.y - ref_a.y
             else:
                 rel_x, rel_y = a.x, a.y
-            item = QListWidgetItem(f"{a.id}: ({rel_x:.2f}m, {rel_y:.2f}m)")
+            hw_label = f" [hw:{a.hw_id}]" if a.hw_id else " [hw:?]"
+            item = QListWidgetItem(f"{a.id}{hw_label}: ({rel_x:.2f}ft, {rel_y:.2f}ft)")
             self.list_anchors.addItem(item)
 
-    def _edit_anchor_coords(self, item):
-        aid = item.text().split(":")[0]
-        anchor = next((a for a in self.room.anchors if a.id == aid), None)
-        if not anchor: return
-
-        ref_a = self.room.anchors[0] if self.room.anchors else None
-        rel_x = anchor.x - ref_a.x if ref_a else anchor.x
-        rel_y = anchor.y - ref_a.y if ref_a else anchor.y
-        
-        from PyQt6.QtWidgets import QInputDialog
-        text, ok = QInputDialog.getText(
-            self, "Edit Coordinates", 
-            f"Enter new relative coordinates for {aid} (X, Y):",
-            text=f"{rel_x:.2f}, {rel_y:.2f}"
-        )
-        if ok and text.strip():
+    def _edit_anchor_for(self, anchor):
+        """Open the combined Anchor edit dialog for the given anchor."""
+        dlg = AnchorEditDialog(anchor, None, self)
+        if dlg.exec() == QDialog.DialogCode.Accepted:
             try:
-                parts = text.split(',')
-                if len(parts) == 2:
-                    nx, ny = float(parts[0].strip()), float(parts[1].strip())
-                    anchor.x = nx + ref_a.x if ref_a else nx
-                    anchor.y = ny + ref_a.y if ref_a else ny
-                    self.refresh_anchor_list()
-                    self.canvas.update()
-                else:
-                    QMessageBox.warning(self, "Error", "Invalid format. Target X, Y.")
+                hw = dlg.field_hw.text().strip()
+                nx = float(dlg.field_x.text().strip())
+                ny = float(dlg.field_y.text().strip())
+                anchor.hw_id = hw
+                # Store absolute local coords (origin = room bottom-left)
+                anchor.x = nx
+                anchor.y = ny
+                self.refresh_anchor_list()
+                self.canvas.update()
             except ValueError:
-                QMessageBox.warning(self, "Error", "Coordinates must be numeric.")
+                QMessageBox.warning(self, "Error", "X and Y must be numeric.")
+
+    def _edit_anchor_coords(self, item):
+        aid = item.text().split(":")[0].strip()
+        anchor = next((a for a in self.room.anchors if a.id == aid), None)
+        if anchor:
+            self._edit_anchor_for(anchor)
+
+    def _set_filter(self, mode: str):
+        self.canvas.filter_mode = mode
+        self.canvas.reset_filter_state()
+        self.room.rtls_settings["filter_mode"] = mode
+
+    def _on_tag_height_changed(self, value: float):
+        self.canvas.tag_height = value
+        self.room.rtls_settings["tag_height_ft"] = value
+
+    def _save_room_profile(self):
+        try:
+            filepath = save_room_profile(
+                self.room,
+                tag_height_ft=self.canvas.tag_height,
+                filter_mode=self.canvas.filter_mode,
+            )
+        except Exception as exc:
+            QMessageBox.warning(self, "Save Profile Failed", str(exc))
+            return
+
+        QMessageBox.information(
+            self,
+            "Profile Saved",
+            f"Room profile saved to:\n{filepath}"
+        )
 
     def _toggle_rtls(self, checked):
         if checked:
@@ -765,10 +1191,29 @@ class RoomDetailDialog(QDialog):
                     self.serial_thread = MockSerialReaderThread()
                 else:
                     from serial_reader import SerialReaderThread
-                    self.serial_thread = SerialReaderThread(port, 115200)
+                    # Build anchor_positions dict for bilateration.
+                    # Use short "A0", "A1"... suffix so it cross-matches hardware packets
+                    # (e.g. "A0:11.37") regardless of room prefix.
+                    anchor_positions = {}
+                    for a in self.room.anchors:
+                        # Prefer the user-set hardware ID; fall back to suffix extraction.
+                        hw_key = a.hw_id.strip() if a.hw_id.strip() else None
+                        if not hw_key:
+                            suffix = a.id.split("A", 1)[-1] if "A" in a.id else a.id
+                            hw_key = f"A{suffix}"
+                        anchor_positions[hw_key] = (a.x, a.y)
+                    
+                    self.serial_thread = SerialReaderThread(
+                        port, 115200, anchor_positions,
+                        tag_height=self.canvas.tag_height
+                    )
                 
                 self.serial_thread.tag_update.connect(self.canvas._update_tag)
                 self.serial_thread.connection_error.connect(self._on_rtls_error)
+                if hasattr(self.serial_thread, 'raw_line'):
+                    self.serial_thread.raw_line.connect(self._on_raw_line)
+                if hasattr(self.serial_thread, 'debug_msg'):
+                    self.serial_thread.debug_msg.connect(self._on_debug_msg)
                 self.serial_thread.start()
                 self.btn_connect.setText("Disconnect")
                 self.cb_ports.setEnabled(False)
@@ -792,3 +1237,14 @@ class RoomDetailDialog(QDialog):
         if hasattr(self, 'serial_thread') and self.serial_thread:
             self.serial_thread.stop()
             self.serial_thread = None
+
+    def _on_raw_line(self, line: str):
+        if hasattr(self, 'debug_log'):
+            self.debug_log.append(f"<span style='color:#666'>RAW: {line[:70]}</span>")
+            self.debug_log.verticalScrollBar().setValue(self.debug_log.verticalScrollBar().maximum())
+
+    def _on_debug_msg(self, msg: str):
+        if hasattr(self, 'debug_log'):
+            color = "#e74c3c" if "WARN" in msg or "SKIP" in msg else "#2ecc71"
+            self.debug_log.append(f"<span style='color:{color}'>{msg}</span>")
+            self.debug_log.verticalScrollBar().setValue(self.debug_log.verticalScrollBar().maximum())
