@@ -26,6 +26,7 @@ from utils.font_utils import get_default_font_family
 
 
 DEVICE_TYPES = ["Wrist Band", "Arm Band", "Belt Clip-on", "Breast Pocket"]
+TAG_PROFILE_DIR = os.path.join(os.path.dirname(__file__), "tag_profiles")
 TAG_PROFILER_STYLE = f"""
 QWidget#tag_profiler_root {{
     background-color: #12121f;
@@ -318,7 +319,7 @@ class TagProfilerWorkspace(QWidget):
         stats.setContentsMargins(0, 0, 0, 0)
         stats.setSpacing(2)
 
-        self._summary_tag = QLabel("Tag #: --", card)
+        self._summary_tag = QLabel("Tag ID: --", card)
         self._summary_tag.setObjectName("summary_copy")
         self._summary_name = QLabel("Name: --", card)
         self._summary_name.setObjectName("summary_copy")
@@ -492,17 +493,18 @@ class TagProfilerWorkspace(QWidget):
     def _update_summary(self):
         tag = self._get_text("tag_id") or "--"
         name = self._get_text("name") or "--"
-        self._summary_tag.setText(f"Tag #: {tag}")
+        self._summary_tag.setText(f"Tag ID: {tag}")
         self._summary_name.setText(f"Name: {name}")
 
     def export_json(self):
         payload = self.build_profile()
         default_stem = payload["identity"]["profile_id"] or payload["identity"]["name"] or payload["tag_id"] or "tag_profile"
         safe_stem = "".join(ch if ch.isalnum() or ch in ("-", "_") else "_" for ch in default_stem).strip("_") or "tag_profile"
+        os.makedirs(TAG_PROFILE_DIR, exist_ok=True)
         path, _ = QFileDialog.getSaveFileName(
             self,
             "Export Tag Profile",
-            os.path.join(os.getcwd(), f"{safe_stem}.json"),
+            os.path.join(TAG_PROFILE_DIR, f"{safe_stem}.json"),
             "JSON Files (*.json);;All Files (*)",
         )
         if not path:

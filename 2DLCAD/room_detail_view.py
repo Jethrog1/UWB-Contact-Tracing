@@ -1,18 +1,19 @@
 import math
+import os
 from typing import List, Tuple, Optional
 
 from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QWidget, QLabel, 
     QPushButton, QListWidget, QListWidgetItem, QSplitter,
     QMessageBox, QButtonGroup, QTextEdit, QStackedWidget,
-    QSlider, QDoubleSpinBox, QScrollArea
+    QSlider, QDoubleSpinBox, QScrollArea, QFileDialog
 )
 from PyQt6.QtGui import QPainter, QPainterPath, QPen, QColor, QMouseEvent, QWheelEvent, QBrush, QFont
 from PyQt6.QtCore import Qt, QPointF, QRectF, QPoint, QRect
 
 from cad_core import Viewport
 from room_data import Room, Anchor
-from room_profiles import save_room_profile
+from room_profiles import default_room_profile_path, save_room_profile
 
 ROOM_ZOOM_MIN = 0.05
 ROOM_ZOOM_MAX = 6000.0
@@ -1162,11 +1163,23 @@ class RoomDetailDialog(QDialog):
         self.room.rtls_settings["tag_height_ft"] = value
 
     def _save_room_profile(self):
+        default_path = default_room_profile_path(self.room.name)
+        filepath, _ = QFileDialog.getSaveFileName(
+            self,
+            "Save Room Profile",
+            default_path,
+            "JSON Files (*.json);;All Files (*)",
+        )
+        if not filepath:
+            return
+        if not filepath.lower().endswith(".json"):
+            filepath += ".json"
         try:
             filepath = save_room_profile(
                 self.room,
                 tag_height_ft=self.canvas.tag_height,
                 filter_mode=self.canvas.filter_mode,
+                filepath=filepath,
             )
         except Exception as exc:
             QMessageBox.warning(self, "Save Profile Failed", str(exc))

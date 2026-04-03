@@ -58,10 +58,19 @@ def build_room_profile(room, tag_height_ft=0.0, filter_mode="None"):
     }
 
 
-def save_room_profile(room, tag_height_ft=0.0, filter_mode="None"):
+def default_room_profile_path(room_name: str) -> str:
     ensure_profile_dir()
-    filename = f"{_slugify_room_name(room.name)}.json"
-    filepath = os.path.join(PROFILE_DIR, filename)
+    filename = f"{_slugify_room_name(room_name)}.json"
+    return os.path.join(PROFILE_DIR, filename)
+
+
+def save_room_profile(room, tag_height_ft=0.0, filter_mode="None", filepath=None):
+    if filepath is None:
+        filepath = default_room_profile_path(room.name)
+    else:
+        directory = os.path.dirname(filepath)
+        if directory:
+            os.makedirs(directory, exist_ok=True)
     payload = build_room_profile(
         room,
         tag_height_ft=tag_height_ft,
