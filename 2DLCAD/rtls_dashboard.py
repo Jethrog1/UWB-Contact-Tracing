@@ -41,6 +41,7 @@ from room_profiles import (
     save_floorplan_manifest,
     save_project_package,
 )
+from workspace_switcher import WorkspaceSwitcher
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -488,6 +489,7 @@ class AnchorMapperHeader(QWidget):
 class RTLSDashboard(QMainWindow):
     # Emitted when the user clicks the Home button (used when embedded in main_qt)
     go_home = pyqtSignal()
+    workspace_requested = pyqtSignal(str)
 
     MODE_ANCHOR_MAPPER = "anchor_mapper"
     MODE_RTLS = "rtls"
@@ -565,6 +567,19 @@ class RTLSDashboard(QMainWindow):
             self._show_status("Load an RTLS project to restore rooms, anchors, and live tracking settings")
         else:
             self._show_status("Load an SVG floor plan to define rooms, place anchors, and save room data")
+
+        current_key = "anchor_mapper" if self.app_mode == self.MODE_ANCHOR_MAPPER else "rtls_dashboard"
+        self._workspace_switcher = WorkspaceSwitcher(
+            central,
+            [
+                ("cad", "Launch 2DLCAD"),
+                ("anchor_mapper", "Anchor Mapper"),
+                ("rtls_dashboard", "RTLS Dashboard"),
+            ],
+            current_key=current_key,
+            top_offset=0,
+        )
+        self._workspace_switcher.workspace_requested.connect(self.workspace_requested.emit)
 
     # ──────────────────────────────────────────────────────────────────────────
     # Toolbar
@@ -791,6 +806,14 @@ class RTLSDashboard(QMainWindow):
     def _show_status(self, msg: str):
         if hasattr(self, "_lbl_status"):
             self._lbl_status.setText(msg)
+
+    def set_current_workspace(self, key: str):
+        if hasattr(self, "_workspace_switcher"):
+            self._workspace_switcher.set_current_workspace(key)
+
+    def close_workspace_switcher(self):
+        if hasattr(self, "_workspace_switcher"):
+            self._workspace_switcher.close_panel()
 
     def _show_notice(self, msg: str, timeout_ms: int = 3200):
         if not hasattr(self, "_notice_banner"):

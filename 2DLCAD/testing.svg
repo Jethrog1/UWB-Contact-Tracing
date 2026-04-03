@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="100%" height="100%" viewBox="0 0 1000.0 1000.0" data-cad-min-x="2.0130208333333335" data-cad-min-y="-3.4938151041666674" data-cad-scale="150.63249367693825" data-cad-offset-x="49.99999999999994" data-cad-offset-y="309.95396517152426">
+  <rect width="100%" height="100%" fill="#1E1E1E"/>
+  <line x1="501.623" y1="309.954" x2="950.000" y2="309.954" stroke="#4A9EFF" stroke-width="75.31624683846913"/>
+  <line x1="950.000" y1="309.954" x2="950.000" y2="690.046" stroke="#4A9EFF" stroke-width="75.31624683846913"/>
+  <line x1="950.000" y1="690.046" x2="501.623" y2="690.046" stroke="#4A9EFF" stroke-width="75.31624683846913"/>
+  <line x1="501.623" y1="690.046" x2="501.623" y2="309.954" stroke="#4A9EFF" stroke-width="75.31624683846913"/>
+  <line x1="501.623" y1="309.954" x2="50.000" y2="309.954" stroke="#4A9EFF" stroke-width="75.31624683846913"/>
+  <line x1="50.000" y1="309.954" x2="50.000" y2="690.046" stroke="#4A9EFF" stroke-width="75.31624683846913"/>
+  <line x1="50.000" y1="690.046" x2="501.623" y2="690.046" stroke="#4A9EFF" stroke-width="75.31624683846913"/>
+</svg>

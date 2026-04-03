@@ -23,8 +23,10 @@ def get_default_font_family() -> str:
     platform = sys.platform
     families = _available_families()
     if platform == "darwin":
+        if not families:
+            return "Helvetica Neue"
         for preferred in ("SF Pro Display", "SF Pro Text", "Helvetica Neue", "Arial"):
-            if not families or preferred in families:
+            if preferred in families:
                 return preferred
         return "Helvetica Neue"
     elif platform == "win32":

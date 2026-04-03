@@ -1,5 +1,6 @@
 import sys
 import math
+import random
 from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
                              QHBoxLayout, QLabel, QPushButton,
                              QFrame, QSizePolicy, QSpacerItem, QStackedWidget, QCheckBox, QDoubleSpinBox,
@@ -8,6 +9,7 @@ from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
 from PyQt6.QtGui import QAction, QActionGroup, QFont, QFontDatabase, QIcon, QColor, QPalette, QPainter, QPen, QPainterPath
 from PyQt6.QtCore import Qt, QSize, QRect, QPoint, QEasingCurve, QPropertyAnimation, QParallelAnimationGroup, QSequentialAnimationGroup, QTimer
 from utils.font_utils import get_default_font_family
+from workspace_switcher import WorkspaceSwitcher
 
 # Local Imports
 from cad_core import Line, Viewport
@@ -42,6 +44,11 @@ QFrame#tool_panel {
     border: 1px solid rgba(111, 130, 172, 0.18);
     border-radius: 24px;
 }
+QFrame#intro_outline {
+    background-color: transparent;
+    border: 1px solid rgba(120, 146, 194, 0.55);
+    border-radius: 28px;
+}
 QLabel#brand_badge {
     background-color: rgba(255, 255, 255, 0.05);
     color: #d9e4ff;
@@ -61,6 +68,12 @@ QLabel#hero_copy {
     color: #aab6d4;
     font-size: 14px;
     line-height: 1.45em;
+}
+QLabel#loading_copy {
+    color: #8e9dbc;
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.4px;
 }
 QPushButton#launch_card {
     background-color: rgba(27, 36, 58, 235);
@@ -246,10 +259,30 @@ class HomeScreen(QWidget):
         self._intro_group = None
         self._intro_animations = []
         self._intro_played_once = False
+        self._intro_reveal_targets = {}
+        self._intro_width_targets = {}
+        self._loading_timer = QTimer(self)
+        self._loading_timer.setInterval(260)
+        self._loading_timer.timeout.connect(self._advance_loading_dots)
+        self._intro_start_timer = QTimer(self)
+        self._intro_start_timer.setSingleShot(True)
+        self._intro_start_timer.timeout.connect(self._start_main_intro_sequence)
+        self._loading_dot_count = 0
+        self._intro_loading_active = False
 
         self.btn_new_plan = None
         self.btn_anchor_mapper = None
         self.btn_rtls_dashboard = None
+        self.hero_badge = None
+        self.hero_title = None
+        self.hero_copy = None
+        self.tool_badge = None
+        self.tool_title = None
+        self.tool_copy = None
+        self.tool_card_host = None
+        self.intro_welcome = None
+        self.intro_loading = None
+        self.intro_outline = None
 
         outer = QVBoxLayout(self)
         outer.setContentsMargins(34, 30, 34, 30)
@@ -261,10 +294,23 @@ class HomeScreen(QWidget):
         self.tools_panel = self._build_tools_panel()
         outer.addWidget(self.tools_panel, 1)
 
-        self._intro_targets = [
-            self.hero_panel,
-            self.tools_panel,
-        ]
+        self.intro_welcome = QLabel("Welcome, User", self)
+        self.intro_welcome.setObjectName("hero_title")
+        self.intro_welcome.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
+        self.intro_welcome.hide()
+        self.intro_welcome.raise_()
+
+        self.intro_loading = QLabel("loading", self)
+        self.intro_loading.setObjectName("loading_copy")
+        self.intro_loading.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
+        self.intro_loading.hide()
+        self.intro_loading.raise_()
+
+        self.intro_outline = QFrame(self)
+        self.intro_outline.setObjectName("intro_outline")
+        self.intro_outline.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
+        self.intro_outline.hide()
+        self.intro_outline.raise_()
 
         QTimer.singleShot(0, self.play_intro_animation)
 
@@ -276,23 +322,23 @@ class HomeScreen(QWidget):
         layout.setContentsMargins(30, 24, 30, 24)
         layout.setSpacing(6)
 
-        badge = QLabel("UWB WORKSPACE")
-        badge.setObjectName("brand_badge")
-        badge.setSizePolicy(QSizePolicy.Policy.Maximum, QSizePolicy.Policy.Fixed)
-        layout.addWidget(badge, 0, Qt.AlignmentFlag.AlignLeft)
+        self.hero_badge = QLabel("UWB WORKSPACE")
+        self.hero_badge.setObjectName("brand_badge")
+        self.hero_badge.setSizePolicy(QSizePolicy.Policy.Maximum, QSizePolicy.Policy.Fixed)
+        layout.addWidget(self.hero_badge, 0, Qt.AlignmentFlag.AlignLeft)
 
-        title = QLabel("Welcome, User")
-        title.setObjectName("hero_title")
-        title.setWordWrap(True)
-        layout.addWidget(title)
+        self.hero_title = QLabel("Welcome, User")
+        self.hero_title.setObjectName("hero_title")
+        self.hero_title.setWordWrap(True)
+        layout.addWidget(self.hero_title)
 
-        copy = QLabel(
+        self.hero_copy = QLabel(
             "Choose a workspace to start drawing floor plans, mapping anchors, or opening live RTLS views."
         )
-        copy.setObjectName("hero_copy")
-        copy.setWordWrap(True)
-        copy.setMaximumWidth(760)
-        layout.addWidget(copy)
+        self.hero_copy.setObjectName("hero_copy")
+        self.hero_copy.setWordWrap(True)
+        self.hero_copy.setMaximumWidth(760)
+        layout.addWidget(self.hero_copy)
 
         layout.addStretch(1)
         return panel
@@ -305,24 +351,25 @@ class HomeScreen(QWidget):
         layout.setContentsMargins(30, 24, 30, 24)
         layout.setSpacing(6)
 
-        kicker = QLabel("LAUNCHPAD")
-        kicker.setObjectName("brand_badge")
-        kicker.setSizePolicy(QSizePolicy.Policy.Maximum, QSizePolicy.Policy.Fixed)
-        layout.addWidget(kicker)
+        self.tool_badge = QLabel("LAUNCHPAD")
+        self.tool_badge.setObjectName("brand_badge")
+        self.tool_badge.setSizePolicy(QSizePolicy.Policy.Maximum, QSizePolicy.Policy.Fixed)
+        layout.addWidget(self.tool_badge)
 
-        heading = QLabel("Choose a workspace")
-        heading.setObjectName("hero_title")
-        layout.addWidget(heading)
+        self.tool_title = QLabel("Choose a workspace")
+        self.tool_title.setObjectName("hero_title")
+        layout.addWidget(self.tool_title)
 
-        copy = QLabel(
+        self.tool_copy = QLabel(
             "Each tool opens into its own focused environment."
         )
-        copy.setObjectName("hero_copy")
-        copy.setWordWrap(True)
-        copy.setMaximumWidth(760)
-        layout.addWidget(copy)
+        self.tool_copy.setObjectName("hero_copy")
+        self.tool_copy.setWordWrap(True)
+        self.tool_copy.setMaximumWidth(760)
+        layout.addWidget(self.tool_copy)
 
         card_host = QWidget()
+        self.tool_card_host = card_host
         card_host.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Maximum)
         layout.addSpacing(12)
         flow = FlowLayout(card_host, spacing=18)
@@ -347,49 +394,254 @@ class HomeScreen(QWidget):
         layout.addStretch(1)
         return panel
 
-    def _reset_intro_geometry(self):
-        for widget in self._intro_targets:
-            widget.setMinimumHeight(0)
+    def _activate_home_layouts(self):
+        if self.layout() is not None:
+            self.layout().activate()
+        if self.hero_panel.layout() is not None:
+            self.hero_panel.layout().activate()
+        if self.tools_panel.layout() is not None:
+            self.tools_panel.layout().activate()
+        if self.tool_card_host is not None and self.tool_card_host.layout() is not None:
+            self.tool_card_host.layout().activate()
+
+    def _set_collapsed(self, widget, collapsed: bool):
+        if widget is None:
+            return
+        widget.setMinimumHeight(0)
+        if collapsed:
+            widget.setMaximumHeight(0)
+        else:
             widget.setMaximumHeight(16777215)
 
-    def play_intro_animation(self):
+    def _reset_intro_state(self):
+        self._activate_home_layouts()
+        self._loading_timer.stop()
+        self._intro_start_timer.stop()
+        self._intro_loading_active = False
+        self._intro_reveal_targets = {}
+        self._intro_width_targets = {}
+        self.hero_panel.show()
+        self.tools_panel.show()
+        for widget in (
+            self.hero_panel,
+            self.tools_panel,
+            self.hero_badge,
+            self.hero_title,
+            self.hero_copy,
+            self.tool_badge,
+            self.tool_title,
+            self.tool_copy,
+            *self.launch_cards,
+        ):
+            self._set_collapsed(widget, collapsed=False)
+        self.hero_badge.setMaximumWidth(16777215)
+        self.tool_badge.setMaximumWidth(16777215)
+        if self.intro_welcome is not None:
+            self.intro_welcome.hide()
+        if self.intro_loading is not None:
+            self.intro_loading.hide()
+        if self.intro_outline is not None:
+            self.intro_outline.hide()
+
+    def _position_intro_overlay(self):
+        if self.intro_welcome is None:
+            return
+        self.intro_welcome.adjustSize()
+        bounds = self.rect()
+        welcome_x = bounds.x() + (bounds.width() - self.intro_welcome.width()) // 2
+        welcome_y = bounds.y() + (bounds.height() - self.intro_welcome.height()) // 2 - 12
+        self.intro_welcome.move(welcome_x, welcome_y)
+        if self.intro_loading is not None:
+            self.intro_loading.adjustSize()
+            loading_x = bounds.x() + (bounds.width() - self.intro_loading.width()) // 2
+            loading_y = self.intro_welcome.y() + self.intro_welcome.height() + 12
+            self.intro_loading.move(loading_x, loading_y)
+
+    def _advance_loading_dots(self):
+        self._loading_dot_count = (self._loading_dot_count + 1) % 4
+        self.intro_loading.setText("loading" + ("." * self._loading_dot_count))
+        self._position_intro_overlay()
+
+    def _start_main_intro_sequence(self):
         if not self.isVisible():
             return
+
+        self._loading_timer.stop()
+        self._intro_loading_active = False
+        self.intro_loading.hide()
 
         if self._intro_group is not None:
             self._intro_group.stop()
 
-        self._reset_intro_geometry()
+        self._activate_home_layouts()
+        self._position_intro_overlay()
 
-        animations = []
         container = QParallelAnimationGroup(self)
+        animations = []
+        reveal_targets = dict(self._intro_reveal_targets)
+        width_targets = dict(self._intro_width_targets)
 
-        for index, widget in enumerate(self._intro_targets):
-            target_height = max(1, widget.sizeHint().height())
-            widget.setMinimumHeight(0)
-            widget.setMaximumHeight(0)
+        target_pos = self.hero_title.mapTo(self, QPoint(0, 0))
 
-            reveal = QPropertyAnimation(widget, b"maximumHeight", self)
-            reveal.setDuration(320)
-            reveal.setStartValue(0)
-            reveal.setEndValue(target_height)
-            reveal.setEasingCurve(QEasingCurve.Type.OutCubic)
+        intro_move = QPropertyAnimation(self.intro_welcome, b"pos", self)
+        intro_move.setDuration(1400)
+        intro_move.setStartValue(self.intro_welcome.pos())
+        intro_move.setEndValue(target_pos)
+        intro_move.setEasingCurve(QEasingCurve.Type.OutCubic)
+        container.addAnimation(intro_move)
+        animations.append((self.intro_welcome, intro_move))
 
-            seq = QSequentialAnimationGroup(self)
-            seq.addPause(90 * index)
-            seq.addAnimation(reveal)
+        overlay_hide_seq = QSequentialAnimationGroup(self)
+        overlay_hide_seq.addPause(1500)
+        overlay_hide_seq.finished.connect(self.intro_welcome.hide)
+        container.addAnimation(overlay_hide_seq)
+
+        for widget in (
+            self.tools_panel,
+            self.hero_badge,
+            self.hero_title,
+            self.hero_copy,
+            self.tool_badge,
+            self.tool_title,
+            self.tool_copy,
+            *self.launch_cards,
+        ):
+            self._set_collapsed(widget, collapsed=True)
+
+        for widget, delay, duration in (
+            (self.hero_title, 1400, 420),
+            (self.hero_copy, 1580, 460),
+            (self.tools_panel, 1800, 520),
+            (self.tool_title, 2220, 420),
+            (self.tool_copy, 2400, 420),
+        ):
+            seq, refs = self._build_reveal(widget, delay, duration, reveal_targets[widget])
             container.addAnimation(seq)
-            animations.append((widget, reveal, seq, target_height))
+            animations.append(refs)
+
+        for widget, delay, duration in (
+            (self.hero_badge, 1320, 360),
+            (self.tool_badge, 2140, 360),
+        ):
+            seq, refs = self._build_horizontal_reveal(widget, delay, duration, width_targets[widget])
+            container.addAnimation(seq)
+            animations.append(refs)
+
+        card_delay_start = 2720
+        for index, card in enumerate(self.launch_cards):
+            seq, refs = self._build_reveal(card, card_delay_start + (index * 180), 320, reveal_targets[card])
+            container.addAnimation(seq)
+            animations.append(refs)
 
         self._intro_group = container
         self._intro_animations = animations
-        self._intro_group.finished.connect(self._reset_intro_geometry)
+        self._intro_group.finished.connect(self._reset_intro_state)
         self._intro_group.start()
         self._intro_played_once = True
 
+    def _build_reveal(self, widget, delay_ms, duration_ms=260, end_height=None):
+        if end_height is None:
+            end_height = max(widget.height(), widget.sizeHint().height(), 1)
+        self._set_collapsed(widget, collapsed=True)
+        reveal_anim = QPropertyAnimation(widget, b"maximumHeight", self)
+        reveal_anim.setDuration(duration_ms)
+        reveal_anim.setStartValue(0)
+        reveal_anim.setEndValue(end_height)
+        reveal_anim.setEasingCurve(QEasingCurve.Type.OutCubic)
+
+        seq = QSequentialAnimationGroup(self)
+        seq.addPause(delay_ms)
+        seq.addAnimation(reveal_anim)
+        return seq, (widget, reveal_anim)
+
+    def _build_horizontal_reveal(self, widget, delay_ms, duration_ms=260, end_width=None):
+        if end_width is None:
+            end_width = max(widget.width(), widget.sizeHint().width(), 1)
+        end_height = max(widget.height(), widget.sizeHint().height(), 1)
+        widget.setMinimumWidth(0)
+        widget.setMaximumWidth(0)
+        widget.setMaximumHeight(end_height)
+        reveal_anim = QPropertyAnimation(widget, b"maximumWidth", self)
+        reveal_anim.setDuration(duration_ms)
+        reveal_anim.setStartValue(0)
+        reveal_anim.setEndValue(end_width)
+        reveal_anim.setEasingCurve(QEasingCurve.Type.OutCubic)
+
+        seq = QSequentialAnimationGroup(self)
+        seq.addPause(delay_ms)
+        seq.addAnimation(reveal_anim)
+        return seq, (widget, reveal_anim)
+
+    def play_intro_animation(self):
+        if not self.isVisible():
+            return
+        self._intro_played_once = True
+
+        if self._intro_group is not None:
+            self._intro_group.stop()
+
+        self._reset_intro_state()
+        self._activate_home_layouts()
+        self._intro_reveal_targets = {
+            widget: max(widget.height(), widget.sizeHint().height(), 1)
+            for widget in (
+                self.hero_badge,
+                self.hero_title,
+                self.hero_copy,
+                self.tools_panel,
+                self.tool_badge,
+                self.tool_title,
+                self.tool_copy,
+                *self.launch_cards,
+            )
+        }
+        self._intro_width_targets = {
+            widget: max(widget.width(), widget.sizeHint().width(), 1)
+            for widget in (
+                self.hero_badge,
+                self.tool_badge,
+            )
+        }
+
+        self.hero_panel.show()
+        self.tools_panel.show()
+        self.intro_outline.hide()
+        self.hero_badge.setMaximumWidth(16777215)
+        self.tool_badge.setMaximumWidth(16777215)
+        self._loading_dot_count = 0
+        self.intro_loading.setText("loading")
+        self._position_intro_overlay()
+        self.intro_welcome.show()
+        self.intro_welcome.raise_()
+        self.intro_loading.show()
+        self.intro_loading.raise_()
+        self._intro_loading_active = True
+
+        for widget in (
+            self.tools_panel,
+            self.hero_badge,
+            self.hero_title,
+            self.hero_copy,
+            self.tool_badge,
+            self.tool_title,
+            self.tool_copy,
+            *self.launch_cards,
+        ):
+            self._set_collapsed(widget, collapsed=True)
+
+        self._loading_timer.start()
+        self._intro_start_timer.start(random.randint(1000, 2000))
+
     def showEvent(self, event):
         super().showEvent(event)
-        QTimer.singleShot(0, self.play_intro_animation)
+        if not self._intro_played_once:
+            QTimer.singleShot(0, self.play_intro_animation)
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        if self._intro_loading_active and self.intro_welcome.isVisible():
+            self._position_intro_overlay()
+            QTimer.singleShot(0, self._position_intro_overlay)
 
 from cad_core import Viewport, Line, Spline
 from qt_snap import QtSnapController
@@ -1831,6 +2083,12 @@ class MainWindow(QMainWindow):
         self.home_screen.btn_new_plan.clicked.connect(self.go_to_cad)
         self.home_screen.btn_anchor_mapper.clicked.connect(self.open_anchor_mapper)
         self.home_screen.btn_rtls_dashboard.clicked.connect(self.open_rtls_dashboard)
+
+        workspace_items = [
+            ("cad", "Launch 2DLCAD"),
+            ("anchor_mapper", "Anchor Mapper"),
+            ("rtls_dashboard", "RTLS Dashboard"),
+        ]
         
         # --- Page 2: CAD Interface ---
         self.cad_container = QWidget()
@@ -2079,15 +2337,24 @@ class MainWindow(QMainWindow):
         cad_layout.addWidget(self.cad_canvas)
         
         self.stack.addWidget(self.cad_container)
+        self.cad_switcher = WorkspaceSwitcher(
+            self.cad_container,
+            workspace_items,
+            current_key="cad",
+            top_offset=60,
+        )
+        self.cad_switcher.workspace_requested.connect(self._open_workspace_from_key)
         
         # --- Page 3: Anchor Mapper ---
         self.anchor_mapper_container = RTLSDashboard(app_mode=RTLSDashboard.MODE_ANCHOR_MAPPER)
         self.anchor_mapper_container.go_home.connect(self.go_to_home)
+        self.anchor_mapper_container.workspace_requested.connect(self._open_workspace_from_key)
         self.stack.addWidget(self.anchor_mapper_container)
 
         # --- Page 4: RTLS Dashboard ---
         self.rtls_dashboard_container = RTLSDashboard(app_mode=RTLSDashboard.MODE_RTLS)
         self.rtls_dashboard_container.go_home.connect(self.go_to_home)
+        self.rtls_dashboard_container.workspace_requested.connect(self._open_workspace_from_key)
         self.stack.addWidget(self.rtls_dashboard_container)
         
         # --- Dockable Feature Tree ---
@@ -2111,23 +2378,48 @@ class MainWindow(QMainWindow):
             }
         """)
         self.dock_tree.setWidget(self.tree_widget)
-        self.addDockWidget(Qt.DockWidgetArea.LeftDockWidgetArea, self.dock_tree)
+        self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, self.dock_tree)
         
         # Connect Tree Selection
         self.tree_widget.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
         self.tree_widget.itemSelectionChanged.connect(self.on_tree_selection_changed)
         
-        self.dock_tree.hide() 
+        self.dock_tree.hide()
+        self._sync_workspace_switchers("cad")
 
     def go_to_cad(self):
         self.stack.setCurrentWidget(self.cad_container)
         self.dock_tree.show()
+        self._sync_workspace_switchers("cad")
 
     def open_anchor_mapper(self):
         self.stack.setCurrentWidget(self.anchor_mapper_container)
+        self.dock_tree.hide()
+        self._sync_workspace_switchers("anchor_mapper")
 
     def open_rtls_dashboard(self):
         self.stack.setCurrentWidget(self.rtls_dashboard_container)
+        self.dock_tree.hide()
+        self._sync_workspace_switchers("rtls_dashboard")
+
+    def _open_workspace_from_key(self, key: str):
+        if key == "cad":
+            self.go_to_cad()
+        elif key == "anchor_mapper":
+            self.open_anchor_mapper()
+        elif key == "rtls_dashboard":
+            self.open_rtls_dashboard()
+
+    def _sync_workspace_switchers(self, current_key: str):
+        self.cad_switcher.set_current_workspace(current_key)
+        self.anchor_mapper_container.set_current_workspace(current_key)
+        self.rtls_dashboard_container.set_current_workspace(current_key)
+        if current_key != "cad":
+            self.cad_switcher.close_panel()
+        if current_key != "anchor_mapper":
+            self.anchor_mapper_container.close_workspace_switcher()
+        if current_key != "rtls_dashboard":
+            self.rtls_dashboard_container.close_workspace_switcher()
 
     def save_as_svg(self):
         """Export the current CAD model to an SVG file."""
@@ -2370,7 +2662,9 @@ class MainWindow(QMainWindow):
     def go_to_home(self):
         self.stack.setCurrentWidget(self.home_screen)
         self.dock_tree.hide()
-        self.home_screen.play_intro_animation()
+        self.cad_switcher.close_panel()
+        self.anchor_mapper_container.close_workspace_switcher()
+        self.rtls_dashboard_container.close_workspace_switcher()
         
     def sync_feature_tree(self):
         # Block signals to prevent feedback loop during sync
