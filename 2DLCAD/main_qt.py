@@ -1,12 +1,12 @@
 import sys
 import math
-from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, 
-                             QHBoxLayout, QLabel, QPushButton, QListWidget, 
+from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
+                             QHBoxLayout, QLabel, QPushButton,
                              QFrame, QSizePolicy, QSpacerItem, QStackedWidget, QCheckBox, QDoubleSpinBox,
                              QDockWidget, QTreeWidget, QTreeWidgetItem, QAbstractItemView,
-                             QToolButton, QMenu, QInputDialog, QMessageBox)
+                             QToolButton, QMenu, QInputDialog, QMessageBox, QLayout)
 from PyQt6.QtGui import QAction, QActionGroup, QFont, QFontDatabase, QIcon, QColor, QPalette, QPainter, QPen, QPainterPath
-from PyQt6.QtCore import Qt, QSize, QRect
+from PyQt6.QtCore import Qt, QSize, QRect, QPoint, QEasingCurve, QPropertyAnimation, QParallelAnimationGroup, QSequentialAnimationGroup, QTimer
 from utils.font_utils import get_default_font_family
 
 # Local Imports
@@ -14,136 +14,382 @@ from cad_core import Line, Viewport
 # from geometry import intersect_lines, get_intersection # Unused and not found
 from qt_snap import QtSnapController
 
-class ModernButton(QPushButton):
-    def __init__(self, title, subtitle, icon_name=None, parent=None):
+HOME_FONT_FAMILY = get_default_font_family()
+
+HOME_SCREEN_STYLE = (
+f"""
+QWidget#home_screen {{
+    background-color: #000000;
+    font-family: "{HOME_FONT_FAMILY}";
+}}
+"""
+"""
+QFrame#hero_panel {
+    background-color: qlineargradient(
+        x1:0, y1:0, x2:1, y2:1,
+        stop:0 rgba(18, 25, 41, 246),
+        stop:1 rgba(24, 37, 60, 240)
+    );
+    border: 1px solid rgba(120, 146, 194, 0.20);
+    border-radius: 28px;
+}
+QFrame#tool_panel {
+    background-color: qlineargradient(
+        x1:0, y1:0, x2:1, y2:1,
+        stop:0 rgba(16, 23, 38, 242),
+        stop:1 rgba(22, 34, 55, 236)
+    );
+    border: 1px solid rgba(111, 130, 172, 0.18);
+    border-radius: 24px;
+}
+QLabel#brand_badge {
+    background-color: rgba(255, 255, 255, 0.05);
+    color: #d9e4ff;
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    border-radius: 14px;
+    padding: 6px 12px;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 1px;
+}
+QLabel#hero_title {
+    color: #f5f7ff;
+    font-size: 30px;
+    font-weight: 700;
+}
+QLabel#hero_copy {
+    color: #aab6d4;
+    font-size: 14px;
+    line-height: 1.45em;
+}
+QPushButton#launch_card {
+    background-color: rgba(27, 36, 58, 235);
+    border: 1px solid rgba(123, 146, 196, 0.20);
+    border-radius: 22px;
+    text-align: left;
+    padding: 0px;
+}
+QPushButton#launch_card:hover {
+    background-color: rgba(34, 45, 71, 248);
+    border: 1px solid rgba(122, 157, 255, 0.55);
+}
+QPushButton#launch_card:pressed {
+    background-color: rgba(21, 29, 47, 248);
+}
+QLabel#launch_icon {
+    color: #f5f7ff;
+    background-color: transparent;
+    font-size: 24px;
+    font-weight: 700;
+}
+QLabel#launch_title {
+    color: #f5f7ff;
+    background-color: transparent;
+    font-size: 18px;
+    font-weight: 700;
+}
+QLabel#launch_subtitle {
+    color: #9eacc8;
+    background-color: transparent;
+    font-size: 13px;
+    line-height: 1.45em;
+}
+QLabel#launch_hint {
+    color: #7d8fb4;
+    background-color: transparent;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 1px;
+}
+QFrame#launch_badge {
+    background-color: rgba(255, 255, 255, 0.06);
+    border-radius: 14px;
+}
+"""
+)
+
+
+class FlowLayout(QLayout):
+    def __init__(self, parent=None, margin=0, spacing=18):
         super().__init__(parent)
-        self.setFixedSize(200, 120)
+        self._items = []
+        self.setContentsMargins(margin, margin, margin, margin)
+        self.setSpacing(spacing)
+
+    def addItem(self, item):
+        self._items.append(item)
+
+    def count(self):
+        return len(self._items)
+
+    def itemAt(self, index):
+        if 0 <= index < len(self._items):
+            return self._items[index]
+        return None
+
+    def takeAt(self, index):
+        if 0 <= index < len(self._items):
+            return self._items.pop(index)
+        return None
+
+    def expandingDirections(self):
+        return Qt.Orientation(0)
+
+    def hasHeightForWidth(self):
+        return True
+
+    def heightForWidth(self, width):
+        return self._do_layout(QRect(0, 0, width, 0), test_only=True)
+
+    def setGeometry(self, rect):
+        super().setGeometry(rect)
+        self._do_layout(rect, test_only=False)
+
+    def sizeHint(self):
+        return self.minimumSize()
+
+    def minimumSize(self):
+        size = QSize()
+        for item in self._items:
+            size = size.expandedTo(item.minimumSize())
+        margins = self.contentsMargins()
+        size += QSize(margins.left() + margins.right(), margins.top() + margins.bottom())
+        return size
+
+    def _do_layout(self, rect, test_only):
+        x = rect.x()
+        y = rect.y()
+        line_height = 0
+        spacing = self.spacing()
+        right_edge = rect.x() + rect.width()
+
+        for item in self._items:
+            hint = item.sizeHint()
+            next_x = x + hint.width() + spacing
+            if line_height > 0 and next_x - spacing > right_edge:
+                x = rect.x()
+                y += line_height + spacing
+                next_x = x + hint.width() + spacing
+                line_height = 0
+
+            if not test_only:
+                item.setGeometry(QRect(QPoint(x, y), hint))
+
+            x = next_x
+            line_height = max(line_height, hint.height())
+
+        return y + line_height - rect.y()
+
+
+class LaunchCard(QPushButton):
+    def __init__(self, title, subtitle, icon_text, hint_text, parent=None):
+        super().__init__(parent)
+        self.setObjectName("launch_card")
         self.setCursor(Qt.CursorShape.PointingHandCursor)
-        
+        self._card_size = QSize(280, 196)
+        self.setMinimumSize(self._card_size)
+        self.setMaximumWidth(320)
+        self.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
+
         layout = QVBoxLayout(self)
-        
-        # Title
-        title_lbl = QLabel(title)
-        title_lbl.setStyleSheet("font-weight: bold; font-size: 16px; color: #E0E0E0; background-color: transparent;")
-        layout.addWidget(title_lbl)
-        
-        # Subtitle
-        sub_lbl = QLabel(subtitle)
-        sub_lbl.setStyleSheet("color: #AAAAAA; font-size: 12px; background-color: transparent;")
-        sub_lbl.setWordWrap(True)
-        layout.addWidget(sub_lbl)
-        
+        layout.setContentsMargins(22, 20, 22, 20)
+        layout.setSpacing(14)
+
+        top_row = QHBoxLayout()
+        top_row.setContentsMargins(0, 0, 0, 0)
+        top_row.setSpacing(12)
+
+        badge = QFrame()
+        badge.setObjectName("launch_badge")
+        badge.setFixedSize(46, 46)
+        badge_layout = QVBoxLayout(badge)
+        badge_layout.setContentsMargins(0, 0, 0, 0)
+
+        icon_lbl = QLabel(icon_text)
+        icon_lbl.setObjectName("launch_icon")
+        icon_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        badge_layout.addWidget(icon_lbl)
+
+        top_row.addWidget(badge, 0, Qt.AlignmentFlag.AlignTop)
+        top_row.addStretch()
+        layout.addLayout(top_row)
+
+        self.title_label = QLabel(title)
+        self.title_label.setObjectName("launch_title")
+        self.title_label.setWordWrap(True)
+        layout.addWidget(self.title_label)
+
+        self.subtitle_label = QLabel(subtitle)
+        self.subtitle_label.setObjectName("launch_subtitle")
+        self.subtitle_label.setWordWrap(True)
+        layout.addWidget(self.subtitle_label)
         layout.addStretch()
-        
-        self.setStyleSheet("""
-            ModernButton {
-                background-color: #3C3C3C;
-                border: 1px solid #555555;
-                border-radius: 8px;
-                text-align: left;
-                padding: 10px;
-            }
-            ModernButton:hover {
-                background-color: #4A4A4A;
-                border: 1px solid #007ACC;
-            }
-            ModernButton:pressed {
-                background-color: #333333;
-            }
-        """)
+
+        hint = QLabel(hint_text)
+        hint.setObjectName("launch_hint")
+        layout.addWidget(hint)
+
+    def sizeHint(self):
+        return QSize(self._card_size)
+
+    def minimumSizeHint(self):
+        return QSize(self._card_size)
+
 
 class HomeScreen(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.layout = QHBoxLayout(self)
-        self.layout.setContentsMargins(0, 0, 0, 0)
-        self.layout.setSpacing(0)
-        
-        # Left Panel (Welcome & Actions)
-        left_panel = QFrame()
-        left_panel.setStyleSheet("""
-            QFrame {
-                background-color: #2D2D30;
-                border: none;
-            }
-        """)
-        left_layout = QVBoxLayout(left_panel)
-        left_layout.setContentsMargins(40, 40, 40, 40)
-        
-        # Logo / Header
-        header = QLabel("2DLCAD")
-        header.setStyleSheet("color: #FFFFFF; font-size: 32px; font-weight: bold; background-color: transparent;")
-        left_layout.addWidget(header)
-        
-        welcome = QLabel("Welcome back, User")
-        welcome.setStyleSheet("color: #CCCCCC; font-size: 18px; margin-bottom: 30px; background-color: transparent;")
-        left_layout.addWidget(welcome)
-        
-        # Action Buttons
-        btn_new = ModernButton("New Floor Plan", "Create a new 2D floor plan.")
-        left_layout.addWidget(btn_new)
-        
-        btn_mapper = ModernButton("Launch Anchor Mapper", "Load SVG floor plans, define rooms, place anchors, and save room data.")
-        btn_mapper.setObjectName("btn_anchor_mapper")
-        left_layout.addWidget(btn_mapper)
+        self.setObjectName("home_screen")
+        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        self.setAutoFillBackground(True)
+        self.setStyleSheet(HOME_SCREEN_STYLE)
+        self._intro_group = None
+        self._intro_animations = []
+        self._intro_played_once = False
 
-        btn_rtls = ModernButton("Launch RTLS Dashboard", "Load floor plans with room data and run live RTLS tracking.")
-        btn_rtls.setObjectName("btn_rtls_dashboard")
-        left_layout.addWidget(btn_rtls)
-        
-        left_layout.addStretch()
-        
-        # Bottom info
-        info = QLabel("v2.1.0 (PyQt6 Prototype)")
-        info.setStyleSheet("color: #666666; background-color: transparent;")
-        left_layout.addWidget(info)
-        
-        self.layout.addWidget(left_panel, 1) # Stretch factor 1
-        
-        # Vertical separator between left and right panels
-        separator = QFrame()
-        separator.setFrameShape(QFrame.Shape.VLine)
-        separator.setFixedWidth(1)
-        separator.setStyleSheet("background-color: #3E3E42; border: none;")
-        self.layout.addWidget(separator)
-        
-        # Right Panel (Recent Documents)
-        right_panel = QFrame()
-        right_panel.setStyleSheet("""
-            QFrame {
-                background-color: #1E1E1E;
-                border: none;
-            }
-        """)
-        right_layout = QVBoxLayout(right_panel)
-        right_layout.setContentsMargins(40, 40, 40, 40)
-        
-        recent_header = QLabel("Recent Documents")
-        recent_header.setStyleSheet("color: #FFFFFF; font-size: 18px; font-weight: bold; margin-bottom: 10px; background-color: transparent;")
-        right_layout.addWidget(recent_header)
-        
-        self.recent_list = QListWidget()
-        self.recent_list.setStyleSheet("""
-            QListWidget {
-                background-color: #252526;
-                border: none;
-                color: #D4D4D4;
-                font-size: 14px;
-            }
-            QListWidget::item {
-                padding: 10px;
-                border-bottom: 1px solid #333333;
-            }
-            QListWidget::item:hover {
-                background-color: #3E3E42;
-            }
-        """)
-        
-        # (recent files will be populated dynamically)
-        
-        right_layout.addWidget(self.recent_list)
-        
-        self.layout.addWidget(right_panel, 2) # Stretch factor 2
+        self.btn_new_plan = None
+        self.btn_anchor_mapper = None
+        self.btn_rtls_dashboard = None
+
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(34, 30, 34, 30)
+        outer.setSpacing(24)
+
+        self.hero_panel = self._build_hero_panel()
+        outer.addWidget(self.hero_panel)
+
+        self.tools_panel = self._build_tools_panel()
+        outer.addWidget(self.tools_panel, 1)
+
+        self._intro_targets = [
+            self.hero_panel,
+            self.tools_panel,
+        ]
+
+        QTimer.singleShot(0, self.play_intro_animation)
+
+    def _build_hero_panel(self):
+        panel = QFrame()
+        panel.setObjectName("hero_panel")
+
+        layout = QVBoxLayout(panel)
+        layout.setContentsMargins(30, 24, 30, 24)
+        layout.setSpacing(6)
+
+        badge = QLabel("UWB WORKSPACE")
+        badge.setObjectName("brand_badge")
+        badge.setSizePolicy(QSizePolicy.Policy.Maximum, QSizePolicy.Policy.Fixed)
+        layout.addWidget(badge, 0, Qt.AlignmentFlag.AlignLeft)
+
+        title = QLabel("Welcome, User")
+        title.setObjectName("hero_title")
+        title.setWordWrap(True)
+        layout.addWidget(title)
+
+        copy = QLabel(
+            "Choose a workspace to start drawing floor plans, mapping anchors, or opening live RTLS views."
+        )
+        copy.setObjectName("hero_copy")
+        copy.setWordWrap(True)
+        copy.setMaximumWidth(760)
+        layout.addWidget(copy)
+
+        layout.addStretch(1)
+        return panel
+
+    def _build_tools_panel(self):
+        panel = QFrame()
+        panel.setObjectName("tool_panel")
+
+        layout = QVBoxLayout(panel)
+        layout.setContentsMargins(30, 24, 30, 24)
+        layout.setSpacing(6)
+
+        kicker = QLabel("LAUNCHPAD")
+        kicker.setObjectName("brand_badge")
+        kicker.setSizePolicy(QSizePolicy.Policy.Maximum, QSizePolicy.Policy.Fixed)
+        layout.addWidget(kicker)
+
+        heading = QLabel("Choose a workspace")
+        heading.setObjectName("hero_title")
+        layout.addWidget(heading)
+
+        copy = QLabel(
+            "Each tool opens into its own focused environment."
+        )
+        copy.setObjectName("hero_copy")
+        copy.setWordWrap(True)
+        copy.setMaximumWidth(760)
+        layout.addWidget(copy)
+
+        card_host = QWidget()
+        card_host.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Maximum)
+        layout.addSpacing(12)
+        flow = FlowLayout(card_host, spacing=18)
+        self.launch_cards = []
+
+        tool_specs = [
+            ("Launch 2DLCAD", "Start a fresh CAD workspace for drawing and editing 2D floor plans.", "✦", "CREATE"),
+            ("Launch Anchor Mapper", "Load SVG floor plans, define rooms, place anchors, and save room data.", "⚓", "CONFIGURE"),
+            ("Launch RTLS Dashboard", "Open prepared projects and monitor live RTLS behavior in a focused viewer.", "◉", "TRACK"),
+        ]
+
+        for title, subtitle, icon_text, hint_text in tool_specs:
+            card = LaunchCard(title, subtitle, icon_text, hint_text)
+            self.launch_cards.append(card)
+            flow.addWidget(card)
+
+        self.btn_new_plan = self.launch_cards[0]
+        self.btn_anchor_mapper = self.launch_cards[1]
+        self.btn_rtls_dashboard = self.launch_cards[2]
+
+        layout.addWidget(card_host)
+        layout.addStretch(1)
+        return panel
+
+    def _reset_intro_geometry(self):
+        for widget in self._intro_targets:
+            widget.setMinimumHeight(0)
+            widget.setMaximumHeight(16777215)
+
+    def play_intro_animation(self):
+        if not self.isVisible():
+            return
+
+        if self._intro_group is not None:
+            self._intro_group.stop()
+
+        self._reset_intro_geometry()
+
+        animations = []
+        container = QParallelAnimationGroup(self)
+
+        for index, widget in enumerate(self._intro_targets):
+            target_height = max(1, widget.sizeHint().height())
+            widget.setMinimumHeight(0)
+            widget.setMaximumHeight(0)
+
+            reveal = QPropertyAnimation(widget, b"maximumHeight", self)
+            reveal.setDuration(320)
+            reveal.setStartValue(0)
+            reveal.setEndValue(target_height)
+            reveal.setEasingCurve(QEasingCurve.Type.OutCubic)
+
+            seq = QSequentialAnimationGroup(self)
+            seq.addPause(90 * index)
+            seq.addAnimation(reveal)
+            container.addAnimation(seq)
+            animations.append((widget, reveal, seq, target_height))
+
+        self._intro_group = container
+        self._intro_animations = animations
+        self._intro_group.finished.connect(self._reset_intro_geometry)
+        self._intro_group.start()
+        self._intro_played_once = True
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        QTimer.singleShot(0, self.play_intro_animation)
 
 from cad_core import Viewport, Line, Spline
 from qt_snap import QtSnapController
@@ -1582,16 +1828,9 @@ class MainWindow(QMainWindow):
         self.stack.addWidget(self.home_screen)
         
         # Connect Home Screen buttons
-        buttons = self.home_screen.findChildren(QPushButton)
-        for btn in buttons:
-            lbl = btn.findChild(QLabel)
-            if lbl is None: continue
-            if "New Floor Plan" in lbl.text():
-                btn.clicked.connect(self.go_to_cad)
-            elif "Anchor Mapper" in lbl.text():
-                btn.clicked.connect(self.open_anchor_mapper)
-            elif "RTLS Dashboard" in lbl.text():
-                btn.clicked.connect(self.open_rtls_dashboard)
+        self.home_screen.btn_new_plan.clicked.connect(self.go_to_cad)
+        self.home_screen.btn_anchor_mapper.clicked.connect(self.open_anchor_mapper)
+        self.home_screen.btn_rtls_dashboard.clicked.connect(self.open_rtls_dashboard)
         
         # --- Page 2: CAD Interface ---
         self.cad_container = QWidget()
@@ -2131,6 +2370,7 @@ class MainWindow(QMainWindow):
     def go_to_home(self):
         self.stack.setCurrentWidget(self.home_screen)
         self.dock_tree.hide()
+        self.home_screen.play_intro_animation()
         
     def sync_feature_tree(self):
         # Block signals to prevent feedback loop during sync

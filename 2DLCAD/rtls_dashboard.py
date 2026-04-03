@@ -32,6 +32,7 @@ from PyQt6.QtCore import Qt, QPointF, QEvent, QTimer, pyqtSignal
 
 from map_canvas import MapCanvas, MapMode
 from room_data import Room, Anchor, segments_match
+from utils.font_utils import get_default_font_family
 from room_profiles import (
     load_floorplan_manifest,
     load_project_package,
@@ -45,13 +46,18 @@ from room_profiles import (
 # ──────────────────────────────────────────────────────────────────────────────
 # Style
 # ──────────────────────────────────────────────────────────────────────────────
-DARK_STYLESHEET = """
-QMainWindow, QWidget {
+UI_FONT_FAMILY = get_default_font_family()
+
+DARK_STYLESHEET = (
+f"""
+QMainWindow, QWidget {{
     background-color: #12121f;
     color: #e0e0f0;
-    font-family: 'Segoe UI', 'SF Pro Text', sans-serif;
+    font-family: "{UI_FONT_FAMILY}";
     font-size: 13px;
-}
+}}
+"""
+"""
 QToolBar {
     background-color: #1a1a2e;
     border-bottom: 1px solid #2d2d5e;
@@ -130,6 +136,7 @@ QLabel#title_label {
     padding: 0 12px;
 }
 """
+)
 
 FEATURE_PANEL_STYLE = """
 QWidget#feature_panel {

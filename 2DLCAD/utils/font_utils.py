@@ -5,7 +5,14 @@ current operating system, falling back to common fonts when the preferred one
 is not available.
 """
 import sys
-from PyQt6.QtGui import QFontDatabase
+from PyQt6.QtGui import QFontDatabase, QGuiApplication
+
+
+def _available_families() -> set[str]:
+    app = QGuiApplication.instance()
+    if app is None:
+        return set()
+    return set(QFontDatabase.families())
 
 def get_default_font_family() -> str:
     """Return a font family name that exists on the current platform.
@@ -14,18 +21,16 @@ def get_default_font_family() -> str:
     - Linux/others: "Ubuntu" or "DejaVu Sans" as fallback.
     """
     platform = sys.platform
+    families = _available_families()
     if platform == "darwin":
-        # macOS system font
-        preferred = "SF Pro Display"
-        if preferred in QFontDatabase.families():
-            return preferred
-        # Fallback to generic Apple system UI font
-        return ".AppleSystemUIFont"
+        for preferred in ("SF Pro Display", "SF Pro Text", "Helvetica Neue", "Arial"):
+            if not families or preferred in families:
+                return preferred
+        return "Helvetica Neue"
     elif platform == "win32":
         return "Segoe UI"
     else:
-        # Linux/other
         preferred = "Ubuntu"
-        if preferred in QFontDatabase.families():
+        if not families or preferred in families:
             return preferred
         return "DejaVu Sans"
