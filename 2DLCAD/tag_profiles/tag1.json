@@ -1,0 +1,28 @@
+{
+    "tag_id": "",
+    "identity": {
+        "profile_id": "tag1",
+        "name": "",
+        "height_ft": "",
+        "description": ""
+    },
+    "device": {
+        "mac_address": "",
+        "device_type": "Wrist Band",
+        "wrist_to_floor_ft": "",
+        "arm_to_floor_ft": "",
+        "hip_to_floor_ft": "",
+        "breast_to_floor_ft": "",
+        "description": ""
+    },
+    "calibration": {
+        "equations": {
+            "A0": "",
+            "A1": "",
+            "A2": "",
+            "A3": ""
+        },
+        "last_calibration_date": ""
+    },
+    "notes": ""
+}

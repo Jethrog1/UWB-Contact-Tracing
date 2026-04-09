@@ -1,6 +1,6 @@
 {
     "room_name": "room6",
-    "saved_at": "2026-04-03T04:23:03",
+    "saved_at": "2026-04-03T13:18:17",
     "units": "ft",
     "rtls_settings": {
         "tag_height_ft": 0.0,
@@ -12,7 +12,7 @@
         "max_x": -44.523,
         "max_y": 91.882,
         "width": 7.799,
-        "height": 5.964
+        "height": 5.965
     },
     "anchors": [
         {
@@ -20,6 +20,12 @@
             "hardware_id": "",
             "x_ft": 4.946,
             "y_ft": 4.283
+        },
+        {
+            "id": "R6A1",
+            "hardware_id": "",
+            "x_ft": 6.398,
+            "y_ft": 2.741
         }
     ],
     "segments_ft": [
