@@ -4,6 +4,7 @@ import json
 import os
 
 from PyQt6.QtCore import Qt, pyqtSignal
+from PyQt6.QtGui import QHelpEvent
 from PyQt6.QtWidgets import (
     QFileDialog,
     QComboBox,
@@ -18,6 +19,7 @@ from PyQt6.QtWidgets import (
     QPlainTextEdit,
     QScrollArea,
     QSizePolicy,
+    QToolTip,
     QVBoxLayout,
     QWidget,
 )
@@ -27,6 +29,25 @@ from utils.font_utils import get_default_font_family
 
 DEVICE_TYPES = ["Wrist Band", "Arm Band", "Belt Clip-on", "Breast Pocket"]
 TAG_PROFILE_DIR = os.path.join(os.path.dirname(__file__), "tag_profiles")
+FIELD_HELP = {
+    "profile_id": "Internal profile identifier used to save, search, and reference this tag record.",
+    "name": "Human-readable name assigned to the person or profile.",
+    "tag_id": "Physical RTLS tag identifier assigned to the device.",
+    "identity_description": "Optional identifying notes that help distinguish this record from similar profiles.",
+    "mac_address": "Hardware MAC address for the RTLS device, if known.",
+    "device_type": "Where the tag is normally worn or mounted on the body.",
+    "wrist_to_floor_ft": "Measured wrist height from the floor for a wrist-mounted device.",
+    "arm_to_floor_ft": "Measured arm height from the floor for an arm-mounted device.",
+    "hip_to_floor_ft": "Measured hip height from the floor for a belt or waist-mounted device.",
+    "breast_to_floor_ft": "Measured chest height from the floor for a breast-pocket device.",
+    "device_description": "Optional notes about placement habits, hardware fit, or device-specific details.",
+    "eq_a0": "Calibration equation or correction value associated with anchor A0.",
+    "eq_a1": "Calibration equation or correction value associated with anchor A1.",
+    "eq_a2": "Calibration equation or correction value associated with anchor A2.",
+    "eq_a3": "Calibration equation or correction value associated with anchor A3.",
+    "last_calibration_date": "Date this profile or its correction values were last calibrated.",
+    "notes": "General operational notes that do not fit into the other sections.",
+}
 TAG_PROFILER_STYLE = f"""
 QWidget#tag_profiler_root {{
     background-color: #12121f;
@@ -92,6 +113,19 @@ QLabel#field_label {{
     font-size: 11px;
     font-weight: 600;
 }}
+QLabel#help_icon {{
+    color: #9fb4e6;
+    background-color: rgba(36, 50, 81, 0.95);
+    border: 1px solid rgba(120, 146, 194, 0.34);
+    border-radius: 7px;
+    font-size: 10px;
+    font-weight: 700;
+    min-width: 14px;
+    max-width: 14px;
+    min-height: 14px;
+    max-height: 14px;
+    padding: 0px;
+}}
 QLineEdit, QComboBox, QPlainTextEdit {{
     background-color: rgba(11, 15, 24, 0.82);
     color: #eef2ff;
@@ -113,6 +147,13 @@ QComboBox::down-arrow {{
 }}
 QPlainTextEdit {{
     min-height: 78px;
+}}
+QToolTip {{
+    background-color: rgba(16, 22, 35, 245);
+    color: #eef2ff;
+    border: 1px solid rgba(120, 146, 194, 0.40);
+    border-radius: 8px;
+    padding: 6px 8px;
 }}
 QFrame#summary_card {{
     background-color: rgba(14, 19, 30, 0.96);
@@ -143,7 +184,6 @@ def _empty_profile() -> dict:
         "identity": {
             "profile_id": "",
             "name": "",
-            "height_ft": "",
             "description": "",
         },
         "device": {
@@ -194,6 +234,73 @@ class SectionCard(QFrame):
         self.body_layout.setSpacing(6)
         outer.addLayout(self.body_layout)
         outer.addStretch(1)
+
+
+class HoverHelpIcon(QLabel):
+    def __init__(self, help_text: str = "", parent=None):
+        super().__init__("i", parent)
+        self._help_text = help_text.strip()
+        self.setObjectName("help_icon")
+        self.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.setMouseTracking(True)
+        if self._help_text:
+            self.setToolTip(self._help_text)
+            self.setCursor(Qt.CursorShape.WhatsThisCursor)
+
+    def enterEvent(self, event):
+        if self._help_text:
+            QToolTip.showText(
+                self.mapToGlobal(self.rect().bottomLeft()),
+                self._help_text,
+                self,
+                self.rect(),
+                8000,
+            )
+        super().enterEvent(event)
+
+    def mouseMoveEvent(self, event):
+        if self._help_text:
+            QToolTip.showText(
+                self.mapToGlobal(event.position().toPoint()) + self.rect().bottomLeft() - self.rect().topLeft(),
+                self._help_text,
+                self,
+                self.rect(),
+                8000,
+            )
+        super().mouseMoveEvent(event)
+
+    def leaveEvent(self, event):
+        QToolTip.hideText()
+        super().leaveEvent(event)
+
+    def event(self, event):
+        if event.type() == event.Type.ToolTip and self._help_text:
+            help_event = event if isinstance(event, QHelpEvent) else None
+            if help_event is not None:
+                QToolTip.showText(help_event.globalPos(), self._help_text, self, self.rect(), 8000)
+            return True
+        return super().event(event)
+
+
+class FieldLabelWidget(QWidget):
+    def __init__(self, text: str, help_text: str = "", width: int = 132, parent=None):
+        super().__init__(parent)
+        self.setFixedWidth(width)
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(6)
+
+        label = QLabel(text, self)
+        label.setObjectName("field_label")
+        layout.addWidget(label, 1)
+
+        if help_text:
+            layout.addWidget(HoverHelpIcon(help_text, self), 0, Qt.AlignmentFlag.AlignTop)
+        else:
+            spacer = QWidget(self)
+            spacer.setFixedWidth(14)
+            spacer.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
+            layout.addWidget(spacer, 0, Qt.AlignmentFlag.AlignTop)
 
 
 class TagProfilerWorkspace(QWidget):
@@ -338,17 +445,15 @@ class TagProfilerWorkspace(QWidget):
         form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.ExpandingFieldsGrow)
         return form
 
-    def _make_field_label(self, label: str) -> QLabel:
-        lbl = QLabel(label, self)
-        lbl.setObjectName("field_label")
-        lbl.setFixedWidth(self.LABEL_WIDTH)
-        return lbl
+    def _make_field_label(self, label: str, help_text: str = "") -> QWidget:
+        return FieldLabelWidget(label, help_text, self.LABEL_WIDTH, self)
 
     def _add_line(self, form: QFormLayout, key: str, label: str):
         edit = QLineEdit(self)
         edit.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         self._fields[key] = edit
-        lbl = self._make_field_label(label)
+        help_text = FIELD_HELP.get(key, "")
+        lbl = self._make_field_label(label, help_text)
         form.addRow(lbl, edit)
         edit.textChanged.connect(self._update_summary)
         return edit
@@ -358,7 +463,8 @@ class TagProfilerWorkspace(QWidget):
         combo.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         combo.addItems(items)
         self._fields[key] = combo
-        lbl = self._make_field_label(label)
+        help_text = FIELD_HELP.get(key, "")
+        lbl = self._make_field_label(label, help_text)
         form.addRow(lbl, combo)
         combo.currentTextChanged.connect(self._update_summary)
         return combo
@@ -368,7 +474,8 @@ class TagProfilerWorkspace(QWidget):
         text.setFixedHeight(height)
         text.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         self._fields[key] = text
-        lbl = self._make_field_label(label)
+        help_text = FIELD_HELP.get(key, "")
+        lbl = self._make_field_label(label, help_text)
         form.addRow(lbl, text)
         text.textChanged.connect(self._update_summary)
         return text
@@ -379,8 +486,7 @@ class TagProfilerWorkspace(QWidget):
         self._add_line(form, "profile_id", "Profile ID")
         self._add_line(form, "name", "Name")
         self._add_line(form, "tag_id", "Tag ID")
-        self._add_line(form, "height_ft", "Height (ft)")
-        self._add_text(form, "identity_description", "Description", 82)
+        self._add_text(form, "identity_description", "Description", 116)
         card.body_layout.addLayout(form)
         return card
 
@@ -442,7 +548,6 @@ class TagProfilerWorkspace(QWidget):
         payload["tag_id"] = self._get_text("tag_id")
         payload["identity"]["profile_id"] = self._get_text("profile_id")
         payload["identity"]["name"] = self._get_text("name")
-        payload["identity"]["height_ft"] = self._get_text("height_ft")
         payload["identity"]["description"] = self._get_text("identity_description")
         payload["device"]["mac_address"] = self._get_text("mac_address")
         payload["device"]["device_type"] = self._get_text("device_type") or DEVICE_TYPES[0]
@@ -466,7 +571,6 @@ class TagProfilerWorkspace(QWidget):
                 "tag_id": payload["tag_id"],
                 "profile_id": payload["identity"]["profile_id"],
                 "name": payload["identity"]["name"],
-                "height_ft": payload["identity"]["height_ft"],
                 "identity_description": payload["identity"]["description"],
                 "mac_address": payload["device"]["mac_address"],
                 "device_type": payload["device"]["device_type"],
