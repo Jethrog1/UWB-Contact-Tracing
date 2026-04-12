@@ -1363,12 +1363,21 @@ class RoomDetailDialog(QDialog):
 
     def _on_raw_line(self, line: str):
         if hasattr(self, 'debug_log'):
-            self.debug_log.append(f"<span style='color:#666'>RAW: {line[:70]}</span>")
-            self.debug_log.verticalScrollBar().setValue(self.debug_log.verticalScrollBar().maximum())
+            # Suppress noisy firmware status lines from the RAW display
+            _stripped = line.lstrip()
+            _is_status = any(_stripped.startswith(p) for p in ("[*]", "[-]", "[+]", "[!]", "[#]", "//", "#"))
+            if not _is_status:
+                self.debug_log.append(f"<span style='color:#666'>RAW: {line[:70]}</span>")
+                self.debug_log.verticalScrollBar().setValue(self.debug_log.verticalScrollBar().maximum())
 
     def _on_debug_msg(self, msg: str):
         if hasattr(self, 'debug_log'):
-            color = "#e74c3c" if "WARN" in msg or "SKIP" in msg else "#2ecc71"
+            if "WARN" in msg or "SKIP" in msg:
+                color = "#e74c3c"
+            elif msg.startswith("[INFO]"):
+                color = "#5b9bd5"   # muted blue for firmware status messages
+            else:
+                color = "#2ecc71"
             self.debug_log.append(f"<span style='color:{color}'>{msg}</span>")
             self.debug_log.verticalScrollBar().setValue(self.debug_log.verticalScrollBar().maximum())
 

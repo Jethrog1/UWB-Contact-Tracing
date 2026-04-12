@@ -202,7 +202,21 @@ class SerialReaderThread(QThread):
 
                         tag_id, distances = self._parse_line(line)
                         if tag_id is None or not distances:
-                            self.debug_msg.emit(f"[SKIP] Could not parse: {line[:60]}")
+                            # Suppress noise from well-known firmware status prefixes
+                            _stripped = line.lstrip()
+                            _is_status = (
+                                _stripped.startswith("[*]") or
+                                _stripped.startswith("[-]") or
+                                _stripped.startswith("[+]") or
+                                _stripped.startswith("[!]") or
+                                _stripped.startswith("[#]") or
+                                _stripped.startswith("//") or
+                                _stripped.startswith("#")
+                            )
+                            if _is_status:
+                                self.debug_msg.emit(f"[INFO] {line[:80]}")
+                            else:
+                                self.debug_msg.emit(f"[SKIP] Could not parse: {line[:60]}")
                             continue
 
                         if not self.anchor_positions:
@@ -296,7 +310,20 @@ class RawDistanceReaderThread(QThread):
                         self.raw_line.emit(line)
                         tag_id, distances = parse_distance_packet(line)
                         if tag_id is None or not distances:
-                            self.debug_msg.emit(f"[SKIP] Could not parse: {line[:60]}")
+                            _stripped = line.lstrip()
+                            _is_status = (
+                                _stripped.startswith("[*]") or
+                                _stripped.startswith("[-]") or
+                                _stripped.startswith("[+]") or
+                                _stripped.startswith("[!]") or
+                                _stripped.startswith("[#]") or
+                                _stripped.startswith("//") or
+                                _stripped.startswith("#")
+                            )
+                            if _is_status:
+                                self.debug_msg.emit(f"[INFO] {line[:80]}")
+                            else:
+                                self.debug_msg.emit(f"[SKIP] Could not parse: {line[:60]}")
                             continue
 
                         self.distances_update.emit(tag_id, distances)
