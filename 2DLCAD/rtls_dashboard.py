@@ -47,6 +47,12 @@ from workspace_switcher import WorkspaceSwitcher
 from tag_profile_utils import load_tag_profile_lookup, resolve_tag_anchor_correction, resolve_tag_height
 
 
+TAG_VISIBILITY_TIMEOUT_SEC = 1.5
+TAG_STALE_TIMEOUT_SEC = 4.0
+TAG_REASSIGN_GRACE_SEC = 0.75
+TAG_RECONNECT_BACKOFF_SEC = 1.25
+
+
 # ──────────────────────────────────────────────────────────────────────────────
 # Style
 # ──────────────────────────────────────────────────────────────────────────────
@@ -517,6 +523,8 @@ class RTLSDashboard(QMainWindow):
         self._live_tags_world: dict[str, tuple[float, float]] = {}
         self._active_tags_world: dict[str, tuple[float, float]] = {}
         self._live_tag_last_seen: dict[str, float] = {}
+        self._live_tag_runtime: dict[str, dict] = {}
+        self._open_room_dialogs: dict[int, object] = {}
         self._using_mock_rtls = False
         self._mock_room: Room | None = None
         self._tag_profile_lookup = load_tag_profile_lookup()
@@ -1390,6 +1398,12 @@ class RTLSDashboard(QMainWindow):
         
     def _open_room_view(self, room):
         self._show_status(f"Opening Room view for: {room.name}")
+        room_key = id(room)
+        existing = self._open_room_dialogs.get(room_key)
+        if existing is not None and existing.isVisible():
+            existing.raise_()
+            existing.activateWindow()
+            return
         
         from room_detail_view import RoomDetailDialog
         dlg = RoomDetailDialog(
@@ -1403,10 +1417,20 @@ class RTLSDashboard(QMainWindow):
                 else None
             ),
         )
-        dlg.exec()
-        
-        # Refresh list to update anchor count label (e.g. "Room 1 (4 anchors)")
-        self._refresh_room_list()
+        dlg.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose, True)
+        dlg.setModal(False)
+        dlg.setWindowModality(Qt.WindowModality.NonModal)
+        self._open_room_dialogs[room_key] = dlg
+
+        def _cleanup_dialog(_obj=None, key=room_key):
+            self._open_room_dialogs.pop(key, None)
+            self._refresh_room_list()
+
+        dlg.finished.connect(_cleanup_dialog)
+        dlg.destroyed.connect(_cleanup_dialog)
+        dlg.show()
+        dlg.raise_()
+        dlg.activateWindow()
         
     def _on_list_selection(self):
         items = self._room_list.selectedItems()
@@ -1471,6 +1495,127 @@ class RTLSDashboard(QMainWindow):
 
     def _resolve_tag_distance(self, tag_id: str, anchor_id: str, raw_distance: float) -> float:
         return resolve_tag_anchor_correction(tag_id, anchor_id, raw_distance, self._tag_profile_lookup)
+
+    def _build_tag_mac_lookup(self) -> dict[str, str]:
+        from serial_reader import build_tag_mac_lookup
+
+        return build_tag_mac_lookup(self._tag_profile_lookup)
+
+    def _log_rtls_event(self, message: str):
+        print(f"[RTLS] {message}")
+
+    def _ensure_live_tag_record(self, tag_id: str) -> dict:
+        tag_id = str(tag_id).strip()
+        record = self._live_tag_runtime.get(tag_id)
+        if record is None:
+            record = {
+                "state": "OFF",
+                "owner_box": None,
+                "connected_box": None,
+                "last_seen_box": None,
+                "last_seen_at": 0.0,
+                "last_position": None,
+                "visible_boxes": {},
+                "box_states": {},
+                "awaiting_disconnect_until": 0.0,
+            }
+            self._live_tag_runtime[tag_id] = record
+        return record
+
+    @staticmethod
+    def _default_box_state() -> dict:
+        return {
+            "state": "OFF",
+            "updated_at": 0.0,
+            "last_visible_at": 0.0,
+            "next_retry_at": 0.0,
+        }
+
+    def _refresh_live_tags_from_runtime(self):
+        live_tags = {}
+        live_last_seen = {}
+        for tag_id, record in self._live_tag_runtime.items():
+            position = record.get("last_position")
+            if position is None:
+                continue
+            if record.get("state") in {"VISIBLE", "CONNECTED", "CONNECTING", "DISCOVERED"}:
+                live_tags[tag_id] = position
+                live_last_seen[tag_id] = float(record.get("last_seen_at") or 0.0)
+
+        self._live_tags_world = live_tags
+        self._live_tag_last_seen = live_last_seen
+        if self._history_follow_live:
+            self._active_tags_world = dict(self._live_tags_world)
+            self._canvas.set_active_tags_world(self._active_tags_world)
+
+    def _reconcile_live_tag_record(self, tag_id: str, now: float | None = None, preferred_box: str | None = None):
+        now = time.monotonic() if now is None else now
+        record = self._ensure_live_tag_record(tag_id)
+        previous_owner = record.get("owner_box")
+
+        for box_id, last_seen in list(record["visible_boxes"].items()):
+            if now - last_seen <= TAG_VISIBILITY_TIMEOUT_SEC:
+                continue
+            record["visible_boxes"].pop(box_id, None)
+            box_state = record["box_states"].setdefault(box_id, self._default_box_state())
+            if box_state["state"] in {"VISIBLE", "CONNECTED", "CONNECTING", "DISCOVERED"}:
+                box_state["state"] = "OUT_OF_RANGE"
+                box_state["updated_at"] = now
+                self._log_rtls_event(f"Tag marked OUT_OF_RANGE after timeout: {tag_id} on box {box_id}")
+            if record.get("connected_box") == box_id and now >= record.get("awaiting_disconnect_until", 0.0):
+                record["connected_box"] = None
+
+        connected_box = record.get("connected_box")
+        if connected_box and connected_box not in record["box_states"]:
+            record["connected_box"] = None
+            connected_box = None
+
+        visible_boxes = record["visible_boxes"]
+        candidate_box = None
+        if preferred_box and preferred_box in visible_boxes:
+            candidate_box = preferred_box
+        elif visible_boxes:
+            candidate_box = max(visible_boxes, key=visible_boxes.get)
+
+        owner_box = previous_owner
+        if connected_box and connected_box in visible_boxes:
+            owner_box = connected_box
+        elif candidate_box is None:
+            owner_box = None
+        elif previous_owner is None or previous_owner == candidate_box:
+            owner_box = candidate_box
+        else:
+            previous_seen = visible_boxes.get(previous_owner, 0.0)
+            previous_recent = previous_seen > 0.0 and (now - previous_seen) <= TAG_REASSIGN_GRACE_SEC
+            blocking_disconnect = (
+                record.get("connected_box") == previous_owner
+                and now < record.get("awaiting_disconnect_until", 0.0)
+            )
+            if previous_recent and blocking_disconnect:
+                owner_box = previous_owner
+            else:
+                owner_box = candidate_box
+
+        if previous_owner and owner_box is None and previous_owner != owner_box:
+            self._log_rtls_event(f"Clearing stale association: {tag_id} last seen on box {previous_owner}")
+        elif previous_owner and owner_box and previous_owner != owner_box:
+            self._log_rtls_event(f"Reassociating {tag_id} from box {previous_owner} to {owner_box}")
+
+        record["owner_box"] = owner_box
+        if record.get("last_seen_at", 0.0) <= 0.0:
+            record["state"] = "OFF"
+        elif owner_box and owner_box in visible_boxes:
+            record["state"] = "VISIBLE"
+        elif connected_box:
+            record["state"] = "CONNECTED"
+        elif now < record.get("awaiting_disconnect_until", 0.0):
+            record["state"] = "DISCONNECTING"
+        elif any(now < state.get("next_retry_at", 0.0) for state in record["box_states"].values()):
+            record["state"] = "ERROR"
+        elif now - record.get("last_seen_at", 0.0) > TAG_STALE_TIMEOUT_SEC:
+            record["state"] = "STALE"
+        else:
+            record["state"] = "OUT_OF_RANGE"
 
     def _build_global_anchor_positions(self, port_filter: str | None = None):
         anchor_positions = {}
@@ -1576,6 +1721,7 @@ class RTLSDashboard(QMainWindow):
                 self._rtls_connect_btn.blockSignals(False)
                 return
             self._tag_profile_lookup = load_tag_profile_lookup()
+            tag_mac_lookup = self._build_tag_mac_lookup()
 
             try:
                 if port == "Virtual MOCK_RTLS":
@@ -1602,8 +1748,17 @@ class RTLSDashboard(QMainWindow):
                             tag_height=self._default_global_tag_height(),
                             tag_height_lookup=self._resolve_tag_height,
                             distance_correction_lookup=self._resolve_tag_distance,
+                            source_id=module,
+                            mac_lookup=tag_mac_lookup,
                         )
-                        thread.tag_update.connect(self._on_global_tag_update)
+                        if hasattr(thread, "tag_update_source"):
+                            thread.tag_update_source.connect(self._on_global_tag_update_source)
+                        else:
+                            thread.tag_update.connect(
+                                lambda tag_id, x, y, source_box=module: self._on_global_tag_update_source(tag_id, x, y, source_box)
+                            )
+                        if hasattr(thread, "tag_state"):
+                            thread.tag_state.connect(self._on_global_tag_state)
                         thread.connection_error.connect(lambda err, m=module: self._on_global_rtls_error(f"{m}: {err}"))
                         thread.start()
                         self._global_serial_threads[module] = thread
@@ -1629,11 +1784,20 @@ class RTLSDashboard(QMainWindow):
                         tag_height=self._default_global_tag_height(),
                         tag_height_lookup=self._resolve_tag_height,
                         distance_correction_lookup=self._resolve_tag_distance,
+                        source_id=port,
+                        mac_lookup=tag_mac_lookup,
                     )
                     self._using_mock_rtls = False
                     self._mock_room = None
                 if self._global_serial_thread is not None:
-                    self._global_serial_thread.tag_update.connect(self._on_global_tag_update)
+                    if hasattr(self._global_serial_thread, "tag_update_source"):
+                        self._global_serial_thread.tag_update_source.connect(self._on_global_tag_update_source)
+                    else:
+                        self._global_serial_thread.tag_update.connect(
+                            lambda tag_id, x, y, source_box=port: self._on_global_tag_update_source(tag_id, x, y, source_box)
+                        )
+                    if hasattr(self._global_serial_thread, "tag_state"):
+                        self._global_serial_thread.tag_state.connect(self._on_global_tag_state)
                     self._global_serial_thread.connection_error.connect(self._on_global_rtls_error)
                     self._global_serial_thread.start()
             except Exception as exc:
@@ -1677,6 +1841,7 @@ class RTLSDashboard(QMainWindow):
         self._mock_room = None
         self._live_tags_world.clear()
         self._live_tag_last_seen.clear()
+        self._live_tag_runtime.clear()
         if hasattr(self, "_rtls_connect_btn"):
             self._rtls_connect_btn.blockSignals(True)
             self._rtls_connect_btn.setChecked(False)
@@ -1696,15 +1861,78 @@ class RTLSDashboard(QMainWindow):
         self._refresh_history_controls()
 
     def _on_global_tag_update(self, tag_id: str, x: float, y: float):
+        source_box = "MOCK_RTLS" if self._using_mock_rtls else "GLOBAL"
+        self._on_global_tag_update_source(tag_id, x, y, source_box)
+
+    def _on_global_tag_update_source(self, tag_id: str, x: float, y: float, source_box: str):
         if self._using_mock_rtls and self._mock_room is not None:
             wx, wy = self._mock_room.local_to_world(x, y)
         else:
             wx, wy = x, y
-        self._live_tags_world[tag_id] = (wx, wy)
-        self._live_tag_last_seen[tag_id] = time.monotonic()
-        if self._history_follow_live:
-            self._active_tags_world = dict(self._live_tags_world)
-            self._canvas.set_active_tags_world(self._active_tags_world)
+        now = time.monotonic()
+        source_box = str(source_box).strip() or "UNKNOWN"
+        record = self._ensure_live_tag_record(tag_id)
+        box_state = record["box_states"].setdefault(source_box, self._default_box_state())
+
+        box_state["state"] = "VISIBLE"
+        box_state["updated_at"] = now
+        box_state["last_visible_at"] = now
+        record["visible_boxes"][source_box] = now
+        record["last_seen_box"] = source_box
+        record["last_seen_at"] = now
+        record["last_position"] = (wx, wy)
+
+        self._reconcile_live_tag_record(tag_id, now=now, preferred_box=source_box)
+        self._refresh_live_tags_from_runtime()
+
+    def _on_global_tag_state(self, event: object):
+        if not isinstance(event, dict):
+            return
+        tag_id = str(event.get("tag_id", "")).strip()
+        state = str(event.get("state", "")).strip()
+        source_box = str(event.get("source_box", "")).strip() or "UNKNOWN"
+        if not tag_id or not state:
+            return
+
+        now = float(event.get("updated_at") or time.monotonic())
+        record = self._ensure_live_tag_record(tag_id)
+        box_state = record["box_states"].setdefault(source_box, self._default_box_state())
+        previous_state = box_state.get("state", "OFF")
+        previous_owner = record.get("owner_box")
+
+        if state == "CONNECTING":
+            if previous_state in {"CONNECTING", "CONNECTED", "DISCONNECTING"}:
+                self._log_rtls_event(f"Skipping connect: {tag_id} already {previous_state} on box {source_box}")
+            if previous_owner and previous_owner != source_box:
+                self._log_rtls_event(f"Reconnect blocked: awaiting disconnect callback for {tag_id} from box {previous_owner}")
+                record["awaiting_disconnect_until"] = max(
+                    float(record.get("awaiting_disconnect_until", 0.0)),
+                    now + TAG_RECONNECT_BACKOFF_SEC,
+                )
+        elif state == "CONNECTED":
+            record["connected_box"] = source_box
+            record["awaiting_disconnect_until"] = 0.0
+        elif state == "DISCONNECTING":
+            if record.get("connected_box") == source_box:
+                record["connected_box"] = None
+            record["awaiting_disconnect_until"] = max(
+                float(record.get("awaiting_disconnect_until", 0.0)),
+                now + TAG_RECONNECT_BACKOFF_SEC,
+            )
+        elif state == "ERROR":
+            if record.get("connected_box") == source_box:
+                record["connected_box"] = None
+            box_state["next_retry_at"] = max(
+                float(box_state.get("next_retry_at", 0.0)),
+                float(event.get("next_retry_at") or (now + TAG_RECONNECT_BACKOFF_SEC)),
+            )
+        elif state in {"OUT_OF_RANGE", "STALE"} and record.get("connected_box") == source_box:
+            record["connected_box"] = None
+
+        box_state["state"] = state
+        box_state["updated_at"] = now
+        self._reconcile_live_tag_record(tag_id, now=now)
+        self._refresh_live_tags_from_runtime()
 
     def _on_global_rtls_error(self, err: str):
         should_retry = False
@@ -1720,23 +1948,12 @@ class RTLSDashboard(QMainWindow):
         QMessageBox.warning(self, "RTLS Error", err)
 
     def _prune_stale_live_tags(self):
-        if not self._live_tag_last_seen:
+        if not self._live_tag_runtime:
             return
         now = time.monotonic()
-        stale_ids = [
-            tag_id for tag_id, seen_at in self._live_tag_last_seen.items()
-            if now - seen_at > 1.5
-        ]
-        if not stale_ids:
-            return
-        changed = False
-        for tag_id in stale_ids:
-            self._live_tag_last_seen.pop(tag_id, None)
-            if self._live_tags_world.pop(tag_id, None) is not None:
-                changed = True
-        if changed and self._history_follow_live:
-            self._active_tags_world = dict(self._live_tags_world)
-            self._canvas.set_active_tags_world(self._active_tags_world)
+        for tag_id in list(self._live_tag_runtime.keys()):
+            self._reconcile_live_tag_record(tag_id, now=now)
+        self._refresh_live_tags_from_runtime()
 
     def _capture_rtls_history_frame(self):
         if not self._global_rtls_connected() or not self._live_tags_world:
@@ -1903,6 +2120,8 @@ class RTLSDashboard(QMainWindow):
         self._history_follow_live = True
         self._live_tags_world.clear()
         self._active_tags_world.clear()
+        self._live_tag_last_seen.clear()
+        self._live_tag_runtime.clear()
         self._canvas.set_heatmap_snapshot_mode(False)
         self._canvas.clear_active_tags()
         self._refresh_history_controls()

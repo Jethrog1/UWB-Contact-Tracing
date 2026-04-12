@@ -10,6 +10,111 @@ except ImportError:
     serial = None
 
 
+TAG_STATE_OFF = "OFF"
+TAG_STATE_DISCOVERED = "DISCOVERED"
+TAG_STATE_VISIBLE = "VISIBLE"
+TAG_STATE_CONNECTING = "CONNECTING"
+TAG_STATE_CONNECTED = "CONNECTED"
+TAG_STATE_OUT_OF_RANGE = "OUT_OF_RANGE"
+TAG_STATE_DISCONNECTING = "DISCONNECTING"
+TAG_STATE_STALE = "STALE"
+TAG_STATE_ERROR = "ERROR"
+
+_MAC_RE = re.compile(r"([0-9A-Fa-f]{2}(?::[0-9A-Fa-f]{2}){5})")
+
+
+def normalize_mac(value: str) -> str:
+    return str(value or "").strip().lower().replace("-", ":")
+
+
+def build_tag_mac_lookup(tag_profile_lookup: dict | None) -> dict[str, str]:
+    lookup = {}
+    if not tag_profile_lookup:
+        return lookup
+
+    for tag_id, payload in tag_profile_lookup.items():
+        device = payload.get("device", {}) if isinstance(payload, dict) else {}
+        mac = normalize_mac(device.get("mac_address", ""))
+        if mac:
+            lookup[mac] = str(tag_id).strip()
+    return lookup
+
+
+def parse_ble_status_line(line: str, mac_lookup: dict | None = None, last_attempting_tag: str | None = None):
+    if " -> " in line:
+        line = line.split(" -> ", 1)[1]
+    line = line.strip()
+    if not line:
+        return None
+
+    lower = line.lower()
+    mac_match = _MAC_RE.search(line)
+    mac = normalize_mac(mac_match.group(1)) if mac_match else ""
+    tag_id = mac_lookup.get(mac) if mac and mac_lookup else None
+
+    if "[*] Attempting to connect to" in line:
+        return {
+            "kind": "status",
+            "state": TAG_STATE_CONNECTING,
+            "tag_id": tag_id,
+            "mac_address": mac,
+            "line": line,
+            "message": line,
+        }
+
+    if "[+] Connected to" in line:
+        return {
+            "kind": "status",
+            "state": TAG_STATE_CONNECTED,
+            "tag_id": tag_id,
+            "mac_address": mac,
+            "line": line,
+            "message": line,
+        }
+
+    if "connection failed" in lower:
+        return {
+            "kind": "status",
+            "state": TAG_STATE_ERROR,
+            "tag_id": tag_id or last_attempting_tag,
+            "mac_address": mac,
+            "line": line,
+            "message": line,
+        }
+
+    if "disconnect" in lower:
+        return {
+            "kind": "status",
+            "state": TAG_STATE_DISCONNECTING,
+            "tag_id": tag_id or last_attempting_tag,
+            "mac_address": mac,
+            "line": line,
+            "message": line,
+        }
+
+    if "scan" in lower or "discover" in lower or "found" in lower:
+        return {
+            "kind": "status",
+            "state": TAG_STATE_DISCOVERED,
+            "tag_id": tag_id,
+            "mac_address": mac,
+            "line": line,
+            "message": line,
+        }
+
+    if line.startswith(("[*]", "[+]", "[-]", "[!]")):
+        return {
+            "kind": "status",
+            "state": None,
+            "tag_id": tag_id or last_attempting_tag,
+            "mac_address": mac,
+            "line": line,
+            "message": line,
+        }
+
+    return None
+
+
 def parse_distance_packet(line: str):
     """
     Parse a hardware distance packet of the form:
@@ -159,6 +264,8 @@ class SerialReaderThread(QThread):
     and emits (tag_id, x, y) once a position is resolved.
     """
     tag_update = pyqtSignal(str, float, float)
+    tag_update_source = pyqtSignal(str, float, float, str)
+    tag_state = pyqtSignal(object)
     connection_error = pyqtSignal(str)
     raw_line = pyqtSignal(str)          # every serial line received
     debug_msg = pyqtSignal(str)         # diagnostic messages
@@ -171,6 +278,8 @@ class SerialReaderThread(QThread):
         tag_height: float = 0.0,
         tag_height_lookup=None,
         distance_correction_lookup=None,
+        source_id: str | None = None,
+        mac_lookup: dict | None = None,
     ):
         super().__init__()
         self.port = port
@@ -180,10 +289,63 @@ class SerialReaderThread(QThread):
         self.tag_height = tag_height
         self.tag_height_lookup = tag_height_lookup
         self.distance_correction_lookup = distance_correction_lookup
+        self.source_id = str(source_id or port).strip() or str(port).strip()
+        self.mac_lookup = {normalize_mac(k): v for k, v in (mac_lookup or {}).items()}
         self._last_positions = {}
+        self._tag_states = {}
+        self._last_attempting_tag = None
 
     def _parse_line(self, line: str):
         return parse_distance_packet(line)
+
+    def _emit_tag_state(self, tag_id: str | None, state: str | None, line: str, mac_address: str = ""):
+        if not tag_id or not state:
+            return
+        now = time.monotonic()
+        tag_state = self._tag_states.setdefault(tag_id, {})
+        tag_state["state"] = state
+        tag_state["updated_at"] = now
+        if state == TAG_STATE_CONNECTING:
+            self._last_attempting_tag = tag_id
+        elif state in (TAG_STATE_CONNECTED, TAG_STATE_VISIBLE, TAG_STATE_OUT_OF_RANGE, TAG_STATE_STALE):
+            self._last_attempting_tag = None
+        elif state == TAG_STATE_ERROR:
+            tag_state["next_retry_at"] = now + 1.25
+
+        self.tag_state.emit(
+            {
+                "tag_id": tag_id,
+                "state": state,
+                "source_box": self.source_id,
+                "mac_address": mac_address,
+                "line": line,
+                "updated_at": now,
+                "next_retry_at": tag_state.get("next_retry_at", 0.0),
+            }
+        )
+
+    def _handle_status_line(self, line: str) -> bool:
+        status = parse_ble_status_line(line, self.mac_lookup, self._last_attempting_tag)
+        if status is None:
+            return False
+
+        self.debug_msg.emit(f"[BLE] {status['message']}")
+
+        tag_id = status.get("tag_id")
+        state = status.get("state")
+        previous_state = self._tag_states.get(tag_id, {}).get("state") if tag_id else None
+
+        if tag_id and state == TAG_STATE_CONNECTING and previous_state in (
+            TAG_STATE_CONNECTING,
+            TAG_STATE_CONNECTED,
+            TAG_STATE_DISCONNECTING,
+        ):
+            self.debug_msg.emit(
+                f"Skipping connect: {tag_id} already {previous_state} on box {self.source_id}"
+            )
+
+        self._emit_tag_state(tag_id, state, status["line"], mac_address=status.get("mac_address", ""))
+        return True
 
     def run(self):
         if serial is None:
@@ -199,6 +361,9 @@ class SerialReaderThread(QThread):
                             continue
 
                         self.raw_line.emit(line)
+
+                        if self._handle_status_line(line):
+                            continue
 
                         tag_id, distances = self._parse_line(line)
                         if tag_id is None or not distances:
@@ -236,11 +401,13 @@ class SerialReaderThread(QThread):
                         )
                         if x is not None:
                             self._last_positions[tag_id] = (x, y)
+                            self._emit_tag_state(tag_id, TAG_STATE_VISIBLE, f"{tag_id} visible on {self.source_id}")
                             self.debug_msg.emit(
                                 f"[OK] {tag_id} {solve_mode} -> ({x:.3f}, {y:.3f}) "
                                 f"using {len(resolved)} anchor(s)"
                             )
                             self.tag_update.emit(tag_id, x, y)
+                            self.tag_update_source.emit(tag_id, x, y, self.source_id)
                         else:
                             self.debug_msg.emit(
                                 f"[WARN] {solve_mode} returned None for {tag_id} "
@@ -278,6 +445,7 @@ class RawDistanceReaderThread(QThread):
         self.baudrate = baudrate
         self._running = True
         self._serial_handle = None
+        self._last_attempting_tag = None
 
     def run(self):
         if serial is None:
@@ -294,6 +462,16 @@ class RawDistanceReaderThread(QThread):
                             continue
 
                         self.raw_line.emit(line)
+
+                        status = parse_ble_status_line(line, last_attempting_tag=self._last_attempting_tag)
+                        if status is not None:
+                            if status.get("state") == TAG_STATE_CONNECTING and status.get("tag_id"):
+                                self._last_attempting_tag = status["tag_id"]
+                            elif status.get("state") in (TAG_STATE_CONNECTED, TAG_STATE_ERROR, TAG_STATE_DISCONNECTING):
+                                self._last_attempting_tag = None
+                            self.debug_msg.emit(f"[BLE] {status['message']}")
+                            continue
+
                         tag_id, distances = parse_distance_packet(line)
                         if tag_id is None or not distances:
                             self.debug_msg.emit(f"[SKIP] Could not parse: {line[:60]}")

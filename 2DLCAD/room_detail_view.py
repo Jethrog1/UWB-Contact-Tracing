@@ -2,13 +2,18 @@ import math
 import os
 from typing import Callable, Dict, List, Optional, Tuple
 
+try:
+    import numpy as np
+except ImportError:  # pragma: no cover - graceful fallback if numpy is absent
+    np = None
+
 from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QWidget, QLabel, 
     QPushButton, QListWidget, QListWidgetItem, QSplitter,
     QMessageBox, QButtonGroup, QTextEdit, QStackedWidget,
     QSlider, QDoubleSpinBox, QScrollArea, QFileDialog
 )
-from PyQt6.QtGui import QPainter, QPainterPath, QPen, QColor, QMouseEvent, QWheelEvent, QBrush, QFont
+from PyQt6.QtGui import QPainter, QPainterPath, QPen, QColor, QMouseEvent, QWheelEvent, QBrush, QFont, QImage
 from PyQt6.QtCore import Qt, QPointF, QRectF, QPoint, QRect, QTimer
 
 from cad_core import Viewport
@@ -18,6 +23,226 @@ from tag_profile_utils import load_tag_profile_lookup, resolve_tag_anchor_correc
 
 ROOM_ZOOM_MIN = 0.05
 ROOM_ZOOM_MAX = 6000.0
+
+
+class RoomProximityHeatmapLayer:
+    def __init__(self, room: Room):
+        self.room = room
+        self.visible = True
+        self.sensitivity = 20
+        self.opacity = 0.42
+        self.cell_size_ft = 0.18
+        self.pair_threshold_ft = 6.0
+        self.decay_rate = 0.985
+        self._grid_w = max(1, math.ceil(max(room.width, 0.01) / self.cell_size_ft))
+        self._grid_h = max(1, math.ceil(max(room.height, 0.01) / self.cell_size_ft))
+        self._heat = None
+        self._rgb_buffer = None
+        self._image = QImage()
+        self._lut = self._build_lut()
+        self._room_mask = None
+        self._ensure_buffers()
+
+    def _ensure_buffers(self):
+        if np is None:
+            self._heat = None
+            self._rgb_buffer = None
+            self._room_mask = None
+            self._image = QImage()
+            return
+        self._heat = np.zeros((self._grid_h, self._grid_w), dtype=np.float32)
+        self._rgb_buffer = np.zeros((self._grid_h, self._grid_w, 4), dtype=np.uint8)
+        self._room_mask = self._build_room_mask()
+        self._image = QImage()
+
+    def _build_lut(self):
+        if np is None:
+            return None
+        lut = np.zeros((256, 4), dtype=np.uint8)
+        for i in range(256):
+            v = i / 255.0
+            if v < 0.14:
+                t = v / 0.14
+                r = 0
+                g = int(120 * t)
+                b = 255
+                a = int(24 * t)
+            elif v < 0.28:
+                t = (v - 0.14) / 0.14
+                r = 0
+                g = int(120 + (135 * t))
+                b = 255
+                a = int(24 + 32 * t)
+            elif v < 0.42:
+                t = (v - 0.28) / 0.14
+                r = 0
+                g = 255
+                b = int(255 * (1 - t))
+                a = int(56 + 48 * t)
+            elif v < 0.58:
+                t = (v - 0.42) / 0.16
+                r = int(255 * t)
+                g = 255
+                b = 0
+                a = int(104 + 46 * t)
+            elif v < 0.74:
+                t = (v - 0.58) / 0.16
+                r = 255
+                g = int(255 - (90 * t))
+                b = 0
+                a = int(150 + 42 * t)
+            elif v < 0.88:
+                t = (v - 0.74) / 0.14
+                r = 255
+                g = int(165 * (1 - t))
+                b = 0
+                a = int(192 + 30 * t)
+            else:
+                t = (v - 0.88) / 0.12
+                r = int(255 - (75 * t))
+                g = 0
+                b = 0
+                a = int(222 + 33 * t)
+            lut[i] = [r, g, b, a]
+        return lut
+
+    def clear(self):
+        if self._heat is not None:
+            self._heat.fill(0.0)
+        self._rebuild_image()
+
+    def _local_to_grid(self, lx: float, ly: float):
+        return lx / self.cell_size_ft, (self.room.height - ly) / self.cell_size_ft
+
+    def _polygon_to_mask(self, polygon_points):
+        if np is None or len(polygon_points) < 3:
+            return np.ones((self._grid_h, self._grid_w), dtype=np.float32) if np is not None else None
+
+        xs = np.array([pt[0] / self.cell_size_ft for pt in polygon_points], dtype=np.float32)
+        ys = np.array([(self.room.height - pt[1]) / self.cell_size_ft for pt in polygon_points], dtype=np.float32)
+        grid_x = np.arange(self._grid_w, dtype=np.float32) + 0.5
+        grid_y = np.arange(self._grid_h, dtype=np.float32) + 0.5
+        xx, yy = np.meshgrid(grid_x, grid_y)
+        inside = np.zeros(xx.shape, dtype=bool)
+        count = len(xs)
+        for idx in range(count):
+            prev = (idx - 1) % count
+            xi = xs[idx]
+            yi = ys[idx]
+            xj = xs[prev]
+            yj = ys[prev]
+            intersects = ((yi > yy) != (yj > yy)) & (
+                xx < ((xj - xi) * (yy - yi) / ((yj - yi) + 1e-9)) + xi
+            )
+            inside ^= intersects
+        return inside.astype(np.float32)
+
+    def _build_room_mask(self):
+        polygon = self.room.get_local_polygon()
+        if polygon.isEmpty() or np is None:
+            return np.ones((self._grid_h, self._grid_w), dtype=np.float32) if np is not None else None
+        local_points = [(polygon.at(i).x(), polygon.at(i).y()) for i in range(polygon.count())]
+        return self._polygon_to_mask(local_points)
+
+    def _rebuild_image(self):
+        if np is None or self._heat is None or self._rgb_buffer is None:
+            self._image = QImage()
+            return
+        scaled = np.clip(self._heat * 255.0, 0, 255).astype(np.uint8)
+        self._rgb_buffer[:, :, :] = self._lut[scaled]
+        h, w, _ = self._rgb_buffer.shape
+        self._image = QImage(
+            self._rgb_buffer.data,
+            w,
+            h,
+            4 * w,
+            QImage.Format.Format_RGBA8888,
+        ).copy()
+
+    def _deposit_segment_field(self, p1, p2):
+        x1, y1 = self._local_to_grid(p1[0], p1[1])
+        x2, y2 = self._local_to_grid(p2[0], p2[1])
+        dist_ft = math.hypot(p2[0] - p1[0], p2[1] - p1[1])
+        if dist_ft >= self.pair_threshold_ft:
+            return
+
+        closeness = max(0.0, 1.0 - (dist_ft / self.pair_threshold_ft))
+        deposit_strength = (0.005 + (self.sensitivity / 100.0) * 0.022) * (closeness ** 2.2)
+        radius_ft = 1.35 + self.sensitivity * 0.05
+
+        seg_dx = x2 - x1
+        seg_dy = y2 - y1
+        seg_len_sq = seg_dx * seg_dx + seg_dy * seg_dy
+        influence_cells = max(2.5, radius_ft / self.cell_size_ft)
+        pad = int(math.ceil(influence_cells))
+
+        min_x = int(max(0, math.floor(min(x1, x2) - pad)))
+        max_x = int(min(self._grid_w - 1, math.ceil(max(x1, x2) + pad)))
+        min_y = int(max(0, math.floor(min(y1, y2) - pad)))
+        max_y = int(min(self._grid_h - 1, math.ceil(max(y1, y2) + pad)))
+        if min_x > max_x or min_y > max_y:
+            return
+
+        xs = np.arange(min_x, max_x + 1, dtype=np.float32)
+        ys = np.arange(min_y, max_y + 1, dtype=np.float32)
+        xx, yy = np.meshgrid(xs, ys)
+        px = xx + 0.5
+        py = yy + 0.5
+
+        if seg_len_sq < 1e-6:
+            dist = np.sqrt((px - x1) ** 2 + (py - y1) ** 2)
+        else:
+            t = ((px - x1) * seg_dx + (py - y1) * seg_dy) / seg_len_sq
+            t = np.clip(t, 0.0, 1.0)
+            proj_x = x1 + t * seg_dx
+            proj_y = y1 + t * seg_dy
+            dist = np.sqrt((px - proj_x) ** 2 + (py - proj_y) ** 2)
+
+        sigma = max(1.2, influence_cells * (0.54 - 0.20 * closeness))
+        field = np.exp(-(dist ** 2) / (2.0 * sigma * sigma)).astype(np.float32)
+
+        mid_x = (x1 + x2) * 0.5
+        mid_y = (y1 + y2) * 0.5
+        mid_dist = np.sqrt((px - mid_x) ** 2 + (py - mid_y) ** 2)
+        mid_sigma = max(1.8, influence_cells * 0.95)
+        mid_weight = np.exp(-(mid_dist ** 2) / (2.0 * mid_sigma * mid_sigma)).astype(np.float32)
+
+        combined = field * (0.65 + 0.35 * mid_weight)
+        self._heat[min_y:max_y + 1, min_x:max_x + 1] += combined * deposit_strength
+
+    def step(self, tag_positions: Dict[str, Tuple[float, float]]) -> bool:
+        if not self.visible or np is None or self._heat is None:
+            return False
+
+        had_heat = bool(float(np.max(self._heat)) > 0.004)
+        self._heat *= self.decay_rate
+
+        items = list(tag_positions.items())
+        for idx in range(len(items)):
+            _, p1 = items[idx]
+            for jdx in range(idx + 1, len(items)):
+                _, p2 = items[jdx]
+                self._deposit_segment_field(p1, p2)
+
+        if self._room_mask is not None:
+            self._heat *= self._room_mask
+        np.clip(self._heat, 0.0, 1.0, out=self._heat)
+        self._rebuild_image()
+        return had_heat or bool(items)
+
+    def paint(self, painter: QPainter, viewport, room_path_screen: QPainterPath):
+        if not self.visible or self._image.isNull() or room_path_screen.isEmpty():
+            return
+        sx0, sy0 = viewport.world_to_screen(0.0, self.room.height)
+        sx1, sy1 = viewport.world_to_screen(self.room.width, 0.0)
+        dst = QRectF(min(sx0, sx1), min(sy0, sy1), abs(sx1 - sx0), abs(sy1 - sy0))
+
+        painter.save()
+        painter.setClipPath(room_path_screen)
+        painter.setOpacity(self.opacity)
+        painter.drawImage(dst, self._image)
+        painter.restore()
+
 
 class RoomCanvas(QWidget):
     """
@@ -42,6 +267,11 @@ class RoomCanvas(QWidget):
         
         self.active_tags = {}
         self.selected_anchor = None
+        self._proximity_heatmap = RoomProximityHeatmapLayer(room)
+        self._heatmap_timer = QTimer(self)
+        self._heatmap_timer.setInterval(120)
+        self._heatmap_timer.timeout.connect(self._tick_heatmap)
+        self._heatmap_timer.start()
 
         # ── RTLS Filter State ──────────────────────────────────
         self.filter_mode = "None"   # None | EMA | Rolling | Kalman
@@ -165,6 +395,10 @@ class RoomCanvas(QWidget):
         self._roll_buf.pop(tag_id, None)
         self._kalman_state.pop(tag_id, None)
         self._kalman_P.pop(tag_id, None)
+
+    def _tick_heatmap(self):
+        if self._proximity_heatmap.step(self.active_tags):
+            self.update()
 
     def sync_world_tags_for_room(self, world_tags: Dict[str, Tuple[float, float]]):
         visible_tags: Dict[str, Tuple[float, float]] = {}
@@ -516,6 +750,7 @@ class RoomCanvas(QWidget):
 
             # Fill the room's inner boundary
             p.fillPath(room_path_screen, QBrush(self.room_bg_color))
+            self._proximity_heatmap.paint(p, self.vp, room_path_screen)
 
         # Check for reference anchor (first placed)
         ref_a = self.room.anchors[0] if self.room.anchors else None
