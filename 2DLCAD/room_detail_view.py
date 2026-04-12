@@ -1,5 +1,6 @@
 import math
 import os
+import time
 from typing import Callable, Dict, List, Optional, Tuple
 
 try:
@@ -11,10 +12,10 @@ from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QWidget, QLabel, 
     QPushButton, QListWidget, QListWidgetItem, QSplitter,
     QMessageBox, QButtonGroup, QTextEdit, QStackedWidget,
-    QSlider, QDoubleSpinBox, QScrollArea, QFileDialog
+    QSlider, QDoubleSpinBox, QScrollArea, QFileDialog, QFrame
 )
 from PyQt6.QtGui import QPainter, QPainterPath, QPen, QColor, QMouseEvent, QWheelEvent, QBrush, QFont, QImage
-from PyQt6.QtCore import Qt, QPointF, QRectF, QPoint, QRect, QTimer
+from PyQt6.QtCore import Qt, QPointF, QRectF, QPoint, QRect, QTimer, pyqtSignal
 
 from cad_core import Viewport
 from room_data import Room, Anchor
@@ -29,13 +30,20 @@ class RoomProximityHeatmapLayer:
     def __init__(self, room: Room):
         self.room = room
         self.visible = True
-        self.sensitivity = 20
-        self.opacity = 0.42
-        self.cell_size_ft = 0.18
+        self.sensitivity = 34
+        self.opacity = 0.64
+        room_area = max(float(room.width) * float(room.height), 1e-6)
+        target_pixels = max(1.0, 500.0 * room_area)
+        aspect = max(float(room.width), 1e-6) / max(float(room.height), 1e-6)
+        self._grid_w = max(1, int(round(math.sqrt(target_pixels * aspect))))
+        self._grid_h = max(1, int(round(target_pixels / max(self._grid_w, 1))))
+        self.cell_size_ft = max(
+            float(room.width) / max(self._grid_w, 1),
+            float(room.height) / max(self._grid_h, 1),
+            1e-4,
+        )
         self.pair_threshold_ft = 6.0
-        self.decay_rate = 0.985
-        self._grid_w = max(1, math.ceil(max(room.width, 0.01) / self.cell_size_ft))
-        self._grid_h = max(1, math.ceil(max(room.height, 0.01) / self.cell_size_ft))
+        self.decay_rate = 0.968
         self._heat = None
         self._rgb_buffer = None
         self._image = QImage()
@@ -150,6 +158,7 @@ class RoomProximityHeatmapLayer:
             return
         scaled = np.clip(self._heat * 255.0, 0, 255).astype(np.uint8)
         self._rgb_buffer[:, :, :] = self._lut[scaled]
+
         h, w, _ = self._rgb_buffer.shape
         self._image = QImage(
             self._rgb_buffer.data,
@@ -167,8 +176,8 @@ class RoomProximityHeatmapLayer:
             return
 
         closeness = max(0.0, 1.0 - (dist_ft / self.pair_threshold_ft))
-        deposit_strength = (0.005 + (self.sensitivity / 100.0) * 0.022) * (closeness ** 2.2)
-        radius_ft = 1.35 + self.sensitivity * 0.05
+        deposit_strength = (0.050 + (self.sensitivity / 100.0) * 0.135) * (closeness ** 1.45)
+        radius_ft = 0.90 + self.sensitivity * 0.028
 
         seg_dx = x2 - x1
         seg_dy = y2 - y1
@@ -190,6 +199,7 @@ class RoomProximityHeatmapLayer:
         py = yy + 0.5
 
         if seg_len_sq < 1e-6:
+            t = np.full(px.shape, 0.5, dtype=np.float32)
             dist = np.sqrt((px - x1) ** 2 + (py - y1) ** 2)
         else:
             t = ((px - x1) * seg_dx + (py - y1) * seg_dy) / seg_len_sq
@@ -198,20 +208,22 @@ class RoomProximityHeatmapLayer:
             proj_y = y1 + t * seg_dy
             dist = np.sqrt((px - proj_x) ** 2 + (py - proj_y) ** 2)
 
-        sigma = max(1.2, influence_cells * (0.54 - 0.20 * closeness))
+        sigma = max(0.85, influence_cells * (0.26 - 0.10 * closeness))
         field = np.exp(-(dist ** 2) / (2.0 * sigma * sigma)).astype(np.float32)
 
         mid_x = (x1 + x2) * 0.5
         mid_y = (y1 + y2) * 0.5
         mid_dist = np.sqrt((px - mid_x) ** 2 + (py - mid_y) ** 2)
-        mid_sigma = max(1.8, influence_cells * 0.95)
+        mid_sigma = max(1.2, influence_cells * 0.52)
         mid_weight = np.exp(-(mid_dist ** 2) / (2.0 * mid_sigma * mid_sigma)).astype(np.float32)
 
-        combined = field * (0.65 + 0.35 * mid_weight)
+        # Emphasize the corridor between people instead of round hotspots at each endpoint.
+        bridge_weight = np.clip(0.25 + (1.0 - np.abs((t * 2.0) - 1.0)) ** 1.4, 0.22, 1.0).astype(np.float32)
+        combined = field * (0.30 + 0.45 * mid_weight + 0.70 * bridge_weight)
         self._heat[min_y:max_y + 1, min_x:max_x + 1] += combined * deposit_strength
 
     def step(self, tag_positions: Dict[str, Tuple[float, float]]) -> bool:
-        if not self.visible or np is None or self._heat is None:
+        if np is None or self._heat is None:
             return False
 
         had_heat = bool(float(np.max(self._heat)) > 0.004)
@@ -236,12 +248,16 @@ class RoomProximityHeatmapLayer:
         sx0, sy0 = viewport.world_to_screen(0.0, self.room.height)
         sx1, sy1 = viewport.world_to_screen(self.room.width, 0.0)
         dst = QRectF(min(sx0, sx1), min(sy0, sy1), abs(sx1 - sx0), abs(sy1 - sy0))
-
         painter.save()
         painter.setClipPath(room_path_screen)
         painter.setOpacity(self.opacity)
         painter.drawImage(dst, self._image)
         painter.restore()
+
+    def has_visible_heat(self) -> bool:
+        if np is None or self._heat is None:
+            return False
+        return bool(float(np.max(self._heat)) > 0.02)
 
 
 class RoomCanvas(QWidget):
@@ -266,8 +282,17 @@ class RoomCanvas(QWidget):
         self.mode = "PAN"
         
         self.active_tags = {}
+        self._source_tags = {}
+        self._room_tag_last_seen: Dict[str, float] = {}
+        self._room_visibility_grace_sec = 0.55
+        self.distance_lines_enabled = False
+        self.distance_focus_tag_id: Optional[str] = None
         self.selected_anchor = None
         self._proximity_heatmap = RoomProximityHeatmapLayer(room)
+        self._heatmap_history_provider: Optional[Callable[[], List[Dict[str, Tuple[float, float]]]]] = None
+        self._heatmap_snapshot_mode = False
+        self._heatmap_snapshot_dirty = False
+        self._heatmap_live_dirty = False
         self._heatmap_timer = QTimer(self)
         self._heatmap_timer.setInterval(120)
         self._heatmap_timer.timeout.connect(self._tick_heatmap)
@@ -385,37 +410,149 @@ class RoomCanvas(QWidget):
         return math.hypot(px - (x1 + t * dx), py - (y1 + t * dy))
 
     def _update_tag(self, tag_id: str, local_x: float, local_y: float):
-        sx, sy = self.smooth(tag_id, local_x, local_y)
+        self._source_tags[tag_id] = (local_x, local_y)
+        self._room_tag_last_seen[tag_id] = time.monotonic()
+        if self._heatmap_snapshot_mode:
+            sx, sy = (local_x, local_y)
+        else:
+            sx, sy = self.smooth(tag_id, local_x, local_y)
         self.active_tags[tag_id] = (sx, sy)
+        self._heatmap_live_dirty = True
+        if self._heatmap_snapshot_mode:
+            self._heatmap_snapshot_dirty = True
         self.update()
 
     def _remove_tag(self, tag_id: str):
         self.active_tags.pop(tag_id, None)
+        self._source_tags.pop(tag_id, None)
+        self._room_tag_last_seen.pop(tag_id, None)
+        if self.distance_focus_tag_id == tag_id:
+            self.distance_focus_tag_id = None
         self._ema_pos.pop(tag_id, None)
         self._roll_buf.pop(tag_id, None)
         self._kalman_state.pop(tag_id, None)
         self._kalman_P.pop(tag_id, None)
+        self._heatmap_live_dirty = True
+        if self._heatmap_snapshot_mode:
+            self._heatmap_snapshot_dirty = True
+
+    def set_proximity_heatmap_enabled(self, enabled: bool):
+        self._proximity_heatmap.visible = bool(enabled)
+        self.update()
+
+    def set_distance_lines_enabled(self, enabled: bool):
+        self.distance_lines_enabled = bool(enabled)
+        if not self.distance_lines_enabled and self.distance_focus_tag_id is None:
+            self.update()
+            return
+        self.update()
+
+    def _hit_test_tag(self, screen_pos: QPointF) -> Optional[str]:
+        if not self.active_tags:
+            return None
+        radius_px = max(10.0, min(self.vp.scale * 0.24, 18.0))
+        best_tag = None
+        best_dist_sq = radius_px * radius_px
+        for tag_id, pos in self.active_tags.items():
+            sx, sy = self.vp.world_to_screen(pos[0], pos[1])
+            dx = float(screen_pos.x()) - sx
+            dy = float(screen_pos.y()) - sy
+            dist_sq = dx * dx + dy * dy
+            if dist_sq <= best_dist_sq:
+                best_dist_sq = dist_sq
+                best_tag = tag_id
+        return best_tag
+
+    def set_heatmap_history_provider(self, provider: Optional[Callable[[], List[Dict[str, Tuple[float, float]]]]]):
+        if provider is self._heatmap_history_provider:
+            return
+        self._heatmap_history_provider = provider
+        self._heatmap_snapshot_dirty = True
+
+    def set_heatmap_snapshot_mode(self, enabled: bool):
+        enabled = bool(enabled)
+        if enabled == self._heatmap_snapshot_mode:
+            return
+        self._heatmap_snapshot_mode = enabled
+        self._heatmap_snapshot_dirty = True
+        self._heatmap_live_dirty = True
+        if not enabled:
+            self._proximity_heatmap.clear()
+        self.update()
+
+    def _history_frames_for_heatmap(self):
+        if callable(self._heatmap_history_provider):
+            try:
+                world_frames = list(self._heatmap_history_provider() or [])
+            except Exception:
+                world_frames = []
+            if world_frames:
+                frames = []
+                for world_frame in world_frames:
+                    local_frame: Dict[str, Tuple[float, float]] = {}
+                    for tag_id, (world_x, world_y) in dict(world_frame).items():
+                        local_x, local_y = self.room.world_to_local(world_x, world_y)
+                        if self.room.contains_local_point_with_tolerance(local_x, local_y, tolerance_ft=0.35):
+                            local_frame[tag_id] = (local_x, local_y)
+                    frames.append(local_frame)
+                return frames
+        if self.active_tags:
+            return [dict(self.active_tags)]
+        return []
+
+    def _rebuild_heatmap_from_frames(self, frames):
+        self._proximity_heatmap.clear()
+        for frame in frames:
+            self._proximity_heatmap.step(frame)
 
     def _tick_heatmap(self):
+        if self._heatmap_snapshot_mode:
+            if not self._heatmap_snapshot_dirty:
+                return
+            self._rebuild_heatmap_from_frames(self._history_frames_for_heatmap())
+            self._heatmap_snapshot_dirty = False
+            self.update()
+            return
+
+        if not self._heatmap_live_dirty:
+            return
+        if len(self.active_tags) < 2:
+            self._proximity_heatmap.clear()
+            self._heatmap_live_dirty = False
+            self.update()
+            return
         if self._proximity_heatmap.step(self.active_tags):
             self.update()
+        self._heatmap_live_dirty = False
 
     def sync_world_tags_for_room(self, world_tags: Dict[str, Tuple[float, float]]):
+        now = time.monotonic()
         visible_tags: Dict[str, Tuple[float, float]] = {}
         for tag_id, (world_x, world_y) in world_tags.items():
             local_x, local_y = self.room.world_to_local(world_x, world_y)
-            if self.room.contains_local_point_with_tolerance(local_x, local_y, tolerance_ft=1.2):
+            if self.room.contains_local_point_with_tolerance(local_x, local_y, tolerance_ft=0.35):
                 visible_tags[tag_id] = (local_x, local_y)
 
         current_ids = set(self.active_tags.keys())
         next_ids = set(visible_tags.keys())
+        changed = False
         for stale_tag_id in current_ids - next_ids:
-            self._remove_tag(stale_tag_id)
+            last_seen = float(self._room_tag_last_seen.get(stale_tag_id, now))
+            if (now - last_seen) >= self._room_visibility_grace_sec:
+                self._remove_tag(stale_tag_id)
+                changed = True
 
         for tag_id, (local_x, local_y) in visible_tags.items():
+            current = self._source_tags.get(tag_id)
+            if current is not None and abs(current[0] - local_x) < 1e-4 and abs(current[1] - local_y) < 1e-4:
+                self._room_tag_last_seen[tag_id] = now
+                continue
             self._update_tag(tag_id, local_x, local_y)
+            changed = True
 
-        if not visible_tags:
+        if changed and self._heatmap_snapshot_mode:
+            self._heatmap_snapshot_dirty = True
+        if not visible_tags or changed:
             self.update()
 
     def smooth(self, tag_id: str, x: float, y: float):
@@ -527,6 +664,12 @@ class RoomCanvas(QWidget):
     def mousePressEvent(self, event: QMouseEvent):
         if event.button() == Qt.MouseButton.LeftButton:
             if self.mode in ("PAN", "CURSOR"):
+                hit_tag = self._hit_test_tag(event.position())
+                if hit_tag:
+                    self.distance_focus_tag_id = None if self.distance_focus_tag_id == hit_tag else hit_tag
+                    self.update()
+                    event.accept()
+                    return
                 lx, ly = self.vp.screen_to_world(event.position().x(), event.position().y())
                 hit = self._hit_test_anchor(lx, ly)
                 if hit:
@@ -752,6 +895,20 @@ class RoomCanvas(QWidget):
             p.fillPath(room_path_screen, QBrush(self.room_bg_color))
             self._proximity_heatmap.paint(p, self.vp, room_path_screen)
 
+        if self._proximity_heatmap.visible and len(self.active_tags) < 2:
+            hint_rect = QRectF(18.0, 18.0, 290.0, 34.0)
+            p.save()
+            p.setPen(Qt.PenStyle.NoPen)
+            p.setBrush(QColor(14, 18, 32, 220))
+            p.drawRoundedRect(hint_rect, 8.0, 8.0)
+            p.setPen(QColor("#d8e4ff"))
+            hint_font = QFont(p.font())
+            hint_font.setPointSize(10)
+            hint_font.setBold(True)
+            p.setFont(hint_font)
+            p.drawText(hint_rect.adjusted(12.0, 0.0, -12.0, 0.0), Qt.AlignmentFlag.AlignVCenter, "Proximity heatmap needs 2 visible tags")
+            p.restore()
+
         # Check for reference anchor (first placed)
         ref_a = self.room.anchors[0] if self.room.anchors else None
         
@@ -910,31 +1067,35 @@ class RoomCanvas(QWidget):
             tag_ids = list(self.active_tags.keys())
             
             # Connect tags with physical inter-distance dashed lines
-            for i in range(len(tag_ids)):
-                for j in range(i + 1, len(tag_ids)):
-                    tid_a = tag_ids[i]; tid_b = tag_ids[j]
-                    pos_a = self.active_tags[tid_a]; pos_b = self.active_tags[tid_b]
-                    s1x, s1y = self.vp.world_to_screen(pos_a[0], pos_a[1])
-                    s2x, s2y = self.vp.world_to_screen(pos_b[0], pos_b[1])
-                    
-                    pen = QPen(QColor("#e67e22"), 2, Qt.PenStyle.DashLine)
-                    pen.setDashPattern([6, 4])
-                    p.setPen(pen)
-                    p.drawLine(int(s1x), int(s1y), int(s2x), int(s2y))
-                    
-                    dist = math.hypot(pos_b[0] - pos_a[0], pos_b[1] - pos_a[1])
-                    mx = (s1x + s2x) / 2; my = (s1y + s2y) / 2
-                    label = f"{dist:.2f}ft"
-                    p.setFont(QFont("Segoe UI", 10, QFont.Weight.Bold))
-                    fm = p.fontMetrics()
-                    tw = fm.horizontalAdvance(label); th = fm.height()
-                    
-                    bg_rect = QRectF(mx - tw/2 - 3, my - th/2 - 2, tw + 6, th + 4)
-                    p.setBrush(QBrush(QColor(20, 20, 20, 210)))
-                    p.setPen(Qt.PenStyle.NoPen)
-                    p.drawRoundedRect(bg_rect, 3, 3)
-                    p.setPen(QPen(QColor("#e67e22")))
-                    p.drawText(int(mx - tw/2), int(my + th/2 - 2), label)
+            show_pair_lines = self.distance_lines_enabled or self.distance_focus_tag_id is not None
+            if show_pair_lines:
+                for i in range(len(tag_ids)):
+                    for j in range(i + 1, len(tag_ids)):
+                        tid_a = tag_ids[i]; tid_b = tag_ids[j]
+                        if self.distance_focus_tag_id and tid_a != self.distance_focus_tag_id and tid_b != self.distance_focus_tag_id:
+                            continue
+                        pos_a = self.active_tags[tid_a]; pos_b = self.active_tags[tid_b]
+                        s1x, s1y = self.vp.world_to_screen(pos_a[0], pos_a[1])
+                        s2x, s2y = self.vp.world_to_screen(pos_b[0], pos_b[1])
+                        
+                        pen = QPen(QColor("#e67e22"), 2, Qt.PenStyle.DashLine)
+                        pen.setDashPattern([6, 4])
+                        p.setPen(pen)
+                        p.drawLine(int(s1x), int(s1y), int(s2x), int(s2y))
+                        
+                        dist = math.hypot(pos_b[0] - pos_a[0], pos_b[1] - pos_a[1])
+                        mx = (s1x + s2x) / 2; my = (s1y + s2y) / 2
+                        label = f"{dist:.2f}ft"
+                        p.setFont(QFont("Segoe UI", 10, QFont.Weight.Bold))
+                        fm = p.fontMetrics()
+                        tw = fm.horizontalAdvance(label); th = fm.height()
+                        
+                        bg_rect = QRectF(mx - tw/2 - 3, my - th/2 - 2, tw + 6, th + 4)
+                        p.setBrush(QBrush(QColor(20, 20, 20, 210)))
+                        p.setPen(Qt.PenStyle.NoPen)
+                        p.drawRoundedRect(bg_rect, 3, 3)
+                        p.setPen(QPen(QColor("#e67e22")))
+                        p.drawText(int(mx - tw/2), int(my + th/2 - 2), label)
             
             # Layer interactive tracking dots and IDs on top
             for tid, pos in self.active_tags.items():
@@ -944,6 +1105,11 @@ class RoomCanvas(QWidget):
                 p.setPen(QPen(Qt.GlobalColor.white, 2))
                 p.setBrush(QBrush(col))
                 p.drawEllipse(QPointF(spx, spy), tr, tr)
+
+                if self.distance_focus_tag_id == tid:
+                    p.setPen(QPen(QColor("#ffb347"), 3))
+                    p.setBrush(Qt.BrushStyle.NoBrush)
+                    p.drawEllipse(QPointF(spx, spy), tr + 4, tr + 4)
                 
                 p.setFont(QFont("Segoe UI", max(8, tr - 2), QFont.Weight.Bold))
                 p.setPen(col)
@@ -1023,6 +1189,8 @@ class RoomDetailDialog(QDialog):
     """
     Dialog popup that hosts the RoomCanvas and an Anchor coordinate list.
     """
+    close_requested = pyqtSignal()
+
     def __init__(
         self,
         room: Room,
@@ -1030,13 +1198,17 @@ class RoomDetailDialog(QDialog):
         parent=None,
         editable: bool = True,
         world_tag_provider: Optional[Callable[[], Dict[str, Tuple[float, float]]]] = None,
+        embedded: bool = False,
+        proximity_heatmap_enabled: bool = True,
     ):
         super().__init__(parent)
         self.room = room
         self.editable = editable
+        self.embedded = bool(embedded)
         self._world_tag_provider = world_tag_provider
         self._shared_tag_timer: Optional[QTimer] = None
         self._tag_profile_lookup = load_tag_profile_lookup()
+        self._playback_controller = {}
         self.serial_thread = None
         self.setWindowTitle(f"Room Detail – {room.name}")
         self.resize(1000, 700)
@@ -1098,10 +1270,12 @@ class RoomDetailDialog(QDialog):
 
         # ── Banner ─────────────────────────────────────────────────────────
         banner = QWidget()
-        banner.setFixedHeight(44)
         banner.setStyleSheet("background-color: #12121f; border-bottom: 1px solid #2d2d5e;")
-        banner_layout = QHBoxLayout(banner)
-        banner_layout.setContentsMargins(12, 0, 12, 0)
+        banner_outer = QVBoxLayout(banner)
+        banner_outer.setContentsMargins(10, 6, 10, 6)
+        banner_outer.setSpacing(6)
+        banner_layout = QHBoxLayout()
+        banner_layout.setContentsMargins(0, 0, 0, 0)
         banner_layout.setSpacing(8)
 
         lbl_banner = QLabel(f"🏛 Room: {room.name}")
@@ -1124,6 +1298,84 @@ class RoomDetailDialog(QDialog):
 
             banner_layout.addWidget(self.btn_tab_tools)
             banner_layout.addWidget(self.btn_tab_calib)
+        banner_outer.addLayout(banner_layout)
+        banner_outer.addSpacing(4)
+        self._playback_bar = QFrame()
+        self._playback_bar.setObjectName("room_playback_bar")
+        self._playback_bar.setVisible(False)
+        self._playback_bar.setStyleSheet(
+            """
+            QFrame#room_playback_bar {
+                background: rgba(18, 20, 34, 0.94);
+                border: 1px solid #2d3452;
+                border-radius: 10px;
+            }
+            QFrame#room_playback_bar QLabel#room_playback_meta {
+                font-size: 10px;
+                color: #9aa4d6;
+            }
+            QFrame#room_playback_bar QPushButton {
+                min-width: 36px;
+                padding: 4px 8px;
+                background: #232a46;
+                color: #dce4ff;
+                border: 1px solid #38415f;
+                border-radius: 7px;
+                font-size: 11px;
+                font-weight: 600;
+            }
+            QFrame#room_playback_bar QPushButton:checked {
+                background: #365fda;
+                border-color: #7aa0ff;
+                color: #ffffff;
+            }
+            QFrame#room_playback_bar QPushButton:disabled {
+                color: #68708f;
+                background: #1a2034;
+                border-color: #2b3147;
+            }
+            """
+        )
+        playback_layout = QHBoxLayout(self._playback_bar)
+        playback_layout.setContentsMargins(10, 8, 10, 8)
+        playback_layout.setSpacing(6)
+
+        playback_label = QLabel("Playback")
+        playback_label.setObjectName("room_playback_meta")
+        playback_layout.addWidget(playback_label)
+
+        self._room_history_slider = QSlider(Qt.Orientation.Horizontal)
+        self._room_history_slider.setRange(0, 0)
+        self._room_history_slider.setEnabled(False)
+        self._room_history_slider.setFixedHeight(16)
+        self._room_history_slider.sliderPressed.connect(self._on_room_history_slider_pressed)
+        self._room_history_slider.sliderReleased.connect(self._on_room_history_slider_released)
+        self._room_history_slider.valueChanged.connect(self._on_room_history_slider_changed)
+        playback_layout.addWidget(self._room_history_slider, 1)
+
+        self._room_history_meta = QLabel("No history yet")
+        self._room_history_meta.setObjectName("room_playback_meta")
+        self._room_history_meta.setMinimumWidth(108)
+        playback_layout.addWidget(self._room_history_meta)
+
+        self._room_history_rewind_btn = QPushButton("⏪")
+        self._room_history_rewind_btn.clicked.connect(lambda: self._emit_playback_action("on_step", -6))
+        playback_layout.addWidget(self._room_history_rewind_btn)
+
+        self._room_history_play_btn = QPushButton("▶")
+        self._room_history_play_btn.setCheckable(True)
+        self._room_history_play_btn.toggled.connect(self._on_room_history_play_toggled)
+        playback_layout.addWidget(self._room_history_play_btn)
+
+        self._room_history_ff_btn = QPushButton("⏩")
+        self._room_history_ff_btn.clicked.connect(lambda: self._emit_playback_action("on_step", 6))
+        playback_layout.addWidget(self._room_history_ff_btn)
+
+        self._room_history_live_btn = QPushButton("Live")
+        self._room_history_live_btn.clicked.connect(lambda: self._emit_playback_action("on_jump_live"))
+        playback_layout.addWidget(self._room_history_live_btn)
+
+        banner_outer.addWidget(self._playback_bar)
         outer.addWidget(banner)
 
         # ── Content area ───────────────────────────────────────────────────
@@ -1138,6 +1390,7 @@ class RoomDetailDialog(QDialog):
 
         self.canvas = RoomCanvas(room, all_rooms, splitter, editable=self.editable)
         splitter.addWidget(self.canvas)
+        self.canvas.set_proximity_heatmap_enabled(proximity_heatmap_enabled)
         self.canvas.tag_height = float(self.room.rtls_settings.get("tag_height_ft", 0.0))
         self.canvas.filter_mode = self.room.rtls_settings.get("filter_mode", "None")
 
@@ -1311,7 +1564,7 @@ class RoomDetailDialog(QDialog):
             tools_layout.addWidget(btn_save_profile)
 
             btn_done = QPushButton("Done")
-            btn_done.clicked.connect(self.accept)
+            btn_done.clicked.connect(self._request_close)
             tools_layout.addWidget(btn_done)
 
             self.sidebar_stack.addWidget(tools_page)   # index 0
@@ -1632,6 +1885,85 @@ class RoomDetailDialog(QDialog):
             color = "#e74c3c" if "WARN" in msg or "SKIP" in msg else "#2ecc71"
             self.debug_log.append(f"<span style='color:{color}'>{msg}</span>")
             self.debug_log.verticalScrollBar().setValue(self.debug_log.verticalScrollBar().maximum())
+
+    def set_proximity_heatmap_enabled(self, enabled: bool):
+        self.canvas.set_proximity_heatmap_enabled(enabled)
+
+    def set_distance_lines_enabled(self, enabled: bool):
+        self.canvas.set_distance_lines_enabled(enabled)
+
+    def set_history_playback(self, snapshot_mode: bool, history_frames_provider=None):
+        self.canvas.set_heatmap_history_provider(history_frames_provider)
+        self.canvas.set_heatmap_snapshot_mode(snapshot_mode)
+        self._sync_shared_world_tags()
+
+    def set_playback_controller(self, state_provider=None, **callbacks):
+        self._playback_controller = dict(callbacks)
+        self._playback_controller["state_provider"] = state_provider
+        self._refresh_playback_bar()
+
+    def _emit_playback_action(self, key: str, *args):
+        callback = self._playback_controller.get(key)
+        if callable(callback):
+            callback(*args)
+
+    def _on_room_history_slider_pressed(self):
+        self._emit_playback_action("on_slider_pressed")
+
+    def _on_room_history_slider_released(self):
+        self._emit_playback_action("on_slider_released")
+
+    def _on_room_history_slider_changed(self, value: int):
+        self._emit_playback_action("on_slider_changed", value)
+
+    def _on_room_history_play_toggled(self, checked: bool):
+        self._emit_playback_action("on_play_toggled", checked)
+
+    def _refresh_playback_bar(self):
+        state_provider = self._playback_controller.get("state_provider")
+        state = state_provider() if callable(state_provider) else {}
+        visible = bool(state.get("visible"))
+        self._playback_bar.setVisible(visible)
+        if not visible:
+            return
+
+        max_index = max(0, int(state.get("max_index", 0)))
+        value = max(0, min(int(state.get("value", max_index)), max_index))
+        self._room_history_slider.blockSignals(True)
+        self._room_history_slider.setRange(0, max_index)
+        self._room_history_slider.setValue(value)
+        self._room_history_slider.setEnabled(bool(state.get("has_history")))
+        self._room_history_slider.blockSignals(False)
+
+        self._room_history_meta.setText(str(state.get("meta", "No history yet")))
+        self._room_history_play_btn.blockSignals(True)
+        self._room_history_play_btn.setChecked(bool(state.get("playing")))
+        self._room_history_play_btn.setText(str(state.get("play_label", "▶")))
+        self._room_history_play_btn.blockSignals(False)
+
+        enabled = bool(state.get("has_history"))
+        self._room_history_rewind_btn.setEnabled(enabled)
+        self._room_history_play_btn.setEnabled(enabled)
+        self._room_history_ff_btn.setEnabled(enabled)
+        self._room_history_live_btn.setEnabled(bool(state.get("live_enabled")))
+        self._room_history_live_btn.setStyleSheet(
+            "font-weight: 700; color: #ffffff;" if state.get("follow_live") else ""
+        )
+        self._room_history_live_btn.setEnabled(bool(state.get("live_enabled")))
+        self._room_history_live_btn.setStyleSheet(
+            "font-weight: bold; color: #ffffff;" if state.get("follow_live") else ""
+        )
+
+    def _request_close(self):
+        if self.embedded:
+            self._stop_live_updates()
+            self.close_requested.emit()
+            return
+        self.accept()
+
+    def closeEvent(self, event):
+        self._stop_live_updates()
+        super().closeEvent(event)
 
     def done(self, result: int):
         self._stop_live_updates()
