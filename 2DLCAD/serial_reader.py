@@ -1,6 +1,7 @@
 import time
 import re
 import math
+import random
 from PyQt6.QtCore import QThread, pyqtSignal
 
 try:
@@ -238,32 +239,197 @@ class SerialReaderThread(QThread):
 
 class MockSerialReaderThread(QThread):
     """
-    Virtual Hardware Simulator — oscillates fake T0, T1, T2 tags.
+    Virtual RTLS simulator that keeps mock tags inside actual room bounds.
+
+    It supports:
+    - a single room in local coordinates for the room-detail viewer
+    - multiple rooms in world coordinates for the ship-level RTLS dashboard
     """
     tag_update = pyqtSignal(str, float, float)
     connection_error = pyqtSignal(str)
 
-    def __init__(self):
+    class _MockPerson:
+        def __init__(self, tag_id, zone, choose_zone=None):
+            self.tag_id = tag_id
+            self.zone = zone
+            self._choose_zone = choose_zone
+            self.x, self.y = zone["spawn"]()
+            self.target_x, self.target_y = self.x, self.y
+            self.speed = 0.0
+            self.top_speed = random.uniform(0.18, 0.72)
+            self.accel = random.uniform(0.010, 0.045)
+            self.pause_ticks = random.randint(10, 30)
+            self._choose_new_target()
+
+        def _choose_new_target(self):
+            if self._choose_zone is not None and random.random() < 0.18:
+                next_zone = self._choose_zone(self.zone)
+                if next_zone is not None and next_zone is not self.zone:
+                    self.zone = next_zone
+                    self.x, self.y = self.zone["spawn"]()
+                    self.pause_ticks = random.randint(10, 24)
+            self.target_x, self.target_y = self.zone["spawn"]()
+            self.top_speed = random.uniform(0.18, 0.72)
+            self.accel = random.uniform(0.010, 0.045)
+            self.pause_ticks = random.randint(12, 40)
+
+        def update(self):
+            if self.pause_ticks > 0:
+                self.pause_ticks -= 1
+                self.speed = max(0.0, self.speed - self.accel * 1.8)
+                return self.x, self.y
+
+            dx = self.target_x - self.x
+            dy = self.target_y - self.y
+            dist = math.hypot(dx, dy)
+            if dist < 0.08:
+                self.speed = 0.0
+                self._choose_new_target()
+                return self.x, self.y
+
+            brake_distance = (self.speed * self.speed) / (2.0 * max(self.accel, 1e-6))
+            if dist <= brake_distance + 0.04:
+                self.speed = max(0.0, self.speed - self.accel)
+            else:
+                self.speed = min(self.top_speed, self.speed + self.accel)
+
+            step = min(dist, self.speed)
+            nx = self.x + (dx / dist) * step
+            ny = self.y + (dy / dist) * step
+
+            if self.zone["contains"](nx, ny):
+                self.x = nx
+                self.y = ny
+            else:
+                self.speed = 0.0
+                self.pause_ticks = random.randint(6, 18)
+                self._choose_new_target()
+
+            return self.x, self.y
+
+    def __init__(self, room=None, rooms=None, coordinate_mode="local", tags_per_room=None):
         super().__init__()
         self._running = True
+        self.coordinate_mode = coordinate_mode
+        self._people = []
+        self._zones = self._build_zones(room=room, rooms=rooms, tags_per_room=tags_per_room)
+        self._seed_people()
+
+    def _build_zones(self, room=None, rooms=None, tags_per_room=None):
+        source_rooms = []
+        if room is not None:
+            source_rooms = [room]
+        elif rooms:
+            source_rooms = list(rooms)
+
+        zones = []
+        for idx, rm in enumerate(source_rooms):
+            count = tags_per_room if tags_per_room is not None else self._default_people_count(rm)
+            zone = {
+                "room": rm,
+                "index": idx,
+                "count": max(1, int(count)),
+                "center_world": rm.local_to_world(rm.width * 0.5, rm.height * 0.5),
+            }
+
+            def contains_local_factory(target_room):
+                return lambda lx, ly: target_room.contains_local_point(lx, ly)
+
+            def spawn_local_factory(target_room):
+                def _spawn():
+                    margin = 0.18
+                    min_x = margin
+                    min_y = margin
+                    max_x = max(target_room.width - margin, min_x + 0.01)
+                    max_y = max(target_room.height - margin, min_y + 0.01)
+                    for _ in range(80):
+                        lx = random.uniform(min_x, max_x)
+                        ly = random.uniform(min_y, max_y)
+                        if target_room.contains_local_point(lx, ly):
+                            return lx, ly
+                    return target_room.width / 2.0, target_room.height / 2.0
+                return _spawn
+
+            if self.coordinate_mode == "world":
+                def contains_world_factory(target_room):
+                    return lambda wx, wy: target_room.contains_local_point(*target_room.world_to_local(wx, wy))
+
+                def spawn_world_factory(target_room):
+                    local_spawn = spawn_local_factory(target_room)
+                    return lambda: target_room.local_to_world(*local_spawn())
+
+                zone["contains"] = contains_world_factory(rm)
+                zone["spawn"] = spawn_world_factory(rm)
+            else:
+                zone["contains"] = contains_local_factory(rm)
+                zone["spawn"] = spawn_local_factory(rm)
+
+            zones.append(zone)
+
+        return zones
+
+    @staticmethod
+    def _default_people_count(room):
+        area = max(float(room.width) * float(room.height), 1.0)
+        if area < 35:
+            return 1
+        if area < 120:
+            return 2
+        if area < 220:
+            return 3
+        if area < 360:
+            return 4
+        return 4 + random.randint(0, 1)
+
+    def _seed_people(self):
+        if not self._zones:
+            return
+        sailor_index = 1
+        for zone in self._zones:
+            for i in range(zone["count"]):
+                tag_id = f"S{sailor_index:02d}"
+                sailor_index += 1
+                choose_zone = self._pick_next_zone if self.coordinate_mode == "world" and len(self._zones) > 1 else None
+                self._people.append(self._MockPerson(tag_id, zone, choose_zone=choose_zone))
+
+    def _pick_next_zone(self, current_zone):
+        if len(self._zones) < 2:
+            return current_zone
+
+        current_cx, current_cy = current_zone["center_world"]
+        weighted_choices = []
+        for zone in self._zones:
+            if zone is current_zone:
+                continue
+            zx, zy = zone["center_world"]
+            distance = math.hypot(zx - current_cx, zy - current_cy)
+            # Prefer nearby rooms, but still allow occasional longer moves.
+            weight = 1.0 / max(distance, 6.0)
+            weighted_choices.append((zone, weight))
+
+        total_weight = sum(weight for _, weight in weighted_choices)
+        if total_weight <= 0.0:
+            return random.choice([zone for zone, _ in weighted_choices]) if weighted_choices else current_zone
+
+        pick = random.uniform(0.0, total_weight)
+        running = 0.0
+        for zone, weight in weighted_choices:
+            running += weight
+            if pick <= running:
+                return zone
+        return weighted_choices[-1][0]
 
     def run(self):
-        t = 0.0
+        if not self._people:
+            self.connection_error.emit("Virtual MOCK_RTLS requires at least one room.")
+            return
+
         while self._running:
             try:
-                x0 = 5.0 + 3.0 * math.cos(t)
-                y0 = 4.0 + 3.0 * math.sin(t)
-                x1 = 5.0 + 2.0 * math.sin(t)
-                y1 = 4.0 + 2.0 * math.sin(t) * math.cos(t)
-                x2 = 2.0 + 1.5 * math.cos(t * 0.5)
-                y2 = 6.0 + 1.5 * math.sin(t * 0.3)
-
-                self.tag_update.emit("T0", x0, y0)
-                self.tag_update.emit("T1", x1, y1)
-                self.tag_update.emit("T2", x2, y2)
-
-                t += 0.1
-                time.sleep(0.1)
+                for person in self._people:
+                    x, y = person.update()
+                    self.tag_update.emit(person.tag_id, x, y)
+                time.sleep(0.10)
             except Exception as e:
                 self.connection_error.emit(str(e))
                 break

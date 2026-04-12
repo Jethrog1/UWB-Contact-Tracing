@@ -25,12 +25,13 @@ from PyQt6.QtGui import (
     QPainter, QPen, QColor, QBrush, QPixmap, QImage, QPainterPath,
     QWheelEvent, QMouseEvent
 )
-from PyQt6.QtCore import Qt, QPointF, QRectF, pyqtSignal
+from PyQt6.QtCore import Qt, QPointF, QRectF, pyqtSignal, QTimer
 
 # ── Reuse the CAD viewport so the coordinate maths are identical ──────────────
 sys.path.insert(0, os.path.dirname(__file__))
 from cad_core import Viewport
 from room_data import segments_match
+from rtls_heatmap import ProximityHeatmapLayer
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -43,7 +44,6 @@ LINE_COLOR       = QColor("#4A9EFF")   # same default as CAD
 SELECT_COLOR     = QColor("#FF8C00")   # highlight (orange)
 SELECT_HIT_PX   = 8        # pixels tolerance for selection hit-test
 RASTER_BG_ALPHA  = 255
-
 # ──────────────────────────────────────────────────────────────────────────────
 # Interaction modes (kept for compatibility with rtls_dashboard.py)
 # ──────────────────────────────────────────────────────────────────────────────
@@ -83,6 +83,7 @@ class MapCanvas(QWidget):
         self.setMouseTracking(True)
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         self.room_lookup = None
+        self.history_lookup = None
 
         # ── Viewport (same as CAD) ─────────────────────────────────────────
         self.vp = Viewport()
@@ -102,6 +103,16 @@ class MapCanvas(QWidget):
         # Sub-segment selection: list of (x1,y1,x2,y2) computed from intersections
         self._selected_subsegments: List[Tuple[float,float,float,float]] = []
         self.highlighted_room = None
+        self._active_tags_world: dict[str, tuple[float, float]] = {}
+        self._heatmap = ProximityHeatmapLayer()
+        self._heatmap.set_enabled(False)
+        self._heatmap_snapshot_mode = False
+        self._heatmap_snapshot_dirty = False
+        self._heatmap_live_dirty = False
+        self._heatmap_timer = QTimer(self)
+        self._heatmap_timer.setInterval(90)
+        self._heatmap_timer.timeout.connect(self._tick_heatmap)
+        self._heatmap_timer.start()
 
         self._content_loaded = False
 
@@ -140,6 +151,7 @@ class MapCanvas(QWidget):
         self._segments = segments
         self._bg_pixmap = None
         self._content_loaded = bool(segments)
+        self.clear_heatmap()
 
         if self._content_loaded:
             self._auto_fit_after_load()
@@ -174,6 +186,7 @@ class MapCanvas(QWidget):
             self._bg_scale = dpi / 72.0   # pixels per world unit
             self._segments = []
             self._content_loaded = True
+            self.clear_heatmap()
             self._auto_fit_after_load()
             self.update()
             return True
@@ -189,9 +202,101 @@ class MapCanvas(QWidget):
         self._bg_scale  = 1.0
         self._segments  = []
         self._content_loaded = True
+        self.clear_heatmap()
         self._auto_fit_after_load()
         self.update()
         return True
+
+    def set_active_tags_world(self, active_tags: dict[str, tuple[float, float]]):
+        self._active_tags_world = dict(active_tags)
+        self._heatmap_live_dirty = True
+        if self._heatmap_snapshot_mode:
+            self._heatmap_snapshot_dirty = True
+        self.update()
+
+    def clear_active_tags(self):
+        self._active_tags_world.clear()
+        self.clear_heatmap()
+        self.update()
+
+    def set_heatmap_enabled(self, enabled: bool):
+        self._heatmap.set_enabled(enabled)
+        self._heatmap_snapshot_dirty = True
+        self._heatmap_live_dirty = True
+        self.update()
+
+    def set_heatmap_sensitivity(self, sensitivity: int):
+        self._heatmap.set_sensitivity(sensitivity)
+        self._heatmap_snapshot_dirty = True
+        self._heatmap_live_dirty = True
+        self.update()
+
+    def clear_heatmap(self):
+        self._heatmap.clear()
+        self._heatmap_snapshot_dirty = True
+        self._heatmap_live_dirty = True
+
+    def set_heatmap_snapshot_mode(self, enabled: bool):
+        self._heatmap_snapshot_mode = bool(enabled)
+        self._heatmap_snapshot_dirty = True
+        self._heatmap_live_dirty = True
+        if not enabled:
+            self.clear_heatmap()
+        self.update()
+
+    def _history_frames_for_heatmap(self):
+        if callable(self.history_lookup):
+            try:
+                frames = list(self.history_lookup() or [])
+            except Exception:
+                frames = []
+            if frames:
+                return frames
+        if self._active_tags_world:
+            return [dict(self._active_tags_world)]
+        return []
+
+    def _rebuild_heatmap_from_frames(self, frames, rooms):
+        if not frames:
+            self._heatmap.clear()
+            return
+        self._heatmap.clear()
+        for frame in frames:
+            self._heatmap.step(
+                frame,
+                self.vp,
+                self.width(),
+                self.height(),
+                rooms=rooms,
+                accumulate=True,
+            )
+
+    def _tick_heatmap(self):
+        if not self._content_loaded:
+            return
+        rooms = self.room_lookup() if callable(self.room_lookup) else []
+        if self._heatmap_snapshot_mode:
+            if not self._heatmap_snapshot_dirty:
+                return
+            self._rebuild_heatmap_from_frames(self._history_frames_for_heatmap(), rooms)
+            self._heatmap_snapshot_dirty = False
+            self.update()
+            return
+
+        if not self._heatmap_live_dirty:
+            return
+
+        self._heatmap.step(
+            self._active_tags_world,
+            self.vp,
+            self.width(),
+            self.height(),
+            rooms=rooms,
+            accumulate=True,
+        )
+        self._heatmap_live_dirty = False
+        if self._active_tags_world:
+            self.update()
 
     # ──────────────────────────────────────────────────────────────────────────
     # Viewport helpers
@@ -242,6 +347,14 @@ class MapCanvas(QWidget):
         """Fit after a short delay so the widget has been resized first."""
         from PyQt6.QtCore import QTimer
         QTimer.singleShot(0, self.fit_in_view)
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        if self.width() <= 0 or self.height() <= 0:
+            return
+        self._heatmap.rebase_view(self.vp, self.width(), self.height())
+        self._heatmap_snapshot_dirty = True
+        self._heatmap_live_dirty = bool(self._active_tags_world)
 
     def zoom_by(self, factor: float):
         """Zoom around the centre of the widget."""
@@ -631,6 +744,8 @@ class MapCanvas(QWidget):
             dst = QRectF(min(sx0, sx1), min(sy0, sy1),
                          abs(sx1 - sx0), abs(sy1 - sy0))
             p.drawPixmap(dst.toRect(), self._bg_pixmap)
+
+        self._heatmap.paint(p, self.width(), self.height(), vp)
 
         # ── Vector segments: full pass (blue) ──────────────────────────────
         if self._segments:

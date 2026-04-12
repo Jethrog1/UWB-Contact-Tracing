@@ -1,6 +1,6 @@
 import math
 import os
-from typing import List, Tuple, Optional
+from typing import Callable, Dict, List, Optional, Tuple
 
 from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QWidget, QLabel, 
@@ -9,7 +9,7 @@ from PyQt6.QtWidgets import (
     QSlider, QDoubleSpinBox, QScrollArea, QFileDialog
 )
 from PyQt6.QtGui import QPainter, QPainterPath, QPen, QColor, QMouseEvent, QWheelEvent, QBrush, QFont
-from PyQt6.QtCore import Qt, QPointF, QRectF, QPoint, QRect
+from PyQt6.QtCore import Qt, QPointF, QRectF, QPoint, QRect, QTimer
 
 from cad_core import Viewport
 from room_data import Room, Anchor
@@ -157,6 +157,31 @@ class RoomCanvas(QWidget):
         sx, sy = self.smooth(tag_id, local_x, local_y)
         self.active_tags[tag_id] = (sx, sy)
         self.update()
+
+    def _remove_tag(self, tag_id: str):
+        self.active_tags.pop(tag_id, None)
+        self._ema_pos.pop(tag_id, None)
+        self._roll_buf.pop(tag_id, None)
+        self._kalman_state.pop(tag_id, None)
+        self._kalman_P.pop(tag_id, None)
+
+    def sync_world_tags_for_room(self, world_tags: Dict[str, Tuple[float, float]]):
+        visible_tags: Dict[str, Tuple[float, float]] = {}
+        for tag_id, (world_x, world_y) in world_tags.items():
+            local_x, local_y = self.room.world_to_local(world_x, world_y)
+            if self.room.contains_local_point(local_x, local_y):
+                visible_tags[tag_id] = (local_x, local_y)
+
+        current_ids = set(self.active_tags.keys())
+        next_ids = set(visible_tags.keys())
+        for stale_tag_id in current_ids - next_ids:
+            self._remove_tag(stale_tag_id)
+
+        for tag_id, (local_x, local_y) in visible_tags.items():
+            self._update_tag(tag_id, local_x, local_y)
+
+        if not visible_tags:
+            self.update()
 
     def smooth(self, tag_id: str, x: float, y: float):
         """Apply the selected smoothing filter to (x, y) and return filtered coords."""
@@ -745,10 +770,20 @@ class RoomDetailDialog(QDialog):
     """
     Dialog popup that hosts the RoomCanvas and an Anchor coordinate list.
     """
-    def __init__(self, room: Room, all_rooms: List[Room], parent=None, editable: bool = True):
+    def __init__(
+        self,
+        room: Room,
+        all_rooms: List[Room],
+        parent=None,
+        editable: bool = True,
+        world_tag_provider: Optional[Callable[[], Dict[str, Tuple[float, float]]]] = None,
+    ):
         super().__init__(parent)
         self.room = room
         self.editable = editable
+        self._world_tag_provider = world_tag_provider
+        self._shared_tag_timer: Optional[QTimer] = None
+        self.serial_thread = None
         self.setWindowTitle(f"Room Detail – {room.name}")
         self.resize(1000, 700)
         
@@ -853,6 +888,16 @@ class RoomDetailDialog(QDialog):
         self.canvas.filter_mode = self.room.rtls_settings.get("filter_mode", "None")
 
         if not self.editable:
+            if self._world_tag_provider is not None:
+                lbl_shared = QLabel("Live RTLS")
+                lbl_shared.setFixedHeight(30)
+                lbl_shared.setStyleSheet(
+                    "padding: 5px 10px; border-radius: 15px; "
+                    "background-color: rgba(49, 130, 206, 0.18); color: #9bd1ff; "
+                    "font-size: 11px; font-weight: bold;"
+                )
+                banner_layout.addWidget(lbl_shared)
+
             btn_fit = QPushButton("⊡ Fit View")
             btn_fit.setFixedHeight(30)
             btn_fit.setStyleSheet("color: #ffffff; font-weight: bold;")
@@ -889,6 +934,12 @@ class RoomDetailDialog(QDialog):
             zoom_col.addWidget(btn_zoom_out)
             zoom_lay.addLayout(zoom_col)
             banner_layout.addWidget(zoom_wrap)
+
+            if self._world_tag_provider is not None:
+                self._shared_tag_timer = QTimer(self)
+                self._shared_tag_timer.timeout.connect(self._sync_shared_world_tags)
+                self._shared_tag_timer.start(110)
+                self._sync_shared_world_tags()
 
         if self.editable:
             # ── Stacked sidebar ────────────────────────────────────────────────
@@ -1201,7 +1252,10 @@ class RoomDetailDialog(QDialog):
             try:
                 if port == "Virtual MOCK_RTLS":
                     from serial_reader import MockSerialReaderThread
-                    self.serial_thread = MockSerialReaderThread()
+                    self.serial_thread = MockSerialReaderThread(
+                        room=self.room,
+                        coordinate_mode="local",
+                    )
                 else:
                     from serial_reader import SerialReaderThread
                     # Build anchor_positions dict for bilateration.
@@ -1241,13 +1295,30 @@ class RoomDetailDialog(QDialog):
             self.canvas.active_tags.clear()
             self.canvas.update()
 
+    def _sync_shared_world_tags(self):
+        if self._world_tag_provider is None:
+            return
+        try:
+            world_tags = dict(self._world_tag_provider() or {})
+        except Exception:
+            return
+        self.canvas.sync_world_tags_for_room(world_tags)
+
+    def _stop_live_updates(self):
+        if self._shared_tag_timer is not None:
+            self._shared_tag_timer.stop()
+            self._shared_tag_timer = None
+        if self.serial_thread:
+            self.serial_thread.stop()
+            self.serial_thread = None
+
     def _on_rtls_error(self, err):
         QMessageBox.warning(self, "RTLS Error", err)
         if hasattr(self, 'btn_connect'):
             self.btn_connect.setChecked(False)
             self.btn_connect.setText("Connect")
             self.cb_ports.setEnabled(True)
-        if hasattr(self, 'serial_thread') and self.serial_thread:
+        if self.serial_thread:
             self.serial_thread.stop()
             self.serial_thread = None
 
@@ -1261,3 +1332,7 @@ class RoomDetailDialog(QDialog):
             color = "#e74c3c" if "WARN" in msg or "SKIP" in msg else "#2ecc71"
             self.debug_log.append(f"<span style='color:{color}'>{msg}</span>")
             self.debug_log.verticalScrollBar().setValue(self.debug_log.verticalScrollBar().maximum())
+
+    def done(self, result: int):
+        self._stop_live_updates()
+        super().done(result)

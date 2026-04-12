@@ -1,6 +1,6 @@
 {
     "room_name": "room4",
-    "saved_at": "2026-04-03T04:22:52",
+    "saved_at": "2026-04-10T03:50:36",
     "units": "ft",
     "rtls_settings": {
         "tag_height_ft": 0.0,
@@ -17,7 +17,7 @@
     "anchors": [
         {
             "id": "R4A0",
-            "hardware_id": "",
+            "hardware_id": "R4A2",
             "x_ft": 4.309,
             "y_ft": 4.735
         },
@@ -35,7 +35,7 @@
         },
         {
             "id": "R4A3",
-            "hardware_id": "",
+            "hardware_id": "R4A1",
             "x_ft": 2.975,
             "y_ft": 4.367
         }

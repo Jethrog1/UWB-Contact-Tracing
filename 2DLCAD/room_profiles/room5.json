@@ -1,6 +1,6 @@
 {
     "room_name": "room5",
-    "saved_at": "2026-04-03T04:22:58",
+    "saved_at": "2026-04-10T03:50:53",
     "units": "ft",
     "rtls_settings": {
         "tag_height_ft": 0.0,
@@ -11,19 +11,19 @@
         "min_y": 85.917,
         "max_x": -36.696,
         "max_y": 91.898,
-        "width": 7.855,
+        "width": 7.856,
         "height": 5.981
     },
     "anchors": [
         {
             "id": "R5A0",
-            "hardware_id": "",
+            "hardware_id": "R5A1",
             "x_ft": 6.361,
             "y_ft": 5.303
         },
         {
             "id": "R5A1",
-            "hardware_id": "",
+            "hardware_id": "R5A0",
             "x_ft": 6.361,
             "y_ft": 4.248
         }
