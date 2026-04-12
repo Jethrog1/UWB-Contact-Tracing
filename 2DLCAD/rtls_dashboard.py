@@ -1473,7 +1473,7 @@ class RTLSDashboard(QMainWindow):
             editable=(self.app_mode == self.MODE_ANCHOR_MAPPER),
             world_tag_provider=(
                 (lambda: dict(self._active_tags_world))
-                if self.app_mode == self.MODE_RTLS
+                if self._active_tags_world or self._global_rtls_connected()
                 else None
             ),
         )
@@ -1484,6 +1484,21 @@ class RTLSDashboard(QMainWindow):
             dlg.canvas.roll_n     = getattr(self, "_global_roll_n", 8)
             dlg.canvas.kalman_q   = getattr(self, "_global_kalman_q", 0.1)
             dlg.canvas.kalman_r   = getattr(self, "_global_kalman_r", 2.0)
+
+        # Wire dashboard serial thread signals → room-view debug log
+        # (only real SerialReaderThread has raw_line / debug_msg signals)
+        def _connect_serial_signals(thread):
+            if thread is None:
+                return
+            if hasattr(thread, "raw_line"):
+                thread.raw_line.connect(dlg._on_raw_line)
+            if hasattr(thread, "debug_msg"):
+                thread.debug_msg.connect(dlg._on_debug_msg)
+
+        _connect_serial_signals(self._global_serial_thread)
+        for t in self._global_serial_threads.values():
+            _connect_serial_signals(t)
+
         dlg.exec()
         
         # Refresh list to update anchor count label (e.g. "Room 1 (4 anchors)")
