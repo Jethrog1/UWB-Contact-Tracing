@@ -14,6 +14,7 @@ from PyQt6.QtCore import Qt, QPointF, QRectF, QPoint, QRect, QTimer
 from cad_core import Viewport
 from room_data import Room, Anchor
 from room_profiles import default_room_profile_path, save_room_profile
+from tag_profile_utils import load_tag_profile_lookup, resolve_tag_anchor_correction, resolve_tag_height
 
 ROOM_ZOOM_MIN = 0.05
 ROOM_ZOOM_MAX = 6000.0
@@ -169,7 +170,7 @@ class RoomCanvas(QWidget):
         visible_tags: Dict[str, Tuple[float, float]] = {}
         for tag_id, (world_x, world_y) in world_tags.items():
             local_x, local_y = self.room.world_to_local(world_x, world_y)
-            if self.room.contains_local_point(local_x, local_y):
+            if self.room.contains_local_point_with_tolerance(local_x, local_y, tolerance_ft=1.2):
                 visible_tags[tag_id] = (local_x, local_y)
 
         current_ids = set(self.active_tags.keys())
@@ -719,7 +720,7 @@ class RoomCanvas(QWidget):
         p.end()
 
 class AnchorEditDialog(QDialog):
-    """Single popup to edit an anchor's Hardware ID and local coordinates."""
+    """Single popup to edit an anchor's Hardware ID, local coordinates, and height."""
     def __init__(self, anchor, ref_anchor, parent=None):
         super().__init__(parent)
         self.anchor = anchor
@@ -766,8 +767,10 @@ class AnchorEditDialog(QDialog):
         # Show ABSOLUTE coords from room origin (0,0) = bottom-left corner
         self.field_x = QLineEdit(f"{anchor.x:.3f}")
         self.field_y = QLineEdit(f"{anchor.y:.3f}")
+        self.field_z = QLineEdit(f"{anchor.z:.3f}")
         form.addRow("X from room origin (ft):", self.field_x)
         form.addRow("Y from room origin (ft):", self.field_y)
+        form.addRow("Height from floor (ft):", self.field_z)
         
         note = QLabel("↳ (0, 0) = room bottom-left corner")
         note.setStyleSheet("font-size: 10px; color: #888; font-weight: normal;")
@@ -798,6 +801,7 @@ class RoomDetailDialog(QDialog):
         self.editable = editable
         self._world_tag_provider = world_tag_provider
         self._shared_tag_timer: Optional[QTimer] = None
+        self._tag_profile_lookup = load_tag_profile_lookup()
         self.serial_thread = None
         self.setWindowTitle(f"Room Detail – {room.name}")
         self.resize(1000, 700)
@@ -1028,6 +1032,12 @@ class RoomDetailDialog(QDialog):
             rtls_row = QHBoxLayout()
             self.cb_ports = QComboBox()
             self.cb_ports.addItems(ports)
+            saved_port = str(self.room.rtls_settings.get("ble_module_port", "")).strip()
+            if saved_port and saved_port not in ports:
+                self.cb_ports.addItem(saved_port)
+            if saved_port:
+                self.cb_ports.setCurrentText(saved_port)
+            self.cb_ports.currentTextChanged.connect(self._on_ble_module_changed)
             self.btn_connect = QPushButton("Connect")
             self.btn_connect.setCheckable(True)
             self.btn_connect.clicked.connect(self._toggle_rtls)
@@ -1193,7 +1203,7 @@ class RoomDetailDialog(QDialog):
             else:
                 rel_x, rel_y = a.x, a.y
             hw_label = f" [hw:{a.hw_id}]" if a.hw_id else " [hw:?]"
-            item = QListWidgetItem(f"{a.id}{hw_label}: ({rel_x:.2f}ft, {rel_y:.2f}ft)")
+            item = QListWidgetItem(f"{a.id}{hw_label}: ({rel_x:.2f}ft, {rel_y:.2f}ft, h={a.z:.2f}ft)")
             self.list_anchors.addItem(item)
 
     def _edit_anchor_for(self, anchor):
@@ -1204,14 +1214,16 @@ class RoomDetailDialog(QDialog):
                 hw = dlg.field_hw.text().strip()
                 nx = float(dlg.field_x.text().strip())
                 ny = float(dlg.field_y.text().strip())
+                nz = float(dlg.field_z.text().strip())
                 anchor.hw_id = hw
                 # Store absolute local coords (origin = room bottom-left)
                 anchor.x = nx
                 anchor.y = ny
+                anchor.z = nz
                 self.refresh_anchor_list()
                 self.canvas.update()
             except ValueError:
-                QMessageBox.warning(self, "Error", "X and Y must be numeric.")
+                QMessageBox.warning(self, "Error", "X, Y, and Height must be numeric.")
 
     def _edit_anchor_coords(self, item):
         aid = item.text().split(":")[0].strip()
@@ -1227,6 +1239,15 @@ class RoomDetailDialog(QDialog):
     def _on_tag_height_changed(self, value: float):
         self.canvas.tag_height = value
         self.room.rtls_settings["tag_height_ft"] = value
+
+    def _on_ble_module_changed(self, value: str):
+        self.room.rtls_settings["ble_module_port"] = value.strip()
+
+    def _resolve_tag_height(self, tag_id: str) -> float:
+        return resolve_tag_height(tag_id, self._tag_profile_lookup, default_height=self.canvas.tag_height)
+
+    def _resolve_tag_distance(self, tag_id: str, anchor_id: str, raw_distance: float) -> float:
+        return resolve_tag_anchor_correction(tag_id, anchor_id, raw_distance, self._tag_profile_lookup)
 
     def _save_room_profile(self):
         default_path = default_room_profile_path(self.room.name)
@@ -1263,6 +1284,7 @@ class RoomDetailDialog(QDialog):
             if not port:
                 self.btn_connect.setChecked(False)
                 return
+            self._tag_profile_lookup = load_tag_profile_lookup()
             
             try:
                 if port == "Virtual MOCK_RTLS":
@@ -1283,11 +1305,13 @@ class RoomDetailDialog(QDialog):
                         if not hw_key:
                             suffix = a.id.split("A", 1)[-1] if "A" in a.id else a.id
                             hw_key = f"A{suffix}"
-                        anchor_positions[hw_key] = (a.x, a.y)
+                        anchor_positions[hw_key] = (a.x, a.y, a.z)
                     
                     self.serial_thread = SerialReaderThread(
                         port, 115200, anchor_positions,
-                        tag_height=self.canvas.tag_height
+                        tag_height=self.canvas.tag_height,
+                        tag_height_lookup=self._resolve_tag_height,
+                        distance_correction_lookup=self._resolve_tag_distance,
                     )
                 
                 self.serial_thread.tag_update.connect(self.canvas._update_tag)

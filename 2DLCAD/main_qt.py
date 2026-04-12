@@ -2094,7 +2094,7 @@ class MainWindow(QMainWindow):
         self.home_screen.btn_tag_profiler.clicked.connect(self.open_tag_profiler)
 
         workspace_items = [
-            ("cad", "Launch 2DLCAD"),
+            ("cad", "2DLCAD"),
             ("anchor_mapper", "Anchor Mapper"),
             ("tag_profiler", "Tag Profiler"),
             ("rtls_dashboard", "RTLS Dashboard"),

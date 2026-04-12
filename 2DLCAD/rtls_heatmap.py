@@ -233,7 +233,7 @@ class ProximityHeatmapLayer:
             occupant_points = []
             for _, (world_x, world_y) in tag_positions.items():
                 local_x, local_y = room.world_to_local(world_x, world_y)
-                if room.contains_local_point(local_x, local_y):
+                if room.contains_local_point_with_tolerance(local_x, local_y, tolerance_ft=1.2):
                     occupant_points.append((world_x, world_y))
 
             if not occupant_points:

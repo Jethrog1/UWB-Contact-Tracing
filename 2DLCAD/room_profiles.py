@@ -21,14 +21,15 @@ def _slugify_room_name(name: str) -> str:
 
 
 def build_room_profile(room, tag_height_ft=0.0, filter_mode="None"):
+    rtls_settings = dict(room.rtls_settings)
+    rtls_settings["tag_height_ft"] = round(float(tag_height_ft), 3)
+    rtls_settings["filter_mode"] = filter_mode
+    rtls_settings.setdefault("ble_module_port", "")
     return {
         "room_name": room.name,
         "saved_at": datetime.now().isoformat(timespec="seconds"),
         "units": "ft",
-        "rtls_settings": {
-            "tag_height_ft": round(float(tag_height_ft), 3),
-            "filter_mode": filter_mode,
-        },
+        "rtls_settings": rtls_settings,
         "room_bounds_ft": {
             "min_x": round(float(room.min_x), 3),
             "min_y": round(float(room.min_y), 3),
@@ -43,6 +44,7 @@ def build_room_profile(room, tag_height_ft=0.0, filter_mode="None"):
                 "hardware_id": anchor.hw_id or "",
                 "x_ft": round(float(anchor.x), 3),
                 "y_ft": round(float(anchor.y), 3),
+                "z_ft": round(float(anchor.z), 3),
             }
             for anchor in room.anchors
         ],
@@ -157,6 +159,7 @@ def load_floorplan_manifest(filepath):
                 hw_id=anchor_payload.get("hardware_id", ""),
                 x=float(anchor_payload.get("x_ft", 0.0)),
                 y=float(anchor_payload.get("y_ft", 0.0)),
+                z=float(anchor_payload.get("z_ft", 0.0)),
             ))
         room.anchors = anchors
         rooms.append(room)

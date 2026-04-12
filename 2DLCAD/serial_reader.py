@@ -10,6 +10,39 @@ except ImportError:
     serial = None
 
 
+def parse_distance_packet(line: str):
+    """
+    Parse a hardware distance packet of the form:
+        T2 | A0:11.37 | A1:10.90 | A2:--- | A3:16.55
+    Returns (tag_id, distances_dict) or (None, None).
+    """
+    if " -> " in line:
+        line = line.split(" -> ", 1)[1].strip()
+
+    parts = [p.strip() for p in line.split("|")]
+    if len(parts) < 2:
+        return None, None
+
+    tag_id = parts[0].strip()
+    if not tag_id:
+        return None, None
+
+    distances = {}
+    for seg in parts[1:]:
+        seg = seg.replace(":", " ").strip()
+        tokens = seg.split()
+        if len(tokens) >= 2:
+            a_id = tokens[0]
+            val = tokens[1]
+            if val not in ("---", "--", "nan", ""):
+                try:
+                    distances[a_id] = float(val)
+                except ValueError:
+                    pass
+
+    return tag_id, distances
+
+
 def _pick_bilateration_candidate(candidates, anchor_points, preferred_position=None):
     """
     Choose the most plausible 2-anchor intersection.
@@ -43,11 +76,16 @@ def _solve_position(anchor_positions: dict, distances: dict, tag_height: float =
     valid = []
     for a_id, r in distances.items():
         if r > 0.0 and a_id in anchor_positions:
-            if tag_height > 0 and r > tag_height:
-                r = math.sqrt(r ** 2 - tag_height ** 2)
-            elif tag_height > 0:
+            anchor_spec = anchor_positions[a_id]
+            anchor_x = anchor_spec[0]
+            anchor_y = anchor_spec[1]
+            anchor_height = float(anchor_spec[2]) if len(anchor_spec) > 2 else 0.0
+            height_delta = abs(anchor_height - float(tag_height or 0.0))
+            if height_delta > 0 and r > height_delta:
+                r = math.sqrt(r ** 2 - height_delta ** 2)
+            elif height_delta > 0:
                 r = 0.01
-            valid.append((anchor_positions[a_id][0], anchor_positions[a_id][1], r))
+            valid.append((anchor_x, anchor_y, r))
 
     if len(valid) < 2:
         return None, None
@@ -125,47 +163,27 @@ class SerialReaderThread(QThread):
     raw_line = pyqtSignal(str)          # every serial line received
     debug_msg = pyqtSignal(str)         # diagnostic messages
 
-    def __init__(self, port: str, baudrate: int = 115200, anchor_positions: dict = None, tag_height: float = 0.0):
+    def __init__(
+        self,
+        port: str,
+        baudrate: int = 115200,
+        anchor_positions: dict = None,
+        tag_height: float = 0.0,
+        tag_height_lookup=None,
+        distance_correction_lookup=None,
+    ):
         super().__init__()
         self.port = port
         self.baudrate = baudrate
         self._running = True
         self.anchor_positions = anchor_positions or {}
         self.tag_height = tag_height
+        self.tag_height_lookup = tag_height_lookup
+        self.distance_correction_lookup = distance_correction_lookup
         self._last_positions = {}
 
     def _parse_line(self, line: str):
-        """
-        Parse a hardware distance packet of the form:
-            T2 | A0:11.37 | A1:10.90 | A2:--- | A3:16.55
-        Returns (tag_id, distances_dict) or (None, None).
-        """
-        # Strip optional Arduino IDE timestamp prefix "HH:MM:SS.mmm -> ..."
-        if " -> " in line:
-            line = line.split(" -> ", 1)[1].strip()
-
-        parts = [p.strip() for p in line.split("|")]
-        if len(parts) < 2:
-            return None, None
-
-        tag_id = parts[0].strip()
-        if not tag_id.startswith("T"):
-            return None, None
-
-        distances = {}
-        for seg in parts[1:]:
-            seg = seg.replace(":", " ").strip()
-            tokens = seg.split()
-            if len(tokens) >= 2:
-                a_id = tokens[0]
-                val = tokens[1]
-                if val not in ("---", "--", "nan", ""):
-                    try:
-                        distances[a_id] = float(val)
-                    except ValueError:
-                        pass
-
-        return tag_id, distances
+        return parse_distance_packet(line)
 
     def run(self):
         if serial is None:
@@ -195,11 +213,13 @@ class SerialReaderThread(QThread):
                         resolved = {}
                         for dist_anchor_id, dist_val in distances.items():
                             if dist_anchor_id in self.anchor_positions:
-                                resolved[dist_anchor_id] = dist_val
+                                corrected = self.distance_correction_lookup(tag_id, dist_anchor_id, dist_val) if callable(self.distance_correction_lookup) else dist_val
+                                resolved[dist_anchor_id] = corrected
                             else:
                                 for ap_key in self.anchor_positions:
                                     if ap_key.endswith(dist_anchor_id) or dist_anchor_id.endswith(ap_key):
-                                        resolved[ap_key] = dist_val
+                                        corrected = self.distance_correction_lookup(tag_id, ap_key, dist_val) if callable(self.distance_correction_lookup) else dist_val
+                                        resolved[ap_key] = corrected
                                         break
 
                         if len(resolved) < 2:
@@ -207,10 +227,11 @@ class SerialReaderThread(QThread):
                             continue
 
                         solve_mode = _lateration_mode(len(resolved))
+                        current_tag_height = self.tag_height_lookup(tag_id) if callable(self.tag_height_lookup) else self.tag_height
                         x, y = _solve_position(
                             self.anchor_positions,
                             resolved,
-                            self.tag_height,
+                            current_tag_height,
                             preferred_position=self._last_positions.get(tag_id),
                         )
                         if x is not None:
@@ -235,6 +256,67 @@ class SerialReaderThread(QThread):
     def stop(self):
         self._running = False
         self.wait()
+
+
+class RawDistanceReaderThread(QThread):
+    """
+    Lightweight serial reader for calibration capture.
+
+    It emits raw per-anchor ranges directly without attempting to solve a tag
+    position, which keeps the calibration workflow aligned with the original
+    live-capture tool.
+    """
+
+    distances_update = pyqtSignal(str, dict)
+    connection_error = pyqtSignal(str)
+    raw_line = pyqtSignal(str)
+    debug_msg = pyqtSignal(str)
+
+    def __init__(self, port: str, baudrate: int = 115200):
+        super().__init__()
+        self.port = port
+        self.baudrate = baudrate
+        self._running = True
+        self._serial_handle = None
+
+    def run(self):
+        if serial is None:
+            self.connection_error.emit("pyserial is not installed. Run: pip install pyserial")
+            return
+
+        try:
+            with serial.Serial(self.port, self.baudrate, timeout=0.25) as ser:
+                self._serial_handle = ser
+                while self._running:
+                    try:
+                        line = ser.readline().decode("utf-8", errors="ignore").strip()
+                        if not line:
+                            continue
+
+                        self.raw_line.emit(line)
+                        tag_id, distances = parse_distance_packet(line)
+                        if tag_id is None or not distances:
+                            self.debug_msg.emit(f"[SKIP] Could not parse: {line[:60]}")
+                            continue
+
+                        self.distances_update.emit(tag_id, distances)
+                    except serial.SerialException as e:
+                        self.connection_error.emit(f"Serial read error: {e}")
+                        break
+        except Exception as e:
+            self.connection_error.emit(f"Failed to open port {self.port}: {e}")
+        finally:
+            self._serial_handle = None
+
+    def stop(self):
+        self._running = False
+        handle = self._serial_handle
+        if handle is not None:
+            try:
+                handle.close()
+            except Exception:
+                pass
+        self.wait(1500)
 
 
 class MockSerialReaderThread(QThread):

@@ -44,6 +44,7 @@ from room_profiles import (
     save_project_package,
 )
 from workspace_switcher import WorkspaceSwitcher
+from tag_profile_utils import load_tag_profile_lookup, resolve_tag_anchor_correction, resolve_tag_height
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -512,10 +513,15 @@ class RTLSDashboard(QMainWindow):
         self._loaded_project_path: str | None = None
         self._project_tempdir: tempfile.TemporaryDirectory | None = None
         self._global_serial_thread = None
+        self._global_serial_threads: dict[str, object] = {}
         self._live_tags_world: dict[str, tuple[float, float]] = {}
         self._active_tags_world: dict[str, tuple[float, float]] = {}
+        self._live_tag_last_seen: dict[str, float] = {}
         self._using_mock_rtls = False
         self._mock_room: Room | None = None
+        self._tag_profile_lookup = load_tag_profile_lookup()
+        self._auto_connect_retry_port: str | None = None
+        self._auto_connect_retry_count = 0
         self._rtls_history: list[tuple[float, dict[str, tuple[float, float]]]] = []
         self._history_max_frames = 1200
         self._history_follow_live = True
@@ -545,6 +551,11 @@ class RTLSDashboard(QMainWindow):
         self._history_capture_timer.setInterval(250)
         self._history_capture_timer.timeout.connect(self._capture_rtls_history_frame)
         self._history_capture_timer.start()
+
+        self._live_tag_cleanup_timer = QTimer(self)
+        self._live_tag_cleanup_timer.setInterval(500)
+        self._live_tag_cleanup_timer.timeout.connect(self._prune_stale_live_tags)
+        self._live_tag_cleanup_timer.start()
 
         self._history_play_timer = QTimer(self)
         self._history_play_timer.setInterval(180)
@@ -948,6 +959,8 @@ class RTLSDashboard(QMainWindow):
         self._loaded_project_path = path
         self._lbl_image.setText(f"📦 {os.path.basename(path)}")
         self._show_status(f"Loaded project with {len(rooms)} room(s)")
+        self._refresh_global_rtls_ports()
+        self._auto_connect_saved_modules()
 
     def _auto_load_room_data_for_svg(self, svg_path: str):
         manifest_path = manifest_path_for_svg(svg_path)
@@ -963,6 +976,7 @@ class RTLSDashboard(QMainWindow):
             self._canvas.clear_active_tags()
             self._canvas.update()
             self._show_status(f"Loaded vector and restored {len(rooms)} room profile(s)")
+            self._refresh_global_rtls_ports()
         except Exception as exc:
             QMessageBox.warning(
                 self,
@@ -995,6 +1009,7 @@ class RTLSDashboard(QMainWindow):
         self._canvas.clear_active_tags()
         self._canvas.update()
         self._show_status(f"Loaded room data for {len(rooms)} room(s)")
+        self._refresh_global_rtls_ports()
 
     def _save_room_data(self):
         if not self._rooms:
@@ -1180,7 +1195,7 @@ class RTLSDashboard(QMainWindow):
             item = QListWidgetItem(f"🏠 {r.name} ({len(r.anchors)} anchors)")
             item.setData(Qt.ItemDataRole.UserRole, r)
             self._room_list.addItem(item)
-        if self.app_mode == self.MODE_RTLS and hasattr(self, "_rtls_status_label") and self._global_serial_thread is None:
+        if self.app_mode == self.MODE_RTLS and hasattr(self, "_rtls_status_label") and not self._global_rtls_connected():
             self._rtls_status_label.setText(f"Ready with {len(self._rooms)} room(s)")
 
     def _find_duplicate_room(self, room_name: str, segments: list):
@@ -1308,11 +1323,17 @@ class RTLSDashboard(QMainWindow):
         if not hasattr(self, "_rtls_port_combo"):
             return
         ports = ["Virtual MOCK_RTLS"]
+        saved_modules = self._saved_ble_modules()
+        if saved_modules:
+            ports.append("Saved Project Modules")
         try:
             import serial.tools.list_ports
             ports.extend(p.device for p in serial.tools.list_ports.comports())
         except ImportError:
             pass
+        for module in saved_modules:
+            if module not in ports:
+                ports.append(module)
 
         current = self._rtls_port_combo.currentText()
         self._rtls_port_combo.blockSignals(True)
@@ -1322,11 +1343,33 @@ class RTLSDashboard(QMainWindow):
             self._rtls_port_combo.setCurrentText(current)
         self._rtls_port_combo.blockSignals(False)
 
-    def _build_global_anchor_positions(self):
+    def _global_rtls_connected(self) -> bool:
+        return self._global_serial_thread is not None or bool(self._global_serial_threads)
+
+    def _saved_ble_modules(self):
+        modules = []
+        for room in self._rooms:
+            module = str(room.rtls_settings.get("ble_module_port", "")).strip()
+            if module and module not in modules:
+                modules.append(module)
+        return modules
+
+    def _resolve_tag_height(self, tag_id: str) -> float:
+        return resolve_tag_height(tag_id, self._tag_profile_lookup, default_height=self._default_global_tag_height())
+
+    def _resolve_tag_distance(self, tag_id: str, anchor_id: str, raw_distance: float) -> float:
+        return resolve_tag_anchor_correction(tag_id, anchor_id, raw_distance, self._tag_profile_lookup)
+
+    def _build_global_anchor_positions(self, port_filter: str | None = None):
         anchor_positions = {}
         missing_hw = []
         duplicate_hw = []
+        saved_modules = set(self._saved_ble_modules())
+        use_filter = port_filter if port_filter and port_filter in saved_modules else None
         for room in self._rooms:
+            room_module = str(room.rtls_settings.get("ble_module_port", "")).strip()
+            if use_filter and room_module != use_filter:
+                continue
             for anchor in room.anchors:
                 hw_id = (anchor.hw_id or "").strip()
                 if not hw_id:
@@ -1336,8 +1379,29 @@ class RTLSDashboard(QMainWindow):
                     duplicate_hw.append(hw_id)
                     continue
                 wx, wy = room.local_to_world(anchor.x, anchor.y)
-                anchor_positions[hw_id] = (wx, wy)
+                anchor_positions[hw_id] = (wx, wy, float(getattr(anchor, "z", 0.0)))
         return anchor_positions, missing_hw, duplicate_hw
+
+    def _build_anchor_positions_by_module(self):
+        grouped: dict[str, dict] = {}
+        missing_hw = []
+        duplicate_hw = []
+        for room in self._rooms:
+            module = str(room.rtls_settings.get("ble_module_port", "")).strip()
+            if not module:
+                continue
+            group = grouped.setdefault(module, {})
+            for anchor in room.anchors:
+                hw_id = (anchor.hw_id or "").strip()
+                if not hw_id:
+                    missing_hw.append(f"{room.name}:{anchor.id}")
+                    continue
+                if hw_id in group:
+                    duplicate_hw.append(f"{module}:{hw_id}")
+                    continue
+                wx, wy = room.local_to_world(anchor.x, anchor.y)
+                group[hw_id] = (wx, wy, float(getattr(anchor, "z", 0.0)))
+        return grouped, missing_hw, duplicate_hw
 
     def _default_global_tag_height(self) -> float:
         for room in self._rooms:
@@ -1349,14 +1413,36 @@ class RTLSDashboard(QMainWindow):
                 return value
         return 0.0
 
+    def _auto_connect_saved_modules(self):
+        if self.app_mode != self.MODE_RTLS or not hasattr(self, "_rtls_port_combo"):
+            return
+        if self._global_rtls_connected():
+            return
+        saved_modules = self._saved_ble_modules()
+        if not saved_modules:
+            return
+        self._refresh_global_rtls_ports()
+        target = saved_modules[0] if len(saved_modules) == 1 else "Saved Project Modules"
+        self._auto_connect_retry_port = target
+        self._auto_connect_retry_count = 0
+        QTimer.singleShot(250, self._run_pending_auto_connect)
+
+    def _run_pending_auto_connect(self):
+        target = (self._auto_connect_retry_port or "").strip()
+        if not target or self._global_rtls_connected() or not hasattr(self, "_rtls_port_combo"):
+            return
+        self._refresh_global_rtls_ports()
+        self._rtls_port_combo.setCurrentText(target)
+        self._rtls_connect_btn.setChecked(True)
+
     def _toggle_heatmap(self, checked: bool):
         self._canvas.set_heatmap_enabled(checked)
-        if hasattr(self, "_rtls_status_label") and self._global_serial_thread is None:
+        if hasattr(self, "_rtls_status_label") and not self._global_rtls_connected():
             self._rtls_status_label.setText("Heat map enabled" if checked else "Heat map disabled")
 
     def _set_heatmap_sensitivity(self, value: int):
         self._canvas.set_heatmap_sensitivity(value)
-        if hasattr(self, "_rtls_status_label") and self._global_serial_thread is None:
+        if hasattr(self, "_rtls_status_label") and not self._global_rtls_connected():
             self._rtls_status_label.setText(f"Heat sensitivity: {value}")
 
     def _toggle_global_rtls(self, checked: bool):
@@ -1374,22 +1460,7 @@ class RTLSDashboard(QMainWindow):
                 self._rtls_connect_btn.setChecked(False)
                 self._rtls_connect_btn.blockSignals(False)
                 return
-
-            anchor_positions = {}
-            missing_hw = []
-            duplicate_hw = []
-            if port != "Virtual MOCK_RTLS":
-                anchor_positions, missing_hw, duplicate_hw = self._build_global_anchor_positions()
-                if len(anchor_positions) < 2:
-                    QMessageBox.information(
-                        self,
-                        "Insufficient Anchors",
-                        "At least two anchors with unique hardware IDs are required across loaded rooms."
-                    )
-                    self._rtls_connect_btn.blockSignals(True)
-                    self._rtls_connect_btn.setChecked(False)
-                    self._rtls_connect_btn.blockSignals(False)
-                    return
+            self._tag_profile_lookup = load_tag_profile_lookup()
 
             try:
                 if port == "Virtual MOCK_RTLS":
@@ -1402,19 +1473,54 @@ class RTLSDashboard(QMainWindow):
                     self._mock_room = None
                     if hasattr(self, "_heatmap_toggle_btn") and not self._heatmap_toggle_btn.isChecked():
                         self._heatmap_toggle_btn.setChecked(True)
+                elif port == "Saved Project Modules":
+                    from serial_reader import SerialReaderThread
+                    module_positions, missing_hw, duplicate_hw = self._build_anchor_positions_by_module()
+                    active_modules = {module: positions for module, positions in module_positions.items() if len(positions) >= 2}
+                    if not active_modules:
+                        raise ValueError("Saved room modules do not yet provide two anchors per module.")
+                    for module, positions in active_modules.items():
+                        thread = SerialReaderThread(
+                            module,
+                            115200,
+                            positions,
+                            tag_height=self._default_global_tag_height(),
+                            tag_height_lookup=self._resolve_tag_height,
+                            distance_correction_lookup=self._resolve_tag_distance,
+                        )
+                        thread.tag_update.connect(self._on_global_tag_update)
+                        thread.connection_error.connect(lambda err, m=module: self._on_global_rtls_error(f"{m}: {err}"))
+                        thread.start()
+                        self._global_serial_threads[module] = thread
+                    self._using_mock_rtls = False
+                    self._mock_room = None
                 else:
                     from serial_reader import SerialReaderThread
+                    anchor_positions, missing_hw, duplicate_hw = self._build_global_anchor_positions(port_filter=port)
+                    if len(anchor_positions) < 2:
+                        QMessageBox.information(
+                            self,
+                            "Insufficient Anchors",
+                            "At least two anchors with unique hardware IDs are required for the selected module."
+                        )
+                        self._rtls_connect_btn.blockSignals(True)
+                        self._rtls_connect_btn.setChecked(False)
+                        self._rtls_connect_btn.blockSignals(False)
+                        return
                     self._global_serial_thread = SerialReaderThread(
                         port,
                         115200,
                         anchor_positions,
                         tag_height=self._default_global_tag_height(),
+                        tag_height_lookup=self._resolve_tag_height,
+                        distance_correction_lookup=self._resolve_tag_distance,
                     )
                     self._using_mock_rtls = False
                     self._mock_room = None
-                self._global_serial_thread.tag_update.connect(self._on_global_tag_update)
-                self._global_serial_thread.connection_error.connect(self._on_global_rtls_error)
-                self._global_serial_thread.start()
+                if self._global_serial_thread is not None:
+                    self._global_serial_thread.tag_update.connect(self._on_global_tag_update)
+                    self._global_serial_thread.connection_error.connect(self._on_global_rtls_error)
+                    self._global_serial_thread.start()
             except Exception as exc:
                 QMessageBox.warning(self, "RTLS Error", str(exc))
                 self._rtls_connect_btn.blockSignals(True)
@@ -1422,6 +1528,8 @@ class RTLSDashboard(QMainWindow):
                 self._rtls_connect_btn.blockSignals(False)
                 return
 
+            missing_hw = locals().get("missing_hw", [])
+            duplicate_hw = locals().get("duplicate_hw", [])
             if missing_hw:
                 self._show_notice(f"Skipped anchors without hardware IDs: {len(missing_hw)}")
             if duplicate_hw:
@@ -1429,20 +1537,31 @@ class RTLSDashboard(QMainWindow):
 
             self._rtls_port_combo.setEnabled(False)
             self._rtls_connect_btn.setText("Disconnect")
+            self._auto_connect_retry_count = 0
             self._show_status("RTLS stream connected")
             if hasattr(self, "_rtls_status_label"):
-                self._rtls_status_label.setText(f"Connected on {port}")
+                if port == "Saved Project Modules":
+                    self._rtls_status_label.setText(f"Connected on {len(self._global_serial_threads)} saved module(s)")
+                else:
+                    self._rtls_status_label.setText(f"Connected on {port}")
             self._set_history_live_mode(True)
         else:
+            self._auto_connect_retry_port = None
+            self._auto_connect_retry_count = 0
             self._stop_global_rtls()
 
     def _stop_global_rtls(self):
         if self._global_serial_thread is not None:
             self._global_serial_thread.stop()
             self._global_serial_thread = None
+        if self._global_serial_threads:
+            for thread in self._global_serial_threads.values():
+                thread.stop()
+            self._global_serial_threads.clear()
         self._using_mock_rtls = False
         self._mock_room = None
         self._live_tags_world.clear()
+        self._live_tag_last_seen.clear()
         if hasattr(self, "_rtls_connect_btn"):
             self._rtls_connect_btn.blockSignals(True)
             self._rtls_connect_btn.setChecked(False)
@@ -1467,16 +1586,45 @@ class RTLSDashboard(QMainWindow):
         else:
             wx, wy = x, y
         self._live_tags_world[tag_id] = (wx, wy)
+        self._live_tag_last_seen[tag_id] = time.monotonic()
         if self._history_follow_live:
             self._active_tags_world = dict(self._live_tags_world)
             self._canvas.set_active_tags_world(self._active_tags_world)
 
     def _on_global_rtls_error(self, err: str):
-        QMessageBox.warning(self, "RTLS Error", err)
+        should_retry = False
+        if self._auto_connect_retry_port and self._auto_connect_retry_count < 1:
+            self._auto_connect_retry_count += 1
+            should_retry = True
         self._stop_global_rtls()
+        if should_retry:
+            self._show_notice(f"Auto-connect retrying: {err}", timeout_ms=2200)
+            QTimer.singleShot(600, self._run_pending_auto_connect)
+            return
+        self._auto_connect_retry_port = None
+        QMessageBox.warning(self, "RTLS Error", err)
+
+    def _prune_stale_live_tags(self):
+        if not self._live_tag_last_seen:
+            return
+        now = time.monotonic()
+        stale_ids = [
+            tag_id for tag_id, seen_at in self._live_tag_last_seen.items()
+            if now - seen_at > 1.5
+        ]
+        if not stale_ids:
+            return
+        changed = False
+        for tag_id in stale_ids:
+            self._live_tag_last_seen.pop(tag_id, None)
+            if self._live_tags_world.pop(tag_id, None) is not None:
+                changed = True
+        if changed and self._history_follow_live:
+            self._active_tags_world = dict(self._live_tags_world)
+            self._canvas.set_active_tags_world(self._active_tags_world)
 
     def _capture_rtls_history_frame(self):
-        if self._global_serial_thread is None or not self._live_tags_world:
+        if not self._global_rtls_connected() or not self._live_tags_world:
             return
 
         self._rtls_history.append((time.monotonic(), dict(self._live_tags_world)))
@@ -1537,7 +1685,7 @@ class RTLSDashboard(QMainWindow):
             self._history_ff_btn,
         ):
             btn.setEnabled(has_history)
-        self._history_live_btn.setEnabled(has_history and self._global_serial_thread is not None)
+        self._history_live_btn.setEnabled(has_history and self._global_rtls_connected())
 
         self._history_play_btn.blockSignals(True)
         self._history_play_btn.setChecked(self._history_playing)
@@ -1624,7 +1772,7 @@ class RTLSDashboard(QMainWindow):
         self._apply_history_snapshot(base_index + delta)
 
     def _jump_to_live_history(self):
-        if self._global_serial_thread is None:
+        if not self._global_rtls_connected():
             if self._rtls_history:
                 self._set_history_live_mode(False)
                 self._apply_history_snapshot(len(self._rtls_history) - 1)

@@ -45,12 +45,25 @@ def _segments_equal(seg_a, seg_b, eps=1e-3):
 def _points_close(a, b, eps=1e-3):
     return abs(float(a[0]) - float(b[0])) <= eps and abs(float(a[1]) - float(b[1])) <= eps
 
+
+def _dist_point_to_segment(px, py, x1, y1, x2, y2) -> float:
+    dx = x2 - x1
+    dy = y2 - y1
+    seg_len_sq = dx * dx + dy * dy
+    if seg_len_sq < 1e-12:
+        return math.hypot(px - x1, py - y1)
+    t = max(0.0, min(1.0, ((px - x1) * dx + (py - y1) * dy) / seg_len_sq))
+    proj_x = x1 + t * dx
+    proj_y = y1 + t * dy
+    return math.hypot(px - proj_x, py - proj_y)
+
 @dataclass
 class Anchor:
     id: str          # Dashboard ID e.g. "R1A0", "R1A1"
     x: float         # local x-coord in room (feet)
     y: float         # local y-coord in room (feet)
     hw_id: str = "" # Physical hardware anchor ID e.g. "A0", "A3" (set by user)
+    z: float = 0.0  # height from floor in feet
 
 @dataclass
 class Room:
@@ -169,6 +182,22 @@ class Room:
         if not self._local_polygon:
             return False
         return self._local_polygon.containsPoint(QPointF(lx, ly), Qt.FillRule.OddEvenFill)
+
+    def contains_local_point_with_tolerance(self, lx: float, ly: float, tolerance_ft: float = 1.0) -> bool:
+        """
+        Accept points that are inside the room or slightly outside due to real RTLS noise.
+        This keeps live tags visible and attributable when they land just beyond a wall edge.
+        """
+        if self.contains_local_point(lx, ly):
+            return True
+        if tolerance_ft <= 0.0:
+            return False
+        for wx1, wy1, wx2, wy2 in self.segments:
+            sx1, sy1 = self.world_to_local(wx1, wy1)
+            sx2, sy2 = self.world_to_local(wx2, wy2)
+            if _dist_point_to_segment(lx, ly, sx1, sy1, sx2, sy2) <= tolerance_ft:
+                return True
+        return False
         
     def get_local_polygon(self) -> QPolygonF:
         return QPolygonF(self._local_polygon)
