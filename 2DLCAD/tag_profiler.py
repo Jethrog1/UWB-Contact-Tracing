@@ -465,7 +465,6 @@ class TagProfilerWorkspace(QWidget):
         grid.addWidget(self._device_card, 0, 1, Qt.AlignmentFlag.AlignTop)
         grid.addWidget(self._calibration_card, 1, 0, Qt.AlignmentFlag.AlignTop)
         grid.addWidget(self._notes_card, 1, 1, Qt.AlignmentFlag.AlignTop)
-        profile_layout.addStretch(1)
 
         calibration_tab = self._build_calibration_lab_tab()
 
@@ -855,7 +854,6 @@ class TagProfilerWorkspace(QWidget):
         self._lab_status = QLabel("No calibration equations generated yet.", tab)
         self._lab_status.setObjectName("summary_copy")
         outer.addWidget(self._lab_status)
-        outer.addStretch(1)
         return tab
 
     def _list_serial_ports(self) -> list[str]:
