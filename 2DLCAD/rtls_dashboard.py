@@ -1199,7 +1199,7 @@ class RTLSDashboard(QMainWindow):
             filter_layout.setContentsMargins(2, 8, 2, 2)
             filter_layout.setSpacing(8)
 
-            filter_label = QLabel("Filtering Options")
+            filter_label = QLabel("Smoothing Filter")
             filter_label.setStyleSheet("font-size: 11px; font-weight: 700; color: #c7cbea;")
             filter_layout.addWidget(filter_label)
 
@@ -1208,12 +1208,86 @@ class RTLSDashboard(QMainWindow):
             filter_divider.setStyleSheet("color: #34384f; background: #34384f;")
             filter_layout.addWidget(filter_divider)
 
+            # Global filter mode buttons
+            self._global_filter_mode = "None"
+            self._global_ema_alpha = 0.3
+            self._global_roll_n = 8
+            self._global_kalman_q = 0.1
+            self._global_kalman_r = 2.0
+
+            from PyQt6.QtWidgets import QButtonGroup as _BG
+            filt_grp = _BG(filter_tab)
+            filt_grp.setExclusive(True)
+            filt_row = QHBoxLayout()
+            filt_row.setSpacing(4)
+            self._filter_buttons = {}
+            for fmode in ("None", "EMA", "Rolling", "Kalman"):
+                fb = QPushButton(fmode, filter_tab)
+                fb.setCheckable(True)
+                fb.setChecked(fmode == "None")
+                fb.setFixedHeight(26)
+                fb.setStyleSheet("""
+                    QPushButton { background: #23234a; color: #c0c0e0; border: 1px solid #3a3a66;
+                                  border-radius: 4px; font-size: 11px; padding: 0 6px; }
+                    QPushButton:checked { background: #3556d8; border-color: #6d8cff; color: #fff; }
+                    QPushButton:hover { background: #2d2d6a; }
+                """)
+                fb.clicked.connect(lambda checked, m=fmode: self._set_global_filter(m))
+                filt_grp.addButton(fb)
+                filt_row.addWidget(fb)
+                self._filter_buttons[fmode] = fb
+            filter_layout.addLayout(filt_row)
+
+            # Helper to create a labelled slider row
+            def _make_filter_slider(parent_w, label, lo, hi, default, step, decimals, on_change):
+                row_w = QWidget(parent_w)
+                row_l = QVBoxLayout(row_w)
+                row_l.setContentsMargins(0, 0, 0, 0)
+                row_l.setSpacing(2)
+                hdr = QHBoxLayout()
+                lbl_s = QLabel(label)
+                lbl_s.setStyleSheet("font-size: 10px; font-weight: normal; color: #9aa4d6;")
+                val_lbl = QLabel(f"{default:.{decimals}f}")
+                val_lbl.setStyleSheet("font-size: 10px; color: #6d8cff; font-weight: bold;")
+                hdr.addWidget(lbl_s)
+                hdr.addStretch()
+                hdr.addWidget(val_lbl)
+                sld = QSlider(Qt.Orientation.Horizontal)
+                sld.setRange(int(lo / step), int(hi / step))
+                sld.setValue(int(default / step))
+                sld.valueChanged.connect(
+                    lambda v, vl=val_lbl, d=decimals, s=step, f=on_change: (
+                        vl.setText(f"{v * s:.{d}f}"),
+                        f(v * s)
+                    )
+                )
+                row_l.addLayout(hdr)
+                row_l.addWidget(sld)
+                return row_w
+
+            filter_layout.addWidget(_make_filter_slider(
+                filter_tab, "EMA α  (0=smooth, 1=raw)",
+                0.01, 1.0, 0.3, 0.01, 2,
+                lambda v: setattr(self, '_global_ema_alpha', v)))
+            filter_layout.addWidget(_make_filter_slider(
+                filter_tab, "Rolling window (frames)",
+                2, 30, 8, 1, 0,
+                lambda v: setattr(self, '_global_roll_n', int(v))))
+            filter_layout.addWidget(_make_filter_slider(
+                filter_tab, "Kalman Q (process noise)",
+                0.01, 2.0, 0.1, 0.01, 2,
+                lambda v: setattr(self, '_global_kalman_q', v)))
+            filter_layout.addWidget(_make_filter_slider(
+                filter_tab, "Kalman R (measurement noise)",
+                0.1, 10.0, 2.0, 0.1, 1,
+                lambda v: setattr(self, '_global_kalman_r', v)))
+
             filter_hint = QLabel(
-                "Global filtering tools will live here as the dashboard expands.",
+                "Filter settings apply when opening a room view.",
                 filter_tab,
             )
             filter_hint.setWordWrap(True)
-            filter_hint.setStyleSheet("font-size: 11px; color: #9aa4d6;")
+            filter_hint.setStyleSheet("font-size: 10px; color: #9aa4d6; margin-top: 4px;")
             filter_layout.addWidget(filter_hint)
             filter_layout.addStretch(1)
             tabs.addTab(filter_tab, "Filtering")
@@ -1413,10 +1487,31 @@ class RTLSDashboard(QMainWindow):
             editable=(self.app_mode == self.MODE_ANCHOR_MAPPER),
             world_tag_provider=(
                 (lambda: dict(self._active_tags_world))
-                if self.app_mode == self.MODE_RTLS
+                if self._active_tags_world or self._global_rtls_connected()
                 else None
             ),
         )
+        # Propagate global filter settings from the Filtering tab
+        if hasattr(self, "_global_filter_mode"):
+            dlg.canvas.filter_mode = self._global_filter_mode
+            dlg.canvas.ema_alpha  = getattr(self, "_global_ema_alpha", 0.3)
+            dlg.canvas.roll_n     = getattr(self, "_global_roll_n", 8)
+            dlg.canvas.kalman_q   = getattr(self, "_global_kalman_q", 0.1)
+            dlg.canvas.kalman_r   = getattr(self, "_global_kalman_r", 2.0)
+
+        # Wire dashboard serial thread signals → room-view debug log
+        # (only real SerialReaderThread has raw_line / debug_msg signals)
+        def _connect_serial_signals(thread):
+            if thread is None:
+                return
+            if hasattr(thread, "raw_line"):
+                thread.raw_line.connect(dlg._on_raw_line)
+            if hasattr(thread, "debug_msg"):
+                thread.debug_msg.connect(dlg._on_debug_msg)
+
+        _connect_serial_signals(self._global_serial_thread)
+        for t in self._global_serial_threads.values():
+            _connect_serial_signals(t)
         dlg.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose, True)
         dlg.setModal(False)
         dlg.setWindowModality(Qt.WindowModality.NonModal)
@@ -1702,8 +1797,12 @@ class RTLSDashboard(QMainWindow):
 
     def _set_heatmap_sensitivity(self, value: int):
         self._canvas.set_heatmap_sensitivity(value)
-        if hasattr(self, "_rtls_status_label") and not self._global_rtls_connected():
-            self._rtls_status_label.setText(f"Heat sensitivity: {value}")
+
+    def _set_global_filter(self, mode: str):
+        self._global_filter_mode = mode
+        if hasattr(self, "_filter_buttons"):
+            for m, btn in self._filter_buttons.items():
+                btn.setChecked(m == mode)
 
     def _toggle_global_rtls(self, checked: bool):
         if checked:

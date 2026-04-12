@@ -1189,11 +1189,28 @@ class RoomDetailDialog(QDialog):
             zoom_lay.addLayout(zoom_col)
             banner_layout.addWidget(zoom_wrap)
 
-            if self._world_tag_provider is not None:
-                self._shared_tag_timer = QTimer(self)
-                self._shared_tag_timer.timeout.connect(self._sync_shared_world_tags)
-                self._shared_tag_timer.start(110)
-                self._sync_shared_world_tags()
+            # (timer started unconditionally below when provider is set)
+
+            # ── Serial debug strip (non-editable / RTLS Dashboard view) ────────
+            debug_wrap = QWidget()
+            debug_wrap.setFixedHeight(90)
+            debug_wrap.setStyleSheet("background: #0a0a12; border-top: 1px solid #1e1e3a;")
+            debug_wrap_layout = QVBoxLayout(debug_wrap)
+            debug_wrap_layout.setContentsMargins(6, 4, 6, 4)
+            debug_wrap_layout.setSpacing(2)
+
+            lbl_dbg = QLabel("Serial Debug")
+            lbl_dbg.setStyleSheet("font-size: 9px; color: #555; font-weight: bold;")
+            debug_wrap_layout.addWidget(lbl_dbg)
+
+            self.debug_log = QTextEdit()
+            self.debug_log.setReadOnly(True)
+            self.debug_log.setStyleSheet(
+                "background: transparent; color: #7ec8e3; font-size: 9px; border: none;"
+            )
+            debug_wrap_layout.addWidget(self.debug_log)
+
+            outer.addWidget(debug_wrap)
 
         if self.editable:
             # ── Stacked sidebar ────────────────────────────────────────────────
@@ -1394,6 +1411,15 @@ class RoomDetailDialog(QDialog):
         else:
             splitter.setSizes([980, 20])
             self.canvas.fit_in_view()
+
+        # ── Live world-tag sync — runs regardless of editable state ────────────
+        # Starts whenever the dashboard passes a world_tag_provider (RTLS or
+        # Anchor Mapper mode with a running RTLS session).
+        if self._world_tag_provider is not None:
+            self._shared_tag_timer = QTimer(self)
+            self._shared_tag_timer.timeout.connect(self._sync_shared_world_tags)
+            self._shared_tag_timer.start(110)
+            self._sync_shared_world_tags()
 
     def set_mode(self, mode: str):
         self.canvas.set_interaction_mode(mode)
