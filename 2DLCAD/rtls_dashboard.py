@@ -47,6 +47,15 @@ from workspace_switcher import WorkspaceSwitcher
 from tag_profile_utils import load_tag_profile_lookup, resolve_tag_anchor_correction, resolve_tag_height
 
 
+TAG_VISIBILITY_TIMEOUT_SEC = 1.5
+TAG_STALE_TIMEOUT_SEC = 4.0
+TAG_REASSIGN_GRACE_SEC = 0.75
+TAG_RECONNECT_BACKOFF_SEC = 1.25
+PROJECT_AUTO_CONNECT_DELAY_MS = 2600
+AUTO_CONNECT_RETRY_DELAY_MS = 2200
+AUTO_CONNECT_MAX_RETRIES = 3
+
+
 # ──────────────────────────────────────────────────────────────────────────────
 # Style
 # ──────────────────────────────────────────────────────────────────────────────
@@ -517,11 +526,15 @@ class RTLSDashboard(QMainWindow):
         self._live_tags_world: dict[str, tuple[float, float]] = {}
         self._active_tags_world: dict[str, tuple[float, float]] = {}
         self._live_tag_last_seen: dict[str, float] = {}
+        self._live_tag_runtime: dict[str, dict] = {}
+        self._open_room_dialogs: dict[int, object] = {}
         self._using_mock_rtls = False
         self._mock_room: Room | None = None
         self._tag_profile_lookup = load_tag_profile_lookup()
         self._auto_connect_retry_port: str | None = None
         self._auto_connect_retry_count = 0
+        self._room_proximity_enabled = False
+        self._distance_links_enabled = False
         self._rtls_history: list[tuple[float, dict[str, tuple[float, float]]]] = []
         self._history_max_frames = 1200
         self._history_follow_live = True
@@ -564,8 +577,19 @@ class RTLSDashboard(QMainWindow):
         self.splitter = QSplitter(Qt.Orientation.Horizontal)
         central_layout.addWidget(self.splitter, 1)
 
-        # ── Map canvas (left panel) ───────────────────────────────────────
-        self._canvas = MapCanvas(self.splitter)
+        # ── Workspace tabs (left panel) ───────────────────────────────────
+        self._workspace_tabs = QTabWidget(self.splitter)
+        self._workspace_tabs.setDocumentMode(True)
+        self._workspace_tabs.setMovable(True)
+        self._workspace_tabs.setTabsClosable(self.app_mode == self.MODE_RTLS)
+        self._workspace_tabs.tabCloseRequested.connect(self._on_workspace_tab_close_requested)
+
+        main_workspace = QWidget(self._workspace_tabs)
+        main_workspace_layout = QVBoxLayout(main_workspace)
+        main_workspace_layout.setContentsMargins(0, 0, 0, 0)
+        main_workspace_layout.setSpacing(0)
+
+        self._canvas = MapCanvas(main_workspace)
         self._canvas.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         self._canvas.room_lookup = lambda: self._rooms
         self._canvas.history_lookup = self._current_heatmap_frames
@@ -574,7 +598,9 @@ class RTLSDashboard(QMainWindow):
         self._canvas.mode_change_requested.connect(self._set_mode)
         self._canvas.status_message_requested.connect(self._show_status)
         self._canvas.status_message_requested.connect(self._show_notice)
-        self.splitter.addWidget(self._canvas)
+        main_workspace_layout.addWidget(self._canvas)
+        self._workspace_tabs.addTab(main_workspace, "Floor Plan")
+        self.splitter.addWidget(self._workspace_tabs)
 
         # ── Feature Manager (right panel) ─────────────────────────────────
         self._feature_panel = self._build_feature_panel()
@@ -583,7 +609,7 @@ class RTLSDashboard(QMainWindow):
         self._visualization_overlay = None
         if self.app_mode == self.MODE_RTLS:
             self._visualization_overlay = self._build_visualization_overlay()
-            self._reposition_visualization_overlay()
+            self._update_visualization_overlay_visibility()
 
         # Give the feature panel a minimum size, but make default smaller
         self.splitter.setSizes([1100, 300])
@@ -922,7 +948,9 @@ class RTLSDashboard(QMainWindow):
             return
         ok = self._canvas.load_svg(path)
         if ok:
+            self._cancel_pending_auto_connect()
             self._stop_global_rtls()
+            self._close_all_room_views()
             self._clear_rooms()
             filename = os.path.basename(path)
             self._lbl_image.setText(f"📐 {filename}")
@@ -958,6 +986,9 @@ class RTLSDashboard(QMainWindow):
             return
 
         self._rooms = rooms
+        self._cancel_pending_auto_connect()
+        self._stop_global_rtls()
+        self._close_all_room_views()
         self._clear_rtls_history()
         self._refresh_room_list()
         self._canvas.highlighted_room = None
@@ -968,7 +999,7 @@ class RTLSDashboard(QMainWindow):
         self._lbl_image.setText(f"📦 {os.path.basename(path)}")
         self._show_status(f"Loaded project with {len(rooms)} room(s)")
         self._refresh_global_rtls_ports()
-        self._auto_connect_saved_modules()
+        self._auto_connect_saved_modules(delay_ms=PROJECT_AUTO_CONNECT_DELAY_MS)
 
     def _auto_load_room_data_for_svg(self, svg_path: str):
         manifest_path = manifest_path_for_svg(svg_path)
@@ -976,7 +1007,9 @@ class RTLSDashboard(QMainWindow):
             return
         try:
             _, rooms = load_floorplan_manifest(manifest_path)
+            self._cancel_pending_auto_connect()
             self._stop_global_rtls()
+            self._close_all_room_views()
             self._rooms = rooms
             self._clear_rtls_history()
             self._refresh_room_list()
@@ -1009,7 +1042,9 @@ class RTLSDashboard(QMainWindow):
         except Exception as exc:
             QMessageBox.warning(self, "Load Error", f"Could not load room data:\n{exc}")
             return
+        self._cancel_pending_auto_connect()
         self._stop_global_rtls()
+        self._close_all_room_views()
         self._rooms = rooms
         self._clear_rtls_history()
         self._refresh_room_list()
@@ -1172,17 +1207,28 @@ class RTLSDashboard(QMainWindow):
             heatmaps_divider.setStyleSheet("color: #34384f; background: #34384f;")
             visual_layout.addWidget(heatmaps_divider)
 
-            self._heatmap_toggle_btn = QCheckBox("Population Density", visual_tab)
+            self._heatmap_toggle_btn = QCheckBox("Room Density", visual_tab)
             self._heatmap_toggle_btn.toggled.connect(self._toggle_heatmap)
             visual_layout.addWidget(self._heatmap_toggle_btn)
 
-            visual_hint = QLabel(
-                "Hide or show the overlay without interrupting the live density pipeline.",
-                visual_tab,
-            )
-            visual_hint.setWordWrap(True)
-            visual_hint.setStyleSheet("font-size: 11px; color: #9aa4d6;")
-            visual_layout.addWidget(visual_hint)
+            self._room_proximity_toggle_btn = QCheckBox("Interpersonal Proximity", visual_tab)
+            self._room_proximity_toggle_btn.setChecked(self._room_proximity_enabled)
+            self._room_proximity_toggle_btn.toggled.connect(self._toggle_room_proximity_heatmap)
+            visual_layout.addWidget(self._room_proximity_toggle_btn)
+
+            connections_label = QLabel("Connections")
+            connections_label.setStyleSheet("font-size: 11px; font-weight: 700; color: #c7cbea;")
+            visual_layout.addWidget(connections_label)
+
+            connections_divider = QFrame(visual_tab)
+            connections_divider.setFrameShape(QFrame.Shape.HLine)
+            connections_divider.setStyleSheet("color: #34384f; background: #34384f;")
+            visual_layout.addWidget(connections_divider)
+
+            self._distance_links_toggle_btn = QCheckBox("Distance-Links", visual_tab)
+            self._distance_links_toggle_btn.setChecked(self._distance_links_enabled)
+            self._distance_links_toggle_btn.toggled.connect(self._toggle_distance_links)
+            visual_layout.addWidget(self._distance_links_toggle_btn)
             visual_layout.addStretch(1)
             tabs.addTab(visual_tab, "Visualizations")
 
@@ -1316,7 +1362,7 @@ class RTLSDashboard(QMainWindow):
         overlay_layout.setContentsMargins(12, 10, 12, 10)
         overlay_layout.setSpacing(8)
 
-        title = QLabel("Population Density", overlay)
+        title = QLabel("Heatmaps", overlay)
         title.setObjectName("overlay_title")
         overlay_layout.addWidget(title)
 
@@ -1367,6 +1413,19 @@ class RTLSDashboard(QMainWindow):
         overlay.hide()
         self._refresh_history_controls()
         return overlay
+
+    def _any_heatmap_enabled(self) -> bool:
+        density_on = bool(getattr(self, "_heatmap_toggle_btn", None) and self._heatmap_toggle_btn.isChecked())
+        proximity_on = bool(getattr(self, "_room_proximity_toggle_btn", None) and self._room_proximity_toggle_btn.isChecked())
+        return density_on or proximity_on
+
+    def _update_visualization_overlay_visibility(self):
+        if self._visualization_overlay is None:
+            return
+        visible = self._any_heatmap_enabled()
+        self._visualization_overlay.setVisible(visible)
+        if visible:
+            self._reposition_visualization_overlay()
 
     def _reposition_visualization_overlay(self):
         if self._visualization_overlay is None:
@@ -1461,29 +1520,106 @@ class RTLSDashboard(QMainWindow):
     def _on_room_double_click(self, item):
         room = item.data(Qt.ItemDataRole.UserRole)
         self._open_room_view(room)
+
+    def _apply_room_view_settings(self, room_view):
+        if hasattr(self, "_global_filter_mode"):
+            room_view.canvas.filter_mode = self._global_filter_mode
+            room_view.canvas.ema_alpha = getattr(self, "_global_ema_alpha", 0.3)
+            room_view.canvas.roll_n = getattr(self, "_global_roll_n", 8)
+            room_view.canvas.kalman_q = getattr(self, "_global_kalman_q", 0.1)
+            room_view.canvas.kalman_r = getattr(self, "_global_kalman_r", 2.0)
+        if hasattr(room_view, "set_proximity_heatmap_enabled"):
+            room_view.set_proximity_heatmap_enabled(self._room_proximity_enabled)
+        if hasattr(room_view, "set_distance_lines_enabled"):
+            room_view.set_distance_lines_enabled(self._distance_links_enabled)
+        if hasattr(room_view, "set_history_playback"):
+            room_view.set_history_playback(
+                snapshot_mode=not self._history_follow_live,
+                history_frames_provider=self._current_room_heatmap_frames,
+            )
+        if hasattr(room_view, "set_playback_controller"):
+            room_view.set_playback_controller(
+                state_provider=self._room_view_playback_state,
+                on_slider_pressed=self._on_history_slider_pressed,
+                on_slider_released=self._on_history_slider_released,
+                on_slider_changed=self._on_history_slider_changed,
+                on_play_toggled=self._toggle_history_playback,
+                on_step=self._step_history_frame,
+                on_jump_live=self._jump_to_live_history,
+            )
+
+    def _sync_room_view_playback(self):
+        for room_view in self._open_room_dialogs.values():
+            self._apply_room_view_settings(room_view)
+
+    def _room_view_playback_state(self) -> dict:
+        has_history = bool(self._rtls_history)
+        max_index = max(0, len(self._rtls_history) - 1)
+        value = max_index if self._history_follow_live and has_history else max(0, min(self._history_index, max_index))
+        return {
+            "visible": self._any_heatmap_enabled(),
+            "has_history": has_history,
+            "max_index": max_index,
+            "value": value,
+            "meta": self._format_history_label(),
+            "playing": self._history_playing,
+            "play_label": "⏸" if self._history_playing else "▶",
+            "follow_live": self._history_follow_live,
+            "live_enabled": has_history and self._global_rtls_connected(),
+        }
+
+    def _close_room_view(self, room_key: int):
+        room_view = self._open_room_dialogs.pop(room_key, None)
+        if room_view is None:
+            return
+        tab_index = self._workspace_tabs.indexOf(room_view) if hasattr(self, "_workspace_tabs") else -1
+        if tab_index != -1:
+            self._workspace_tabs.removeTab(tab_index)
+        room_view.close()
+        room_view.deleteLater()
+        self._refresh_room_list()
+
+    def _close_all_room_views(self):
+        for room_key in list(self._open_room_dialogs.keys()):
+            self._close_room_view(room_key)
+
+    def _on_workspace_tab_close_requested(self, index: int):
+        if index <= 0:
+            return
+        widget = self._workspace_tabs.widget(index)
+        if widget is None:
+            return
+        for room_key, room_view in list(self._open_room_dialogs.items()):
+            if room_view is widget:
+                self._close_room_view(room_key)
+                break
         
     def _open_room_view(self, room):
         self._show_status(f"Opening Room view for: {room.name}")
+        room_key = id(room)
+        existing = self._open_room_dialogs.get(room_key)
+        if existing is not None:
+            existing_index = self._workspace_tabs.indexOf(existing) if hasattr(self, "_workspace_tabs") else -1
+            if existing_index != -1:
+                self._workspace_tabs.setCurrentIndex(existing_index)
+                return
+            self._open_room_dialogs.pop(room_key, None)
         
         from room_detail_view import RoomDetailDialog
         dlg = RoomDetailDialog(
             room,
             self._rooms,
-            self,
+            self._workspace_tabs,
             editable=(self.app_mode == self.MODE_ANCHOR_MAPPER),
             world_tag_provider=(
                 (lambda: dict(self._active_tags_world))
                 if self._active_tags_world or self._global_rtls_connected()
                 else None
             ),
+            embedded=True,
+            proximity_heatmap_enabled=self._room_proximity_enabled,
         )
-        # Propagate global filter settings from the Filtering tab
-        if hasattr(self, "_global_filter_mode"):
-            dlg.canvas.filter_mode = self._global_filter_mode
-            dlg.canvas.ema_alpha  = getattr(self, "_global_ema_alpha", 0.3)
-            dlg.canvas.roll_n     = getattr(self, "_global_roll_n", 8)
-            dlg.canvas.kalman_q   = getattr(self, "_global_kalman_q", 0.1)
-            dlg.canvas.kalman_r   = getattr(self, "_global_kalman_r", 2.0)
+        self._apply_room_view_settings(dlg)
 
         # Wire dashboard serial thread signals → room-view debug log
         # (only real SerialReaderThread has raw_line / debug_msg signals)
@@ -1498,11 +1634,11 @@ class RTLSDashboard(QMainWindow):
         _connect_serial_signals(self._global_serial_thread)
         for t in self._global_serial_threads.values():
             _connect_serial_signals(t)
-
-        dlg.exec()
-        
-        # Refresh list to update anchor count label (e.g. "Room 1 (4 anchors)")
-        self._refresh_room_list()
+        self._open_room_dialogs[room_key] = dlg
+        dlg.close_requested.connect(lambda key=room_key: self._close_room_view(key))
+        dlg.destroyed.connect(lambda _obj=None, key=room_key: self._open_room_dialogs.pop(key, None))
+        tab_index = self._workspace_tabs.addTab(dlg, room.name)
+        self._workspace_tabs.setCurrentIndex(tab_index)
         
     def _on_list_selection(self):
         items = self._room_list.selectedItems()
@@ -1568,6 +1704,127 @@ class RTLSDashboard(QMainWindow):
     def _resolve_tag_distance(self, tag_id: str, anchor_id: str, raw_distance: float) -> float:
         return resolve_tag_anchor_correction(tag_id, anchor_id, raw_distance, self._tag_profile_lookup)
 
+    def _build_tag_mac_lookup(self) -> dict[str, str]:
+        from serial_reader import build_tag_mac_lookup
+
+        return build_tag_mac_lookup(self._tag_profile_lookup)
+
+    def _log_rtls_event(self, message: str):
+        print(f"[RTLS] {message}")
+
+    def _ensure_live_tag_record(self, tag_id: str) -> dict:
+        tag_id = str(tag_id).strip()
+        record = self._live_tag_runtime.get(tag_id)
+        if record is None:
+            record = {
+                "state": "OFF",
+                "owner_box": None,
+                "connected_box": None,
+                "last_seen_box": None,
+                "last_seen_at": 0.0,
+                "last_position": None,
+                "visible_boxes": {},
+                "box_states": {},
+                "awaiting_disconnect_until": 0.0,
+            }
+            self._live_tag_runtime[tag_id] = record
+        return record
+
+    @staticmethod
+    def _default_box_state() -> dict:
+        return {
+            "state": "OFF",
+            "updated_at": 0.0,
+            "last_visible_at": 0.0,
+            "next_retry_at": 0.0,
+        }
+
+    def _refresh_live_tags_from_runtime(self):
+        live_tags = {}
+        live_last_seen = {}
+        for tag_id, record in self._live_tag_runtime.items():
+            position = record.get("last_position")
+            if position is None:
+                continue
+            if record.get("state") in {"VISIBLE", "CONNECTED", "CONNECTING", "DISCOVERED"}:
+                live_tags[tag_id] = position
+                live_last_seen[tag_id] = float(record.get("last_seen_at") or 0.0)
+
+        self._live_tags_world = live_tags
+        self._live_tag_last_seen = live_last_seen
+        if self._history_follow_live:
+            self._active_tags_world = dict(self._live_tags_world)
+            self._canvas.set_active_tags_world(self._active_tags_world)
+
+    def _reconcile_live_tag_record(self, tag_id: str, now: float | None = None, preferred_box: str | None = None):
+        now = time.monotonic() if now is None else now
+        record = self._ensure_live_tag_record(tag_id)
+        previous_owner = record.get("owner_box")
+
+        for box_id, last_seen in list(record["visible_boxes"].items()):
+            if now - last_seen <= TAG_VISIBILITY_TIMEOUT_SEC:
+                continue
+            record["visible_boxes"].pop(box_id, None)
+            box_state = record["box_states"].setdefault(box_id, self._default_box_state())
+            if box_state["state"] in {"VISIBLE", "CONNECTED", "CONNECTING", "DISCOVERED"}:
+                box_state["state"] = "OUT_OF_RANGE"
+                box_state["updated_at"] = now
+                self._log_rtls_event(f"Tag marked OUT_OF_RANGE after timeout: {tag_id} on box {box_id}")
+            if record.get("connected_box") == box_id and now >= record.get("awaiting_disconnect_until", 0.0):
+                record["connected_box"] = None
+
+        connected_box = record.get("connected_box")
+        if connected_box and connected_box not in record["box_states"]:
+            record["connected_box"] = None
+            connected_box = None
+
+        visible_boxes = record["visible_boxes"]
+        candidate_box = None
+        if preferred_box and preferred_box in visible_boxes:
+            candidate_box = preferred_box
+        elif visible_boxes:
+            candidate_box = max(visible_boxes, key=visible_boxes.get)
+
+        owner_box = previous_owner
+        if connected_box and connected_box in visible_boxes:
+            owner_box = connected_box
+        elif candidate_box is None:
+            owner_box = None
+        elif previous_owner is None or previous_owner == candidate_box:
+            owner_box = candidate_box
+        else:
+            previous_seen = visible_boxes.get(previous_owner, 0.0)
+            previous_recent = previous_seen > 0.0 and (now - previous_seen) <= TAG_REASSIGN_GRACE_SEC
+            blocking_disconnect = (
+                record.get("connected_box") == previous_owner
+                and now < record.get("awaiting_disconnect_until", 0.0)
+            )
+            if previous_recent and blocking_disconnect:
+                owner_box = previous_owner
+            else:
+                owner_box = candidate_box
+
+        if previous_owner and owner_box is None and previous_owner != owner_box:
+            self._log_rtls_event(f"Clearing stale association: {tag_id} last seen on box {previous_owner}")
+        elif previous_owner and owner_box and previous_owner != owner_box:
+            self._log_rtls_event(f"Reassociating {tag_id} from box {previous_owner} to {owner_box}")
+
+        record["owner_box"] = owner_box
+        if record.get("last_seen_at", 0.0) <= 0.0:
+            record["state"] = "OFF"
+        elif owner_box and owner_box in visible_boxes:
+            record["state"] = "VISIBLE"
+        elif connected_box:
+            record["state"] = "CONNECTED"
+        elif now < record.get("awaiting_disconnect_until", 0.0):
+            record["state"] = "DISCONNECTING"
+        elif any(now < state.get("next_retry_at", 0.0) for state in record["box_states"].values()):
+            record["state"] = "ERROR"
+        elif now - record.get("last_seen_at", 0.0) > TAG_STALE_TIMEOUT_SEC:
+            record["state"] = "STALE"
+        else:
+            record["state"] = "OUT_OF_RANGE"
+
     def _build_global_anchor_positions(self, port_filter: str | None = None):
         anchor_positions = {}
         missing_hw = []
@@ -1621,7 +1878,11 @@ class RTLSDashboard(QMainWindow):
                 return value
         return 0.0
 
-    def _auto_connect_saved_modules(self):
+    def _cancel_pending_auto_connect(self):
+        self._auto_connect_retry_port = None
+        self._auto_connect_retry_count = 0
+
+    def _auto_connect_saved_modules(self, delay_ms: int = 250):
         if self.app_mode != self.MODE_RTLS or not hasattr(self, "_rtls_port_combo"):
             return
         if self._global_rtls_connected():
@@ -1633,7 +1894,7 @@ class RTLSDashboard(QMainWindow):
         target = saved_modules[0] if len(saved_modules) == 1 else "Saved Project Modules"
         self._auto_connect_retry_port = target
         self._auto_connect_retry_count = 0
-        QTimer.singleShot(250, self._run_pending_auto_connect)
+        QTimer.singleShot(max(0, int(delay_ms)), self._run_pending_auto_connect)
 
     def _run_pending_auto_connect(self):
         target = (self._auto_connect_retry_port or "").strip()
@@ -1645,11 +1906,28 @@ class RTLSDashboard(QMainWindow):
 
     def _toggle_heatmap(self, checked: bool):
         self._canvas.set_heatmap_enabled(checked)
-        if self._visualization_overlay is not None:
-            self._visualization_overlay.setVisible(checked)
-            self._reposition_visualization_overlay()
+        self._update_visualization_overlay_visibility()
         if hasattr(self, "_rtls_status_label") and not self._global_rtls_connected():
-            self._rtls_status_label.setText("Population Density visible" if checked else "Population Density hidden")
+            self._rtls_status_label.setText("Room Density visible" if checked else "Room Density hidden")
+
+    def _toggle_room_proximity_heatmap(self, checked: bool):
+        self._room_proximity_enabled = bool(checked)
+        for room_view in self._open_room_dialogs.values():
+            if hasattr(room_view, "set_proximity_heatmap_enabled"):
+                room_view.set_proximity_heatmap_enabled(self._room_proximity_enabled)
+        self._update_visualization_overlay_visibility()
+        if hasattr(self, "_rtls_status_label") and not self._global_rtls_connected():
+            self._rtls_status_label.setText(
+                "Interpersonal Proximity visible" if checked else "Interpersonal Proximity hidden"
+            )
+
+    def _toggle_distance_links(self, checked: bool):
+        self._distance_links_enabled = bool(checked)
+        for room_view in self._open_room_dialogs.values():
+            if hasattr(room_view, "set_distance_lines_enabled"):
+                room_view.set_distance_lines_enabled(self._distance_links_enabled)
+        if hasattr(self, "_rtls_status_label") and not self._global_rtls_connected():
+            self._rtls_status_label.setText("Distance-Links visible" if checked else "Distance-Links hidden")
 
     def _set_heatmap_sensitivity(self, value: int):
         self._canvas.set_heatmap_sensitivity(value)
@@ -1659,6 +1937,13 @@ class RTLSDashboard(QMainWindow):
         if hasattr(self, "_filter_buttons"):
             for m, btn in self._filter_buttons.items():
                 btn.setChecked(m == mode)
+        for room_view in self._open_room_dialogs.values():
+            room_view.canvas.filter_mode = mode
+            room_view.canvas.ema_alpha = getattr(self, "_global_ema_alpha", 0.3)
+            room_view.canvas.roll_n = getattr(self, "_global_roll_n", 8)
+            room_view.canvas.kalman_q = getattr(self, "_global_kalman_q", 0.1)
+            room_view.canvas.kalman_r = getattr(self, "_global_kalman_r", 2.0)
+            room_view.canvas.reset_filter_state()
 
     def _toggle_global_rtls(self, checked: bool):
         if checked:
@@ -1676,6 +1961,7 @@ class RTLSDashboard(QMainWindow):
                 self._rtls_connect_btn.blockSignals(False)
                 return
             self._tag_profile_lookup = load_tag_profile_lookup()
+            tag_mac_lookup = self._build_tag_mac_lookup()
 
             try:
                 if port == "Virtual MOCK_RTLS":
@@ -1686,8 +1972,6 @@ class RTLSDashboard(QMainWindow):
                     )
                     self._using_mock_rtls = True
                     self._mock_room = None
-                    if hasattr(self, "_heatmap_toggle_btn") and not self._heatmap_toggle_btn.isChecked():
-                        self._heatmap_toggle_btn.setChecked(True)
                 elif port == "Saved Project Modules":
                     from serial_reader import SerialReaderThread
                     module_positions, missing_hw, duplicate_hw = self._build_anchor_positions_by_module()
@@ -1702,8 +1986,17 @@ class RTLSDashboard(QMainWindow):
                             tag_height=self._default_global_tag_height(),
                             tag_height_lookup=self._resolve_tag_height,
                             distance_correction_lookup=self._resolve_tag_distance,
+                            source_id=module,
+                            mac_lookup=tag_mac_lookup,
                         )
-                        thread.tag_update.connect(self._on_global_tag_update)
+                        if hasattr(thread, "tag_update_source"):
+                            thread.tag_update_source.connect(self._on_global_tag_update_source)
+                        else:
+                            thread.tag_update.connect(
+                                lambda tag_id, x, y, source_box=module: self._on_global_tag_update_source(tag_id, x, y, source_box)
+                            )
+                        if hasattr(thread, "tag_state"):
+                            thread.tag_state.connect(self._on_global_tag_state)
                         thread.connection_error.connect(lambda err, m=module: self._on_global_rtls_error(f"{m}: {err}"))
                         thread.start()
                         self._global_serial_threads[module] = thread
@@ -1729,11 +2022,20 @@ class RTLSDashboard(QMainWindow):
                         tag_height=self._default_global_tag_height(),
                         tag_height_lookup=self._resolve_tag_height,
                         distance_correction_lookup=self._resolve_tag_distance,
+                        source_id=port,
+                        mac_lookup=tag_mac_lookup,
                     )
                     self._using_mock_rtls = False
                     self._mock_room = None
                 if self._global_serial_thread is not None:
-                    self._global_serial_thread.tag_update.connect(self._on_global_tag_update)
+                    if hasattr(self._global_serial_thread, "tag_update_source"):
+                        self._global_serial_thread.tag_update_source.connect(self._on_global_tag_update_source)
+                    else:
+                        self._global_serial_thread.tag_update.connect(
+                            lambda tag_id, x, y, source_box=port: self._on_global_tag_update_source(tag_id, x, y, source_box)
+                        )
+                    if hasattr(self._global_serial_thread, "tag_state"):
+                        self._global_serial_thread.tag_state.connect(self._on_global_tag_state)
                     self._global_serial_thread.connection_error.connect(self._on_global_rtls_error)
                     self._global_serial_thread.start()
             except Exception as exc:
@@ -1777,6 +2079,7 @@ class RTLSDashboard(QMainWindow):
         self._mock_room = None
         self._live_tags_world.clear()
         self._live_tag_last_seen.clear()
+        self._live_tag_runtime.clear()
         if hasattr(self, "_rtls_connect_btn"):
             self._rtls_connect_btn.blockSignals(True)
             self._rtls_connect_btn.setChecked(False)
@@ -1796,47 +2099,99 @@ class RTLSDashboard(QMainWindow):
         self._refresh_history_controls()
 
     def _on_global_tag_update(self, tag_id: str, x: float, y: float):
+        source_box = "MOCK_RTLS" if self._using_mock_rtls else "GLOBAL"
+        self._on_global_tag_update_source(tag_id, x, y, source_box)
+
+    def _on_global_tag_update_source(self, tag_id: str, x: float, y: float, source_box: str):
         if self._using_mock_rtls and self._mock_room is not None:
             wx, wy = self._mock_room.local_to_world(x, y)
         else:
             wx, wy = x, y
-        self._live_tags_world[tag_id] = (wx, wy)
-        self._live_tag_last_seen[tag_id] = time.monotonic()
-        if self._history_follow_live:
-            self._active_tags_world = dict(self._live_tags_world)
-            self._canvas.set_active_tags_world(self._active_tags_world)
+        now = time.monotonic()
+        source_box = str(source_box).strip() or "UNKNOWN"
+        record = self._ensure_live_tag_record(tag_id)
+        box_state = record["box_states"].setdefault(source_box, self._default_box_state())
+
+        box_state["state"] = "VISIBLE"
+        box_state["updated_at"] = now
+        box_state["last_visible_at"] = now
+        record["visible_boxes"][source_box] = now
+        record["last_seen_box"] = source_box
+        record["last_seen_at"] = now
+        record["last_position"] = (wx, wy)
+
+        self._reconcile_live_tag_record(tag_id, now=now, preferred_box=source_box)
+        self._refresh_live_tags_from_runtime()
+
+    def _on_global_tag_state(self, event: object):
+        if not isinstance(event, dict):
+            return
+        tag_id = str(event.get("tag_id", "")).strip()
+        state = str(event.get("state", "")).strip()
+        source_box = str(event.get("source_box", "")).strip() or "UNKNOWN"
+        if not tag_id or not state:
+            return
+
+        now = float(event.get("updated_at") or time.monotonic())
+        record = self._ensure_live_tag_record(tag_id)
+        box_state = record["box_states"].setdefault(source_box, self._default_box_state())
+        previous_state = box_state.get("state", "OFF")
+        previous_owner = record.get("owner_box")
+
+        if state == "CONNECTING":
+            if previous_state in {"CONNECTING", "CONNECTED", "DISCONNECTING"}:
+                self._log_rtls_event(f"Skipping connect: {tag_id} already {previous_state} on box {source_box}")
+            if previous_owner and previous_owner != source_box:
+                self._log_rtls_event(f"Reconnect blocked: awaiting disconnect callback for {tag_id} from box {previous_owner}")
+                record["awaiting_disconnect_until"] = max(
+                    float(record.get("awaiting_disconnect_until", 0.0)),
+                    now + TAG_RECONNECT_BACKOFF_SEC,
+                )
+        elif state == "CONNECTED":
+            record["connected_box"] = source_box
+            record["awaiting_disconnect_until"] = 0.0
+        elif state == "DISCONNECTING":
+            if record.get("connected_box") == source_box:
+                record["connected_box"] = None
+            record["awaiting_disconnect_until"] = max(
+                float(record.get("awaiting_disconnect_until", 0.0)),
+                now + TAG_RECONNECT_BACKOFF_SEC,
+            )
+        elif state == "ERROR":
+            if record.get("connected_box") == source_box:
+                record["connected_box"] = None
+            box_state["next_retry_at"] = max(
+                float(box_state.get("next_retry_at", 0.0)),
+                float(event.get("next_retry_at") or (now + TAG_RECONNECT_BACKOFF_SEC)),
+            )
+        elif state in {"OUT_OF_RANGE", "STALE"} and record.get("connected_box") == source_box:
+            record["connected_box"] = None
+
+        box_state["state"] = state
+        box_state["updated_at"] = now
+        self._reconcile_live_tag_record(tag_id, now=now)
+        self._refresh_live_tags_from_runtime()
 
     def _on_global_rtls_error(self, err: str):
         should_retry = False
-        if self._auto_connect_retry_port and self._auto_connect_retry_count < 1:
+        if self._auto_connect_retry_port and self._auto_connect_retry_count < AUTO_CONNECT_MAX_RETRIES:
             self._auto_connect_retry_count += 1
             should_retry = True
         self._stop_global_rtls()
         if should_retry:
             self._show_notice(f"Auto-connect retrying: {err}", timeout_ms=2200)
-            QTimer.singleShot(600, self._run_pending_auto_connect)
+            QTimer.singleShot(AUTO_CONNECT_RETRY_DELAY_MS, self._run_pending_auto_connect)
             return
-        self._auto_connect_retry_port = None
+        self._cancel_pending_auto_connect()
         QMessageBox.warning(self, "RTLS Error", err)
 
     def _prune_stale_live_tags(self):
-        if not self._live_tag_last_seen:
+        if not self._live_tag_runtime:
             return
         now = time.monotonic()
-        stale_ids = [
-            tag_id for tag_id, seen_at in self._live_tag_last_seen.items()
-            if now - seen_at > 1.5
-        ]
-        if not stale_ids:
-            return
-        changed = False
-        for tag_id in stale_ids:
-            self._live_tag_last_seen.pop(tag_id, None)
-            if self._live_tags_world.pop(tag_id, None) is not None:
-                changed = True
-        if changed and self._history_follow_live:
-            self._active_tags_world = dict(self._live_tags_world)
-            self._canvas.set_active_tags_world(self._active_tags_world)
+        for tag_id in list(self._live_tag_runtime.keys()):
+            self._reconcile_live_tag_record(tag_id, now=now)
+        self._refresh_live_tags_from_runtime()
 
     def _capture_rtls_history_frame(self):
         if not self._global_rtls_connected() or not self._live_tags_world:
@@ -1878,6 +2233,14 @@ class RTLSDashboard(QMainWindow):
         end = min(len(self._rtls_history), self._history_index + 1)
         return [snapshot for _, snapshot in self._rtls_history[start:end]]
 
+    def _current_room_heatmap_frames(self):
+        frames = self._current_heatmap_frames()
+        if frames:
+            return frames
+        if self._active_tags_world:
+            return [dict(self._active_tags_world)]
+        return []
+
     def _refresh_history_controls(self):
         if not hasattr(self, "_history_slider"):
             return
@@ -1910,6 +2273,7 @@ class RTLSDashboard(QMainWindow):
         self._history_live_btn.setStyleSheet(
             "font-weight: bold; color: #ffffff;" if self._history_follow_live else ""
         )
+        self._sync_room_view_playback()
 
     def _set_history_live_mode(self, enabled: bool):
         self._history_follow_live = enabled
@@ -1922,6 +2286,7 @@ class RTLSDashboard(QMainWindow):
             self._canvas.set_active_tags_world(self._active_tags_world)
         else:
             self._canvas.set_heatmap_snapshot_mode(True)
+        self._sync_room_view_playback()
         self._refresh_history_controls()
 
     def _apply_history_snapshot(self, index: int):
@@ -1931,6 +2296,7 @@ class RTLSDashboard(QMainWindow):
         self._history_index = index
         self._active_tags_world = dict(self._rtls_history[index][1])
         self._canvas.set_active_tags_world(self._active_tags_world)
+        self._sync_room_view_playback()
         self._refresh_history_controls()
 
     def _on_history_slider_pressed(self):
@@ -1957,10 +2323,16 @@ class RTLSDashboard(QMainWindow):
             self._refresh_history_controls()
             return
         if checked:
-            self._set_history_live_mode(False)
+            if self._history_follow_live:
+                self._set_history_live_mode(False)
+                self._apply_history_snapshot(len(self._rtls_history) - 1)
+                self._history_playing = False
+                self._refresh_history_controls()
+                return
             if self._history_index >= len(self._rtls_history) - 1:
-                self._history_index = 0
-                self._apply_history_snapshot(self._history_index)
+                self._history_playing = False
+                self._refresh_history_controls()
+                return
             self._history_playing = True
             self._history_play_timer.start()
         else:
@@ -2003,8 +2375,11 @@ class RTLSDashboard(QMainWindow):
         self._history_follow_live = True
         self._live_tags_world.clear()
         self._active_tags_world.clear()
+        self._live_tag_last_seen.clear()
+        self._live_tag_runtime.clear()
         self._canvas.set_heatmap_snapshot_mode(False)
         self._canvas.clear_active_tags()
+        self._sync_room_view_playback()
         self._refresh_history_controls()
 
     def closeEvent(self, event):

@@ -50,6 +50,8 @@ class ProximityHeatmapLayer:
         self._reference_view = None
         self._buffer_width_px = 1
         self._buffer_height_px = 1
+        self._room_mask = None
+        self._room_mask_signature = None
         self._ensure_buffers(1, 1)
 
     def set_enabled(self, enabled: bool):
@@ -93,8 +95,10 @@ class ProximityHeatmapLayer:
             self._decay()
         else:
             self.clear()
-        self._deposit_room_activity(tag_positions, rooms or [])
-        self._deposit_pairs(tag_positions)
+        active_rooms = rooms or []
+        self._deposit_room_activity(tag_positions, active_rooms)
+        self._deposit_pairs(tag_positions, active_rooms)
+        self._apply_room_mask(active_rooms)
         self._rebuild_image()
 
     def paint(self, painter: QPainter, width: int, height: int, viewport):
@@ -150,11 +154,15 @@ class ProximityHeatmapLayer:
             self._heat = None
             self._rgb_buffer = None
             self._image = QImage()
+            self._room_mask = None
+            self._room_mask_signature = None
             return
 
         self._heat = np.zeros((self._grid_h, self._grid_w), dtype=np.float32)
         self._rgb_buffer = np.zeros((self._grid_h, self._grid_w, 4), dtype=np.uint8)
         self._image = QImage()
+        self._room_mask = np.ones((self._grid_h, self._grid_w), dtype=np.float32)
+        self._room_mask_signature = None
 
     def _build_lut(self):
         if np is None:
@@ -163,30 +171,48 @@ class ProximityHeatmapLayer:
         lut = np.zeros((256, 4), dtype=np.uint8)
         for i in range(256):
             v = i / 255.0
-            if v < 0.2:
-                t = v / 0.2
-                r = int(40 + 20 * t)
-                g = int(94 + 80 * t)
-                b = int(160 + 55 * t)
-                a = int(40 * t)
-            elif v < 0.52:
-                t = (v - 0.2) / 0.32
-                r = int(60 + 40 * t)
-                g = int(174 + 36 * t)
-                b = int(215 + 10 * t)
-                a = int(40 + 85 * t)
-            elif v < 0.8:
-                t = (v - 0.52) / 0.28
-                r = int(100 + 84 * t)
-                g = int(210 - 32 * t)
-                b = int(225 - 95 * t)
-                a = int(125 + 65 * t)
+            if v < 0.14:
+                t = v / 0.14
+                r = 0
+                g = int(120 * t)
+                b = 255
+                a = int(26 * t)
+            elif v < 0.28:
+                t = (v - 0.14) / 0.14
+                r = 0
+                g = int(120 + (135 * t))
+                b = 255
+                a = int(26 + 34 * t)
+            elif v < 0.42:
+                t = (v - 0.28) / 0.14
+                r = 0
+                g = 255
+                b = int(255 * (1 - t))
+                a = int(60 + 44 * t)
+            elif v < 0.58:
+                t = (v - 0.42) / 0.16
+                r = int(255 * t)
+                g = 255
+                b = 0
+                a = int(104 + 48 * t)
+            elif v < 0.74:
+                t = (v - 0.58) / 0.16
+                r = 255
+                g = int(255 - (90 * t))
+                b = 0
+                a = int(152 + 42 * t)
+            elif v < 0.88:
+                t = (v - 0.74) / 0.14
+                r = 255
+                g = int(165 * (1 - t))
+                b = 0
+                a = int(194 + 30 * t)
             else:
-                t = (v - 0.8) / 0.2
-                r = int(184 + 45 * t)
-                g = int(178 - 48 * t)
-                b = int(130 - 70 * t)
-                a = int(190 + 50 * t)
+                t = (v - 0.88) / 0.12
+                r = int(255 - (75 * t))
+                g = 0
+                b = 0
+                a = int(224 + 31 * t)
             lut[i] = [r, g, b, a]
         return lut
 
@@ -201,17 +227,133 @@ class ProximityHeatmapLayer:
             -world_y * scale + self._reference_view["offy"],
         )
 
-    def _deposit_pairs(self, tag_positions: dict):
+    def _screen_poly_to_mask(self, poly_points):
+        if np is None or len(poly_points) < 3:
+            return None, 0, 0
+
+        xs = np.array([pt[0] / self.tokens.cell_size_px for pt in poly_points], dtype=np.float32)
+        ys = np.array([pt[1] / self.tokens.cell_size_px for pt in poly_points], dtype=np.float32)
+
+        min_x = int(max(0, math.floor(xs.min())))
+        max_x = int(min(self._grid_w - 1, math.ceil(xs.max())))
+        min_y = int(max(0, math.floor(ys.min())))
+        max_y = int(min(self._grid_h - 1, math.ceil(ys.max())))
+        if min_x > max_x or min_y > max_y:
+            return None, 0, 0
+
+        grid_x = np.arange(min_x, max_x + 1, dtype=np.float32)
+        grid_y = np.arange(min_y, max_y + 1, dtype=np.float32)
+        xx, yy = np.meshgrid(grid_x, grid_y)
+        px = xx + 0.5
+        py = yy + 0.5
+
+        inside = np.zeros(px.shape, dtype=bool)
+        count = len(xs)
+        for idx in range(count):
+            prev = (idx - 1) % count
+            xi = xs[idx]
+            yi = ys[idx]
+            xj = xs[prev]
+            yj = ys[prev]
+            intersects = ((yi > py) != (yj > py)) & (
+                px < ((xj - xi) * (py - yi) / ((yj - yi) + 1e-9)) + xi
+            )
+            inside ^= intersects
+
+        return inside, min_x, min_y
+
+    def _room_assignment(self, tag_positions: dict, rooms):
+        assignments = {}
+        if not rooms:
+            return assignments
+        for tag_id, (world_x, world_y) in tag_positions.items():
+            for room in rooms:
+                local_x, local_y = room.world_to_local(world_x, world_y)
+                if room.contains_local_point_with_tolerance(local_x, local_y, tolerance_ft=1.2):
+                    assignments[tag_id] = room
+                    break
+        return assignments
+
+    def _update_room_mask(self, rooms):
+        if np is None:
+            return
+
+        signature = (
+            self._grid_w,
+            self._grid_h,
+            tuple(
+                (
+                    room.name,
+                    round(room.min_x, 3),
+                    round(room.min_y, 3),
+                    round(room.max_x, 3),
+                    round(room.max_y, 3),
+                    tuple((round(x1, 3), round(y1, 3), round(x2, 3), round(y2, 3)) for x1, y1, x2, y2 in room.segments),
+                )
+                for room in (rooms or [])
+            ),
+            None if self._reference_view is None else (
+                round(self._reference_view["scale"], 6),
+                round(self._reference_view["offx"], 3),
+                round(self._reference_view["offy"], 3),
+            ),
+        )
+        if signature == self._room_mask_signature and self._room_mask is not None:
+            return
+
+        if not rooms:
+            self._room_mask = np.ones((self._grid_h, self._grid_w), dtype=np.float32)
+            self._room_mask_signature = signature
+            return
+
+        mask = np.zeros((self._grid_h, self._grid_w), dtype=np.float32)
+        for room in rooms:
+            polygon = room.get_local_polygon()
+            if polygon.isEmpty():
+                continue
+            screen_poly = []
+            for idx in range(polygon.count()):
+                pt = polygon.at(idx)
+                world_x = pt.x() + room.min_x
+                world_y = pt.y() + room.min_y
+                screen_poly.append(self._ref_world_to_screen(world_x, world_y))
+            room_mask, min_x, min_y = self._screen_poly_to_mask(screen_poly)
+            if room_mask is None:
+                continue
+            max_y = min_y + room_mask.shape[0]
+            max_x = min_x + room_mask.shape[1]
+            mask[min_y:max_y, min_x:max_x] = np.maximum(
+                mask[min_y:max_y, min_x:max_x],
+                room_mask.astype(np.float32),
+            )
+
+        self._room_mask = mask
+        self._room_mask_signature = signature
+
+    def _apply_room_mask(self, rooms):
+        if np is None or self._heat is None:
+            return
+        self._update_room_mask(rooms)
+        if self._room_mask is not None:
+            self._heat *= self._room_mask
+
+    def _deposit_pairs(self, tag_positions: dict, rooms):
         items = list(tag_positions.items())
+        assignments = self._room_assignment(tag_positions, rooms)
         threshold_ft = self.tokens.pair_threshold_ft
         radius_px = self.tokens.base_radius_px + self.sensitivity * self.tokens.radius_gain_px
         strength = self.tokens.base_strength + (self.sensitivity / 100.0) * self.tokens.strength_gain
 
         for i in range(len(items)):
-            _, p1 = items[i]
+            tag_id_1, p1 = items[i]
             sx1, sy1 = self._ref_world_to_screen(p1[0], p1[1])
             for j in range(i + 1, len(items)):
-                _, p2 = items[j]
+                tag_id_2, p2 = items[j]
+                if rooms:
+                    room_1 = assignments.get(tag_id_1)
+                    room_2 = assignments.get(tag_id_2)
+                    if room_1 is None or room_2 is None or room_1 is not room_2:
+                        continue
                 dist_ft = math.hypot(p2[0] - p1[0], p2[1] - p1[1])
                 if dist_ft >= threshold_ft:
                     continue
@@ -221,6 +363,7 @@ class ProximityHeatmapLayer:
                 deposit_strength = strength * (closeness ** 2.0)
                 self._deposit_segment_field((sx1, sy1), (sx2, sy2), radius_px, deposit_strength)
 
+        self._apply_room_mask(rooms)
         np.clip(self._heat, 0.0, 1.0, out=self._heat)
 
     def _deposit_room_activity(self, tag_positions: dict, rooms):
@@ -281,6 +424,7 @@ class ProximityHeatmapLayer:
                     occupant_strength * local_density_boost,
                 )
 
+        self._apply_room_mask(rooms)
         np.clip(self._heat, 0.0, 1.0, out=self._heat)
 
     def _room_interaction_score(self, occupant_points):

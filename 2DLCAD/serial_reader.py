@@ -10,6 +10,188 @@ except ImportError:
     serial = None
 
 
+TAG_STATE_OFF = "OFF"
+TAG_STATE_DISCOVERED = "DISCOVERED"
+TAG_STATE_VISIBLE = "VISIBLE"
+TAG_STATE_CONNECTING = "CONNECTING"
+TAG_STATE_CONNECTED = "CONNECTED"
+TAG_STATE_OUT_OF_RANGE = "OUT_OF_RANGE"
+TAG_STATE_DISCONNECTING = "DISCONNECTING"
+TAG_STATE_STALE = "STALE"
+TAG_STATE_ERROR = "ERROR"
+
+_MAC_RE = re.compile(r"([0-9A-Fa-f]{2}(?::[0-9A-Fa-f]{2}){5})")
+_FIRMWARE_TRACE_RE = re.compile(
+    r"^(?:"
+    r"assertion:|line:\d+|[A-Z0-9/ ]+\s*: 0x[0-9A-Fa-f]+|"
+    r"[0-9A-Fa-f]{8}:\s+0x[0-9A-Fa-f]+|"
+    r"MEPC\s*:|MSTATUS\s*:|MHARTID\s*:|SPIWP:|TP\s*:|S0/FP\s*:|A[0-7]\s*:|S\d+\s*:|T\d+\s*:|"
+    r"Core \d+ register dump:|Stack memory:"
+    r")"
+)
+_FIRMWARE_CRASH_MARKERS = (
+    "assert failed:",
+    "core 0 register dump:",
+    "stack memory:",
+    "rebooting...",
+)
+_FIRMWARE_BOOT_MARKERS = (
+    "esp-rom:",
+    "build:",
+    "rst:",
+    "saved pc:",
+    "mode:dio",
+    "entry ",
+    "load:",
+    "--- xiao esp32-c6 ble dongle started ---",
+    "elf file sha256:",
+)
+
+
+def normalize_mac(value: str) -> str:
+    return str(value or "").strip().lower().replace("-", ":")
+
+
+def build_tag_mac_lookup(tag_profile_lookup: dict | None) -> dict[str, str]:
+    lookup = {}
+    if not tag_profile_lookup:
+        return lookup
+
+    for tag_id, payload in tag_profile_lookup.items():
+        device = payload.get("device", {}) if isinstance(payload, dict) else {}
+        mac = normalize_mac(device.get("mac_address", ""))
+        if mac:
+            lookup[mac] = str(tag_id).strip()
+    return lookup
+
+
+def open_serial_port(port: str, baudrate: int, timeout: float):
+    if serial is None:
+        raise RuntimeError("pyserial is not installed. Run: pip install pyserial")
+
+    ser = serial.Serial(port=None, baudrate=baudrate, timeout=timeout, dsrdtr=False, rtscts=False)
+    ser.port = port
+    try:
+        ser.dtr = False
+        ser.rts = False
+    except Exception:
+        pass
+    ser.open()
+    try:
+        ser.reset_input_buffer()
+    except Exception:
+        pass
+    return ser
+
+
+def parse_ble_status_line(line: str, mac_lookup: dict | None = None, last_attempting_tag: str | None = None):
+    if " -> " in line:
+        line = line.split(" -> ", 1)[1]
+    line = line.strip()
+    if not line:
+        return None
+
+    lower = line.lower()
+    mac_match = _MAC_RE.search(line)
+    mac = normalize_mac(mac_match.group(1)) if mac_match else ""
+    tag_id = mac_lookup.get(mac) if mac and mac_lookup else None
+
+    if "[*] Attempting to connect to" in line:
+        return {
+            "kind": "status",
+            "state": TAG_STATE_CONNECTING,
+            "tag_id": tag_id,
+            "mac_address": mac,
+            "line": line,
+            "message": line,
+        }
+
+    if "[+] Connected to" in line:
+        return {
+            "kind": "status",
+            "state": TAG_STATE_CONNECTED,
+            "tag_id": tag_id,
+            "mac_address": mac,
+            "line": line,
+            "message": line,
+        }
+
+    if "connection failed" in lower:
+        return {
+            "kind": "status",
+            "state": TAG_STATE_ERROR,
+            "tag_id": tag_id or last_attempting_tag,
+            "mac_address": mac,
+            "line": line,
+            "message": line,
+        }
+
+    if "disconnect" in lower:
+        return {
+            "kind": "status",
+            "state": TAG_STATE_DISCONNECTING,
+            "tag_id": tag_id or last_attempting_tag,
+            "mac_address": mac,
+            "line": line,
+            "message": line,
+        }
+
+    if "scan" in lower or "discover" in lower or "found" in lower:
+        return {
+            "kind": "status",
+            "state": TAG_STATE_DISCOVERED,
+            "tag_id": tag_id,
+            "mac_address": mac,
+            "line": line,
+            "message": line,
+        }
+
+    if any(marker in lower for marker in _FIRMWARE_CRASH_MARKERS):
+        return {
+            "kind": "firmware",
+            "state": TAG_STATE_ERROR,
+            "tag_id": tag_id or last_attempting_tag,
+            "mac_address": mac,
+            "line": line,
+            "message": line,
+            "fatal_module_error": True,
+        }
+
+    if any(marker in lower for marker in _FIRMWARE_BOOT_MARKERS):
+        return {
+            "kind": "firmware",
+            "state": None,
+            "tag_id": tag_id or last_attempting_tag,
+            "mac_address": mac,
+            "line": line,
+            "message": line,
+            "fatal_module_error": False,
+        }
+
+    if _FIRMWARE_TRACE_RE.match(line):
+        return {
+            "kind": "firmware",
+            "state": None,
+            "tag_id": tag_id or last_attempting_tag,
+            "mac_address": mac,
+            "line": line,
+            "message": line,
+            "fatal_module_error": False,
+        }
+
+    if line.startswith(("[*]", "[+]", "[-]", "[!]")):
+        return {
+            "kind": "status",
+            "state": None,
+            "tag_id": tag_id or last_attempting_tag,
+            "mac_address": mac,
+            "line": line,
+            "message": line,
+        }
+
+    return None
+
+
 def parse_distance_packet(line: str):
     """
     Parse a hardware distance packet of the form:
@@ -159,6 +341,8 @@ class SerialReaderThread(QThread):
     and emits (tag_id, x, y) once a position is resolved.
     """
     tag_update = pyqtSignal(str, float, float)
+    tag_update_source = pyqtSignal(str, float, float, str)
+    tag_state = pyqtSignal(object)
     connection_error = pyqtSignal(str)
     raw_line = pyqtSignal(str)          # every serial line received
     debug_msg = pyqtSignal(str)         # diagnostic messages
@@ -171,6 +355,8 @@ class SerialReaderThread(QThread):
         tag_height: float = 0.0,
         tag_height_lookup=None,
         distance_correction_lookup=None,
+        source_id: str | None = None,
+        mac_lookup: dict | None = None,
     ):
         super().__init__()
         self.port = port
@@ -180,10 +366,66 @@ class SerialReaderThread(QThread):
         self.tag_height = tag_height
         self.tag_height_lookup = tag_height_lookup
         self.distance_correction_lookup = distance_correction_lookup
+        self.source_id = str(source_id or port).strip() or str(port).strip()
+        self.mac_lookup = {normalize_mac(k): v for k, v in (mac_lookup or {}).items()}
         self._last_positions = {}
+        self._tag_states = {}
+        self._last_attempting_tag = None
 
     def _parse_line(self, line: str):
         return parse_distance_packet(line)
+
+    def _emit_tag_state(self, tag_id: str | None, state: str | None, line: str, mac_address: str = ""):
+        if not tag_id or not state:
+            return
+        now = time.monotonic()
+        tag_state = self._tag_states.setdefault(tag_id, {})
+        tag_state["state"] = state
+        tag_state["updated_at"] = now
+        if state == TAG_STATE_CONNECTING:
+            self._last_attempting_tag = tag_id
+        elif state in (TAG_STATE_CONNECTED, TAG_STATE_VISIBLE, TAG_STATE_OUT_OF_RANGE, TAG_STATE_STALE):
+            self._last_attempting_tag = None
+        elif state == TAG_STATE_ERROR:
+            tag_state["next_retry_at"] = now + 1.25
+
+        self.tag_state.emit(
+            {
+                "tag_id": tag_id,
+                "state": state,
+                "source_box": self.source_id,
+                "mac_address": mac_address,
+                "line": line,
+                "updated_at": now,
+                "next_retry_at": tag_state.get("next_retry_at", 0.0),
+            }
+        )
+
+    def _handle_status_line(self, line: str):
+        status = parse_ble_status_line(line, self.mac_lookup, self._last_attempting_tag)
+        if status is None:
+            return None
+
+        prefix = "[BLE]"
+        if status.get("kind") == "firmware":
+            prefix = "[BLE-FW]"
+        self.debug_msg.emit(f"{prefix} {status['message']}")
+
+        tag_id = status.get("tag_id")
+        state = status.get("state")
+        previous_state = self._tag_states.get(tag_id, {}).get("state") if tag_id else None
+
+        if tag_id and state == TAG_STATE_CONNECTING and previous_state in (
+            TAG_STATE_CONNECTING,
+            TAG_STATE_CONNECTED,
+            TAG_STATE_DISCONNECTING,
+        ):
+            self.debug_msg.emit(
+                f"Skipping connect: {tag_id} already {previous_state} on box {self.source_id}"
+            )
+
+        self._emit_tag_state(tag_id, state, status["line"], mac_address=status.get("mac_address", ""))
+        return status
 
     def run(self):
         if serial is None:
@@ -191,7 +433,7 @@ class SerialReaderThread(QThread):
             return
 
         try:
-            with serial.Serial(self.port, self.baudrate, timeout=1.0) as ser:
+            with open_serial_port(self.port, self.baudrate, timeout=1.0) as ser:
                 while self._running:
                     try:
                         line = ser.readline().decode("utf-8", errors="ignore").strip()
@@ -199,6 +441,15 @@ class SerialReaderThread(QThread):
                             continue
 
                         self.raw_line.emit(line)
+
+                        status = self._handle_status_line(line)
+                        if status is not None:
+                            if status.get("fatal_module_error"):
+                                self.connection_error.emit(
+                                    f"BLE module on {self.source_id} rebooted after firmware assert"
+                                )
+                                break
+                            continue
 
                         tag_id, distances = self._parse_line(line)
                         if tag_id is None or not distances:
@@ -236,11 +487,13 @@ class SerialReaderThread(QThread):
                         )
                         if x is not None:
                             self._last_positions[tag_id] = (x, y)
+                            self._emit_tag_state(tag_id, TAG_STATE_VISIBLE, f"{tag_id} visible on {self.source_id}")
                             self.debug_msg.emit(
                                 f"[OK] {tag_id} {solve_mode} -> ({x:.3f}, {y:.3f}) "
                                 f"using {len(resolved)} anchor(s)"
                             )
                             self.tag_update.emit(tag_id, x, y)
+                            self.tag_update_source.emit(tag_id, x, y, self.source_id)
                         else:
                             self.debug_msg.emit(
                                 f"[WARN] {solve_mode} returned None for {tag_id} "
@@ -278,6 +531,7 @@ class RawDistanceReaderThread(QThread):
         self.baudrate = baudrate
         self._running = True
         self._serial_handle = None
+        self._last_attempting_tag = None
 
     def run(self):
         if serial is None:
@@ -285,7 +539,7 @@ class RawDistanceReaderThread(QThread):
             return
 
         try:
-            with serial.Serial(self.port, self.baudrate, timeout=0.25) as ser:
+            with open_serial_port(self.port, self.baudrate, timeout=0.25) as ser:
                 self._serial_handle = ser
                 while self._running:
                     try:
@@ -294,6 +548,20 @@ class RawDistanceReaderThread(QThread):
                             continue
 
                         self.raw_line.emit(line)
+
+                        status = parse_ble_status_line(line, last_attempting_tag=self._last_attempting_tag)
+                        if status is not None:
+                            if status.get("state") == TAG_STATE_CONNECTING and status.get("tag_id"):
+                                self._last_attempting_tag = status["tag_id"]
+                            elif status.get("state") in (TAG_STATE_CONNECTED, TAG_STATE_ERROR, TAG_STATE_DISCONNECTING):
+                                self._last_attempting_tag = None
+                            prefix = "[BLE-FW]" if status.get("kind") == "firmware" else "[BLE]"
+                            self.debug_msg.emit(f"{prefix} {status['message']}")
+                            if status.get("fatal_module_error"):
+                                self.connection_error.emit(f"BLE module on {self.port} rebooted after firmware assert")
+                                break
+                            continue
+
                         tag_id, distances = parse_distance_packet(line)
                         if tag_id is None or not distances:
                             self.debug_msg.emit(f"[SKIP] Could not parse: {line[:60]}")
@@ -335,6 +603,7 @@ class MockSerialReaderThread(QThread):
             self.tag_id = tag_id
             self.zone = zone
             self._choose_zone = choose_zone
+            self.room_switch_chance = 0.34 if choose_zone is not None else 0.0
             self.x, self.y = zone["spawn"]()
             self.target_x, self.target_y = self.x, self.y
             self.speed = 0.0
@@ -344,16 +613,16 @@ class MockSerialReaderThread(QThread):
             self._choose_new_target()
 
         def _choose_new_target(self):
-            if self._choose_zone is not None and random.random() < 0.18:
+            if self._choose_zone is not None and random.random() < self.room_switch_chance:
                 next_zone = self._choose_zone(self.zone)
                 if next_zone is not None and next_zone is not self.zone:
                     self.zone = next_zone
                     self.x, self.y = self.zone["spawn"]()
-                    self.pause_ticks = random.randint(10, 24)
+                    self.pause_ticks = random.randint(6, 16)
             self.target_x, self.target_y = self.zone["spawn"]()
-            self.top_speed = random.uniform(0.18, 0.72)
-            self.accel = random.uniform(0.010, 0.045)
-            self.pause_ticks = random.randint(12, 40)
+            self.top_speed = random.uniform(0.22, 0.82)
+            self.accel = random.uniform(0.012, 0.055)
+            self.pause_ticks = random.randint(8, 28)
 
         def update(self):
             if self.pause_ticks > 0:
@@ -419,12 +688,12 @@ class MockSerialReaderThread(QThread):
 
             def spawn_local_factory(target_room):
                 def _spawn():
-                    margin = 0.18
+                    margin = min(max(min(target_room.width, target_room.height) * 0.05, 0.30), 0.70)
                     min_x = margin
                     min_y = margin
                     max_x = max(target_room.width - margin, min_x + 0.01)
                     max_y = max(target_room.height - margin, min_y + 0.01)
-                    for _ in range(80):
+                    for _ in range(140):
                         lx = random.uniform(min_x, max_x)
                         ly = random.uniform(min_y, max_y)
                         if target_room.contains_local_point(lx, ly):
