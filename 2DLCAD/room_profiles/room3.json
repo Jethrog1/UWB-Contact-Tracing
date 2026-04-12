@@ -1,6 +1,6 @@
 {
     "room_name": "room3",
-    "saved_at": "2026-04-03T04:22:39",
+    "saved_at": "2026-04-10T03:50:22",
     "units": "ft",
     "rtls_settings": {
         "tag_height_ft": 0.0,
@@ -12,18 +12,18 @@
         "max_x": -44.523,
         "max_y": 103.069,
         "width": 7.799,
-        "height": 5.965
+        "height": 5.964
     },
     "anchors": [
         {
             "id": "R3A0",
-            "hardware_id": "",
+            "hardware_id": "R3A1",
             "x_ft": 2.591,
             "y_ft": 3.748
         },
         {
             "id": "R3A1",
-            "hardware_id": "",
+            "hardware_id": "R3A2",
             "x_ft": 5.264,
             "y_ft": 3.75
         },

@@ -19,13 +19,15 @@ from __future__ import annotations
 import sys
 import os
 import tempfile
+import time
 
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QToolBar, QStatusBar,
     QFileDialog, QMessageBox, QLabel, QWidget,
     QHBoxLayout, QVBoxLayout, QPushButton, QSizePolicy,
     QSplitter, QListWidget, QListWidgetItem, QInputDialog,
-    QToolButton, QButtonGroup, QStackedWidget, QFrame, QMenu
+    QToolButton, QButtonGroup, QStackedWidget, QFrame, QMenu,
+    QComboBox, QSlider
 )
 from PyQt6.QtGui import QAction, QIcon, QFont, QColor, QPalette, QPixmap
 from PyQt6.QtCore import Qt, QPointF, QEvent, QTimer, pyqtSignal
@@ -509,6 +511,18 @@ class RTLSDashboard(QMainWindow):
         self._loaded_vector_path: str | None = None
         self._loaded_project_path: str | None = None
         self._project_tempdir: tempfile.TemporaryDirectory | None = None
+        self._global_serial_thread = None
+        self._live_tags_world: dict[str, tuple[float, float]] = {}
+        self._active_tags_world: dict[str, tuple[float, float]] = {}
+        self._using_mock_rtls = False
+        self._mock_room: Room | None = None
+        self._rtls_history: list[tuple[float, dict[str, tuple[float, float]]]] = []
+        self._history_max_frames = 1200
+        self._history_follow_live = True
+        self._history_playing = False
+        self._history_index = -1
+        self._history_slider_dragging = False
+        self._history_step = 1
 
         # ── Central Layout ────────────────────────────────────────────────
         central = QWidget(self)
@@ -527,6 +541,15 @@ class RTLSDashboard(QMainWindow):
         self._notice_timer.setSingleShot(True)
         self._notice_timer.timeout.connect(self._notice_banner.hide)
 
+        self._history_capture_timer = QTimer(self)
+        self._history_capture_timer.setInterval(250)
+        self._history_capture_timer.timeout.connect(self._capture_rtls_history_frame)
+        self._history_capture_timer.start()
+
+        self._history_play_timer = QTimer(self)
+        self._history_play_timer.setInterval(180)
+        self._history_play_timer.timeout.connect(self._advance_history_playback)
+
         self.splitter = QSplitter(Qt.Orientation.Horizontal)
         central_layout.addWidget(self.splitter, 1)
 
@@ -534,6 +557,7 @@ class RTLSDashboard(QMainWindow):
         self._canvas = MapCanvas(self.splitter)
         self._canvas.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         self._canvas.room_lookup = lambda: self._rooms
+        self._canvas.history_lookup = self._current_heatmap_frames
         self._canvas.no_image_warning.connect(self._on_no_image)
         self._canvas.room_designated.connect(self._on_room_designated)
         self._canvas.mode_change_requested.connect(self._set_mode)
@@ -826,6 +850,8 @@ class RTLSDashboard(QMainWindow):
     def _clear_rooms(self):
         self._rooms = []
         self._room_list.clear()
+        self._stop_global_rtls()
+        self._clear_rtls_history()
         self._canvas.highlighted_room = None
         self._canvas.update()
 
@@ -856,6 +882,7 @@ class RTLSDashboard(QMainWindow):
             return
         ok = self._canvas.load_image(path)
         if ok:
+            self._stop_global_rtls()
             filename = os.path.basename(path)
             self._lbl_image.setText(f"📷 {filename}")
             self._show_status(f"Loaded: {filename}")
@@ -876,6 +903,7 @@ class RTLSDashboard(QMainWindow):
             return
         ok = self._canvas.load_svg(path)
         if ok:
+            self._stop_global_rtls()
             self._clear_rooms()
             filename = os.path.basename(path)
             self._lbl_image.setText(f"📐 {filename}")
@@ -911,8 +939,10 @@ class RTLSDashboard(QMainWindow):
             return
 
         self._rooms = rooms
+        self._clear_rtls_history()
         self._refresh_room_list()
         self._canvas.highlighted_room = None
+        self._canvas.clear_active_tags()
         self._canvas.update()
         self._loaded_vector_path = svg_path
         self._loaded_project_path = path
@@ -925,9 +955,12 @@ class RTLSDashboard(QMainWindow):
             return
         try:
             _, rooms = load_floorplan_manifest(manifest_path)
+            self._stop_global_rtls()
             self._rooms = rooms
+            self._clear_rtls_history()
             self._refresh_room_list()
             self._canvas.highlighted_room = None
+            self._canvas.clear_active_tags()
             self._canvas.update()
             self._show_status(f"Loaded vector and restored {len(rooms)} room profile(s)")
         except Exception as exc:
@@ -954,9 +987,12 @@ class RTLSDashboard(QMainWindow):
         except Exception as exc:
             QMessageBox.warning(self, "Load Error", f"Could not load room data:\n{exc}")
             return
+        self._stop_global_rtls()
         self._rooms = rooms
+        self._clear_rtls_history()
         self._refresh_room_list()
         self._canvas.highlighted_room = None
+        self._canvas.clear_active_tags()
         self._canvas.update()
         self._show_status(f"Loaded room data for {len(rooms)} room(s)")
 
@@ -1061,6 +1097,80 @@ class RTLSDashboard(QMainWindow):
         self._canvas.map_double_clicked.connect(self._on_map_double_click)
         layout.addWidget(self._room_list)
 
+        if self.app_mode == self.MODE_RTLS:
+            rtls_label = QLabel("Live RTLS")
+            layout.addWidget(rtls_label)
+
+            port_row = QHBoxLayout()
+            port_row.setSpacing(6)
+            self._rtls_port_combo = QComboBox()
+            self._rtls_connect_btn = QPushButton("Connect")
+            self._rtls_connect_btn.setCheckable(True)
+            self._rtls_connect_btn.toggled.connect(self._toggle_global_rtls)
+            port_row.addWidget(self._rtls_port_combo, 1)
+            port_row.addWidget(self._rtls_connect_btn)
+            layout.addLayout(port_row)
+
+            action_row = QHBoxLayout()
+            action_row.setSpacing(6)
+            refresh_btn = QPushButton("Refresh Ports")
+            refresh_btn.clicked.connect(self._refresh_global_rtls_ports)
+            self._heatmap_toggle_btn = QPushButton("Heat Map")
+            self._heatmap_toggle_btn.setCheckable(True)
+            self._heatmap_toggle_btn.toggled.connect(self._toggle_heatmap)
+            action_row.addWidget(refresh_btn)
+            action_row.addWidget(self._heatmap_toggle_btn)
+            layout.addLayout(action_row)
+
+            heat_label = QLabel("Heat Sensitivity")
+            heat_label.setStyleSheet("font-size: 11px; color: #9aa4d6;")
+            layout.addWidget(heat_label)
+            self._heatmap_slider = QSlider(Qt.Orientation.Horizontal)
+            self._heatmap_slider.setRange(1, 100)
+            self._heatmap_slider.setValue(20)
+            self._heatmap_slider.valueChanged.connect(self._set_heatmap_sensitivity)
+            layout.addWidget(self._heatmap_slider)
+
+            self._rtls_status_label = QLabel("Disconnected")
+            self._rtls_status_label.setWordWrap(True)
+            self._rtls_status_label.setStyleSheet("font-size: 11px; color: #9aa4d6;")
+            layout.addWidget(self._rtls_status_label)
+
+            history_label = QLabel("Playback")
+            layout.addWidget(history_label)
+
+            self._history_slider = QSlider(Qt.Orientation.Horizontal)
+            self._history_slider.setRange(0, 0)
+            self._history_slider.setEnabled(False)
+            self._history_slider.sliderPressed.connect(self._on_history_slider_pressed)
+            self._history_slider.sliderReleased.connect(self._on_history_slider_released)
+            self._history_slider.valueChanged.connect(self._on_history_slider_changed)
+            layout.addWidget(self._history_slider)
+
+            self._history_meta_label = QLabel("No history yet")
+            self._history_meta_label.setWordWrap(True)
+            self._history_meta_label.setStyleSheet("font-size: 11px; color: #9aa4d6;")
+            layout.addWidget(self._history_meta_label)
+
+            playback_row = QHBoxLayout()
+            playback_row.setSpacing(6)
+            self._history_rewind_btn = QPushButton("⏪")
+            self._history_rewind_btn.clicked.connect(lambda: self._step_history_frame(-6))
+            self._history_play_btn = QPushButton("▶")
+            self._history_play_btn.setCheckable(True)
+            self._history_play_btn.toggled.connect(self._toggle_history_playback)
+            self._history_ff_btn = QPushButton("⏩")
+            self._history_ff_btn.clicked.connect(lambda: self._step_history_frame(6))
+            self._history_live_btn = QPushButton("Live")
+            self._history_live_btn.clicked.connect(self._jump_to_live_history)
+            playback_row.addWidget(self._history_rewind_btn)
+            playback_row.addWidget(self._history_play_btn)
+            playback_row.addWidget(self._history_ff_btn)
+            playback_row.addWidget(self._history_live_btn)
+            layout.addLayout(playback_row)
+            self._refresh_global_rtls_ports()
+            self._refresh_history_controls()
+
         layout.addStretch()
         return panel
 
@@ -1070,6 +1180,8 @@ class RTLSDashboard(QMainWindow):
             item = QListWidgetItem(f"🏠 {r.name} ({len(r.anchors)} anchors)")
             item.setData(Qt.ItemDataRole.UserRole, r)
             self._room_list.addItem(item)
+        if self.app_mode == self.MODE_RTLS and hasattr(self, "_rtls_status_label") and self._global_serial_thread is None:
+            self._rtls_status_label.setText(f"Ready with {len(self._rooms)} room(s)")
 
     def _find_duplicate_room(self, room_name: str, segments: list):
         stripped_name = room_name.strip().lower()
@@ -1099,6 +1211,8 @@ class RTLSDashboard(QMainWindow):
             return
         r = Room(name=name, segments=segments)
         self._rooms.append(r)
+        self._stop_global_rtls()
+        self._clear_rtls_history()
         self._refresh_room_list()
         self._show_status(f"Room created: {name}")
 
@@ -1125,6 +1239,8 @@ class RTLSDashboard(QMainWindow):
         )
         if reply == QMessageBox.StandardButton.Yes:
             self._rooms.remove(room)
+            self._stop_global_rtls()
+            self._clear_rtls_history()
             self._refresh_room_list()
 
     def _show_room_context_menu(self, pos):
@@ -1154,6 +1270,11 @@ class RTLSDashboard(QMainWindow):
             self._rooms,
             self,
             editable=(self.app_mode == self.MODE_ANCHOR_MAPPER),
+            world_tag_provider=(
+                (lambda: dict(self._active_tags_world))
+                if self.app_mode == self.MODE_RTLS
+                else None
+            ),
         )
         dlg.exec()
         
@@ -1182,6 +1303,350 @@ class RTLSDashboard(QMainWindow):
     def _on_no_image(self):
         QMessageBox.information(self, "No Image",
                                 "Please load a floor plan image first.")
+
+    def _refresh_global_rtls_ports(self):
+        if not hasattr(self, "_rtls_port_combo"):
+            return
+        ports = ["Virtual MOCK_RTLS"]
+        try:
+            import serial.tools.list_ports
+            ports.extend(p.device for p in serial.tools.list_ports.comports())
+        except ImportError:
+            pass
+
+        current = self._rtls_port_combo.currentText()
+        self._rtls_port_combo.blockSignals(True)
+        self._rtls_port_combo.clear()
+        self._rtls_port_combo.addItems(ports)
+        if current and current in ports:
+            self._rtls_port_combo.setCurrentText(current)
+        self._rtls_port_combo.blockSignals(False)
+
+    def _build_global_anchor_positions(self):
+        anchor_positions = {}
+        missing_hw = []
+        duplicate_hw = []
+        for room in self._rooms:
+            for anchor in room.anchors:
+                hw_id = (anchor.hw_id or "").strip()
+                if not hw_id:
+                    missing_hw.append(f"{room.name}:{anchor.id}")
+                    continue
+                if hw_id in anchor_positions:
+                    duplicate_hw.append(hw_id)
+                    continue
+                wx, wy = room.local_to_world(anchor.x, anchor.y)
+                anchor_positions[hw_id] = (wx, wy)
+        return anchor_positions, missing_hw, duplicate_hw
+
+    def _default_global_tag_height(self) -> float:
+        for room in self._rooms:
+            try:
+                value = float(room.rtls_settings.get("tag_height_ft", 0.0))
+            except Exception:
+                value = 0.0
+            if value > 0.0:
+                return value
+        return 0.0
+
+    def _toggle_heatmap(self, checked: bool):
+        self._canvas.set_heatmap_enabled(checked)
+        if hasattr(self, "_rtls_status_label") and self._global_serial_thread is None:
+            self._rtls_status_label.setText("Heat map enabled" if checked else "Heat map disabled")
+
+    def _set_heatmap_sensitivity(self, value: int):
+        self._canvas.set_heatmap_sensitivity(value)
+        if hasattr(self, "_rtls_status_label") and self._global_serial_thread is None:
+            self._rtls_status_label.setText(f"Heat sensitivity: {value}")
+
+    def _toggle_global_rtls(self, checked: bool):
+        if checked:
+            if len(self._rooms) == 0:
+                QMessageBox.information(self, "No Rooms", "Load room data before connecting RTLS.")
+                self._rtls_connect_btn.blockSignals(True)
+                self._rtls_connect_btn.setChecked(False)
+                self._rtls_connect_btn.blockSignals(False)
+                return
+
+            port = self._rtls_port_combo.currentText().strip() if hasattr(self, "_rtls_port_combo") else ""
+            if not port:
+                self._rtls_connect_btn.blockSignals(True)
+                self._rtls_connect_btn.setChecked(False)
+                self._rtls_connect_btn.blockSignals(False)
+                return
+
+            anchor_positions = {}
+            missing_hw = []
+            duplicate_hw = []
+            if port != "Virtual MOCK_RTLS":
+                anchor_positions, missing_hw, duplicate_hw = self._build_global_anchor_positions()
+                if len(anchor_positions) < 2:
+                    QMessageBox.information(
+                        self,
+                        "Insufficient Anchors",
+                        "At least two anchors with unique hardware IDs are required across loaded rooms."
+                    )
+                    self._rtls_connect_btn.blockSignals(True)
+                    self._rtls_connect_btn.setChecked(False)
+                    self._rtls_connect_btn.blockSignals(False)
+                    return
+
+            try:
+                if port == "Virtual MOCK_RTLS":
+                    from serial_reader import MockSerialReaderThread
+                    self._global_serial_thread = MockSerialReaderThread(
+                        rooms=self._rooms,
+                        coordinate_mode="world",
+                    )
+                    self._using_mock_rtls = True
+                    self._mock_room = None
+                    if hasattr(self, "_heatmap_toggle_btn") and not self._heatmap_toggle_btn.isChecked():
+                        self._heatmap_toggle_btn.setChecked(True)
+                else:
+                    from serial_reader import SerialReaderThread
+                    self._global_serial_thread = SerialReaderThread(
+                        port,
+                        115200,
+                        anchor_positions,
+                        tag_height=self._default_global_tag_height(),
+                    )
+                    self._using_mock_rtls = False
+                    self._mock_room = None
+                self._global_serial_thread.tag_update.connect(self._on_global_tag_update)
+                self._global_serial_thread.connection_error.connect(self._on_global_rtls_error)
+                self._global_serial_thread.start()
+            except Exception as exc:
+                QMessageBox.warning(self, "RTLS Error", str(exc))
+                self._rtls_connect_btn.blockSignals(True)
+                self._rtls_connect_btn.setChecked(False)
+                self._rtls_connect_btn.blockSignals(False)
+                return
+
+            if missing_hw:
+                self._show_notice(f"Skipped anchors without hardware IDs: {len(missing_hw)}")
+            if duplicate_hw:
+                self._show_notice(f"Skipped duplicate hardware IDs: {len(duplicate_hw)}")
+
+            self._rtls_port_combo.setEnabled(False)
+            self._rtls_connect_btn.setText("Disconnect")
+            self._show_status("RTLS stream connected")
+            if hasattr(self, "_rtls_status_label"):
+                self._rtls_status_label.setText(f"Connected on {port}")
+            self._set_history_live_mode(True)
+        else:
+            self._stop_global_rtls()
+
+    def _stop_global_rtls(self):
+        if self._global_serial_thread is not None:
+            self._global_serial_thread.stop()
+            self._global_serial_thread = None
+        self._using_mock_rtls = False
+        self._mock_room = None
+        self._live_tags_world.clear()
+        if hasattr(self, "_rtls_connect_btn"):
+            self._rtls_connect_btn.blockSignals(True)
+            self._rtls_connect_btn.setChecked(False)
+            self._rtls_connect_btn.blockSignals(False)
+            self._rtls_connect_btn.setText("Connect")
+        if hasattr(self, "_rtls_port_combo"):
+            self._rtls_port_combo.setEnabled(True)
+        if hasattr(self, "_rtls_status_label"):
+            self._rtls_status_label.setText("Disconnected")
+        if self._rtls_history:
+            self._set_history_live_mode(False)
+            self._apply_history_snapshot(len(self._rtls_history) - 1)
+        else:
+            self._active_tags_world.clear()
+            self._canvas.set_heatmap_snapshot_mode(False)
+            self._canvas.clear_active_tags()
+        self._refresh_history_controls()
+
+    def _on_global_tag_update(self, tag_id: str, x: float, y: float):
+        if self._using_mock_rtls and self._mock_room is not None:
+            wx, wy = self._mock_room.local_to_world(x, y)
+        else:
+            wx, wy = x, y
+        self._live_tags_world[tag_id] = (wx, wy)
+        if self._history_follow_live:
+            self._active_tags_world = dict(self._live_tags_world)
+            self._canvas.set_active_tags_world(self._active_tags_world)
+
+    def _on_global_rtls_error(self, err: str):
+        QMessageBox.warning(self, "RTLS Error", err)
+        self._stop_global_rtls()
+
+    def _capture_rtls_history_frame(self):
+        if self._global_serial_thread is None or not self._live_tags_world:
+            return
+
+        self._rtls_history.append((time.monotonic(), dict(self._live_tags_world)))
+        if len(self._rtls_history) > self._history_max_frames:
+            overflow = len(self._rtls_history) - self._history_max_frames
+            self._rtls_history = self._rtls_history[overflow:]
+            if not self._history_follow_live:
+                self._history_index = max(0, self._history_index - overflow)
+
+        if self._history_follow_live:
+            self._history_index = len(self._rtls_history) - 1
+
+        self._refresh_history_controls()
+
+    def _format_history_label(self) -> str:
+        if not self._rtls_history:
+            return "No history yet"
+        total = len(self._rtls_history)
+        if self._history_follow_live:
+            return f"Live · {total} frames buffered"
+        idx = max(0, min(self._history_index, total - 1))
+        latest_ts = self._rtls_history[-1][0]
+        frame_ts = self._rtls_history[idx][0]
+        seconds_behind = max(0.0, latest_ts - frame_ts)
+        return f"{seconds_behind:.1f}s behind live · frame {idx + 1}/{total}"
+
+    def _current_heatmap_frames(self):
+        if not self._rtls_history:
+            return []
+        if self._history_follow_live:
+            start = max(0, len(self._rtls_history) - 180)
+            return [snapshot for _, snapshot in self._rtls_history[start:]]
+        if self._history_index < 0:
+            return []
+        start = max(0, self._history_index - 90)
+        end = min(len(self._rtls_history), self._history_index + 1)
+        return [snapshot for _, snapshot in self._rtls_history[start:end]]
+
+    def _refresh_history_controls(self):
+        if not hasattr(self, "_history_slider"):
+            return
+
+        has_history = bool(self._rtls_history)
+        max_index = max(0, len(self._rtls_history) - 1)
+
+        self._history_slider.setEnabled(has_history)
+        self._history_slider.blockSignals(True)
+        self._history_slider.setRange(0, max_index)
+        self._history_slider.setValue(
+            max_index if self._history_follow_live and has_history else max(0, min(self._history_index, max_index))
+        )
+        self._history_slider.blockSignals(False)
+
+        self._history_meta_label.setText(self._format_history_label())
+        for btn in (
+            self._history_rewind_btn,
+            self._history_play_btn,
+            self._history_ff_btn,
+        ):
+            btn.setEnabled(has_history)
+        self._history_live_btn.setEnabled(has_history and self._global_serial_thread is not None)
+
+        self._history_play_btn.blockSignals(True)
+        self._history_play_btn.setChecked(self._history_playing)
+        self._history_play_btn.setText("⏸" if self._history_playing else "▶")
+        self._history_play_btn.blockSignals(False)
+
+        self._history_live_btn.setStyleSheet(
+            "font-weight: bold; color: #ffffff;" if self._history_follow_live else ""
+        )
+
+    def _set_history_live_mode(self, enabled: bool):
+        self._history_follow_live = enabled
+        self._history_playing = False
+        self._history_play_timer.stop()
+        if enabled:
+            self._history_index = len(self._rtls_history) - 1
+            self._active_tags_world = dict(self._live_tags_world)
+            self._canvas.set_heatmap_snapshot_mode(False)
+            self._canvas.set_active_tags_world(self._active_tags_world)
+        else:
+            self._canvas.set_heatmap_snapshot_mode(True)
+        self._refresh_history_controls()
+
+    def _apply_history_snapshot(self, index: int):
+        if not self._rtls_history:
+            return
+        index = max(0, min(index, len(self._rtls_history) - 1))
+        self._history_index = index
+        self._active_tags_world = dict(self._rtls_history[index][1])
+        self._canvas.set_active_tags_world(self._active_tags_world)
+        self._refresh_history_controls()
+
+    def _on_history_slider_pressed(self):
+        self._history_slider_dragging = True
+        if self._rtls_history:
+            self._set_history_live_mode(False)
+
+    def _on_history_slider_released(self):
+        self._history_slider_dragging = False
+        if self._rtls_history:
+            self._set_history_live_mode(False)
+            self._apply_history_snapshot(self._history_slider.value())
+
+    def _on_history_slider_changed(self, value: int):
+        if not self._rtls_history:
+            return
+        if self._history_slider_dragging or not self._history_follow_live:
+            self._set_history_live_mode(False)
+            self._apply_history_snapshot(value)
+
+    def _toggle_history_playback(self, checked: bool):
+        if not self._rtls_history:
+            self._history_playing = False
+            self._refresh_history_controls()
+            return
+        if checked:
+            self._set_history_live_mode(False)
+            if self._history_index >= len(self._rtls_history) - 1:
+                self._history_index = 0
+                self._apply_history_snapshot(self._history_index)
+            self._history_playing = True
+            self._history_play_timer.start()
+        else:
+            self._history_playing = False
+            self._history_play_timer.stop()
+        self._refresh_history_controls()
+
+    def _advance_history_playback(self):
+        if not self._history_playing or not self._rtls_history:
+            return
+        next_index = self._history_index + self._history_step
+        if next_index >= len(self._rtls_history):
+            self._history_playing = False
+            self._history_play_timer.stop()
+            self._apply_history_snapshot(len(self._rtls_history) - 1)
+            return
+        self._apply_history_snapshot(next_index)
+
+    def _step_history_frame(self, delta: int):
+        if not self._rtls_history:
+            return
+        self._set_history_live_mode(False)
+        base_index = self._history_index if self._history_index >= 0 else len(self._rtls_history) - 1
+        self._apply_history_snapshot(base_index + delta)
+
+    def _jump_to_live_history(self):
+        if self._global_serial_thread is None:
+            if self._rtls_history:
+                self._set_history_live_mode(False)
+                self._apply_history_snapshot(len(self._rtls_history) - 1)
+            return
+        self._set_history_live_mode(True)
+
+    def _clear_rtls_history(self):
+        self._history_playing = False
+        self._history_play_timer.stop()
+        self._history_slider_dragging = False
+        self._rtls_history.clear()
+        self._history_index = -1
+        self._history_follow_live = True
+        self._live_tags_world.clear()
+        self._active_tags_world.clear()
+        self._canvas.set_heatmap_snapshot_mode(False)
+        self._canvas.clear_active_tags()
+        self._refresh_history_controls()
+
+    def closeEvent(self, event):
+        self._stop_global_rtls()
+        super().closeEvent(event)
 
 
 
