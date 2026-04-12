@@ -834,24 +834,7 @@ class MapCanvas(QWidget):
                 p.fillPath(room_path_screen, brush)
                 p.drawPath(room_path_screen)
 
-        if self._active_tags_world:
-            for tag_id, (world_x, world_y) in self._active_tags_world.items():
-                sx, sy = vp.world_to_screen(world_x, world_y)
-                color = self._tag_color(tag_id)
-                radius = max(5, min(int(vp.scale * 0.18), 10))
 
-                p.setPen(QPen(QColor("#ffffff"), 1.6))
-                p.setBrush(QBrush(color))
-                p.drawEllipse(QPointF(sx, sy), radius, radius)
-
-                label_rect = QRectF(sx + radius + 5, sy - 10, 46, 20)
-                p.setPen(Qt.PenStyle.NoPen)
-                p.setBrush(QBrush(QColor(10, 12, 18, 210)))
-                p.drawRoundedRect(label_rect, 6, 6)
-                p.setPen(QPen(color))
-                p.drawText(label_rect, Qt.AlignmentFlag.AlignCenter, tag_id)
-
-        # ── Selected sub-segments: overlay (orange, thicker) ────────────────
         if self._selected_subsegments:
             sel_pen = QPen(SELECT_COLOR)
             sel_pen.setWidthF(3.5)
