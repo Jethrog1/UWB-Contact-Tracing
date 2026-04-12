@@ -1193,7 +1193,7 @@ class RTLSDashboard(QMainWindow):
                 return room, "name"
         return None, None
 
-    def _on_room_designated(self, name: str, segments: list):
+    def _on_room_designated(self, name: str, segments: list, interior_segments: list):
         dup_room, dup_reason = self._find_duplicate_room(name, segments)
         if dup_room is not None:
             if dup_reason == "geometry":
@@ -1209,7 +1209,7 @@ class RTLSDashboard(QMainWindow):
                     f"A room named '{dup_room.name}' already exists. Please use a different name."
                 )
             return
-        r = Room(name=name, segments=segments)
+        r = Room(name=name, segments=segments, interior_segments=interior_segments)
         self._rooms.append(r)
         self._stop_global_rtls()
         self._clear_rtls_history()

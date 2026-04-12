@@ -564,6 +564,21 @@ class RoomCanvas(QWidget):
             
             p.restore()
         
+        # ── Interior Non-Wall Geometry ────────────────────────────────────
+        if getattr(self.room, "interior_segments", None):
+            interior_pen = QPen(QColor("#8E949C"))
+            interior_pen.setWidthF(1.6)
+            interior_pen.setCosmetic(True)
+            p.setPen(interior_pen)
+
+            for wx1, wy1, wx2, wy2 in self.room.interior_segments:
+                lx1, ly1 = self.room.world_to_local(wx1, wy1)
+                lx2, ly2 = self.room.world_to_local(wx2, wy2)
+
+                sx1, sy1 = self.vp.world_to_screen(lx1, ly1)
+                sx2, sy2 = self.vp.world_to_screen(lx2, ly2)
+                p.drawLine(int(sx1), int(sy1), int(sx2), int(sy2))
+
         # ── Room Boundary Line ─────────────────────────────────────────────
         wall_pen = QPen(self.wall_color)
         wall_pen.setWidthF(2.0)

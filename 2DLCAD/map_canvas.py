@@ -30,7 +30,7 @@ from PyQt6.QtCore import Qt, QPointF, QRectF, pyqtSignal, QTimer
 # ── Reuse the CAD viewport so the coordinate maths are identical ──────────────
 sys.path.insert(0, os.path.dirname(__file__))
 from cad_core import Viewport
-from room_data import segments_match
+from room_data import Room, segments_match
 from rtls_heatmap import ProximityHeatmapLayer
 
 
@@ -41,6 +41,7 @@ ZOOM_MIN         = 0.1      # min scale (zoomed way out)
 ZOOM_MAX         = 6000.0   # max scale (~3x more than before)
 BG_COLOR         = QColor("#141414")
 LINE_COLOR       = QColor("#4A9EFF")   # same default as CAD
+NON_WALL_COLOR   = QColor("#8E949C")
 SELECT_COLOR     = QColor("#FF8C00")   # highlight (orange)
 SELECT_HIT_PX   = 8        # pixels tolerance for selection hit-test
 RASTER_BG_ALPHA  = 255
@@ -73,7 +74,7 @@ class MapCanvas(QWidget):
     anchor_placed     = pyqtSignal(QPointF)
     no_image_warning  = pyqtSignal()
     selection_changed = pyqtSignal(object)  # emits the selected index set
-    room_designated   = pyqtSignal(str, list)  # emits (room_name, list_of_segments)
+    room_designated   = pyqtSignal(str, list, list)  # emits (room_name, boundary_segments, interior_segments)
     map_double_clicked = pyqtSignal(float, float)
     mode_change_requested = pyqtSignal(str)
     status_message_requested = pyqtSignal(str)
@@ -91,6 +92,7 @@ class MapCanvas(QWidget):
         # ── Content ───────────────────────────────────────────────────────
         # Vector segments: list of (x1, y1, x2, y2) in world space
         self._segments: List[Tuple[float, float, float, float]] = []
+        self._non_wall_segments: List[Tuple[float, float, float, float]] = []
         # Optional raster background pixmap (for PDF/raster files)
         self._bg_pixmap: Optional[QPixmap] = None
         # Scale factor used when the pixmap was rendered (pixels-per-world-unit)
@@ -140,17 +142,18 @@ class MapCanvas(QWidget):
         is applied in svg_importer).
         """
         try:
-            from svg_importer import extract_lines_from_svg
-            segments, err = extract_lines_from_svg(path)
+            from svg_importer import extract_styled_segments_from_svg
+            entries, err = extract_styled_segments_from_svg(path)
         except Exception as e:
             return False
 
         if err:
             return False
 
-        self._segments = segments
+        self._segments = [entry["segment"] for entry in entries if entry.get("role") != "non_wall"]
+        self._non_wall_segments = [entry["segment"] for entry in entries if entry.get("role") == "non_wall"]
         self._bg_pixmap = None
-        self._content_loaded = bool(segments)
+        self._content_loaded = bool(self._segments or self._non_wall_segments)
         self.clear_heatmap()
 
         if self._content_loaded:
@@ -185,6 +188,7 @@ class MapCanvas(QWidget):
             # to 1 PDF point (1/72 inch) — convenient reference.
             self._bg_scale = dpi / 72.0   # pixels per world unit
             self._segments = []
+            self._non_wall_segments = []
             self._content_loaded = True
             self.clear_heatmap()
             self._auto_fit_after_load()
@@ -201,6 +205,7 @@ class MapCanvas(QWidget):
         self._bg_pixmap = pix
         self._bg_scale  = 1.0
         self._segments  = []
+        self._non_wall_segments = []
         self._content_loaded = True
         self.clear_heatmap()
         self._auto_fit_after_load()
@@ -311,9 +316,10 @@ class MapCanvas(QWidget):
         if W < 10 or H < 10:
             return
 
-        if self._segments:
-            xs = [s[0] for s in self._segments] + [s[2] for s in self._segments]
-            ys = [s[1] for s in self._segments] + [s[3] for s in self._segments]
+        vector_segments = self._segments + self._non_wall_segments
+        if vector_segments:
+            xs = [s[0] for s in vector_segments] + [s[2] for s in vector_segments]
+            ys = [s[1] for s in vector_segments] + [s[3] for s in vector_segments]
         elif self._bg_pixmap:
             pw = self._bg_pixmap.width()  / self._bg_scale
             ph = self._bg_pixmap.height() / self._bg_scale
@@ -704,6 +710,19 @@ class MapCanvas(QWidget):
                 return room
         return None
 
+    def _collect_room_non_wall_segments(self, boundary_segments: List[Tuple[float, float, float, float]]):
+        if not boundary_segments or not self._non_wall_segments:
+            return []
+        preview_room = Room(name="_preview", segments=list(boundary_segments))
+        captured = []
+        for x1, y1, x2, y2 in self._non_wall_segments:
+            mx = (x1 + x2) / 2.0
+            my = (y1 + y2) / 2.0
+            lx, ly = preview_room.world_to_local(mx, my)
+            if preview_room.contains_local_point(lx, ly):
+                captured.append((x1, y1, x2, y2))
+        return captured
+
     # Compatibility stubs
     def add_item(self, item, z: float = 30):    pass
     def remove_item(self, item):                 pass
@@ -754,6 +773,16 @@ class MapCanvas(QWidget):
             pen.setCosmetic(True)
             p.setPen(pen)
             for x1, y1, x2, y2 in self._segments:
+                sx1_s, sy1_s = vp.world_to_screen(x1, y1)
+                sx2_s, sy2_s = vp.world_to_screen(x2, y2)
+                p.drawLine(int(sx1_s), int(sy1_s), int(sx2_s), int(sy2_s))
+
+        if self._non_wall_segments:
+            non_wall_pen = QPen(NON_WALL_COLOR)
+            non_wall_pen.setWidthF(1.4)
+            non_wall_pen.setCosmetic(True)
+            p.setPen(non_wall_pen)
+            for x1, y1, x2, y2 in self._non_wall_segments:
                 sx1_s, sy1_s = vp.world_to_screen(x1, y1)
                 sx2_s, sy2_s = vp.world_to_screen(x2, y2)
                 p.drawLine(int(sx1_s), int(sy1_s), int(sx2_s), int(sy2_s))
@@ -870,7 +899,11 @@ class MapCanvas(QWidget):
                         )
                         if ok and name.strip():
                             # Emits a copy of the selected subsegments
-                            self.room_designated.emit(name.strip(), list(self._selected_subsegments))
+                            self.room_designated.emit(
+                                name.strip(),
+                                list(self._selected_subsegments),
+                                self._collect_room_non_wall_segments(self._selected_subsegments),
+                            )
                             self.clear_selection()
                 event.accept()
                 return
@@ -914,7 +947,11 @@ class MapCanvas(QWidget):
                     self, "Designate Room", "Enter room name/ID:"
                 )
                 if ok and name.strip():
-                    self.room_designated.emit(name.strip(), list(self._selected_subsegments))
+                    self.room_designated.emit(
+                        name.strip(),
+                        list(self._selected_subsegments),
+                        self._collect_room_non_wall_segments(self._selected_subsegments),
+                    )
                 self.clear_selection()
                 event.accept()
                 return

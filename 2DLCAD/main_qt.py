@@ -651,6 +651,8 @@ import geometry
 from pdf_importer import extract_lines_from_pdf
 from rtls_dashboard import RTLSDashboard
 
+NON_WALL_LINE_HEX = "#8E949C"
+
 class CADWidget(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -718,6 +720,7 @@ class CADWidget(QWidget):
         self.grid_color = QColor(60, 60, 60)
         self.bg_color = QColor(20, 20, 20)
         self.line_color = QColor("#4A9EFF")
+        self.non_wall_line_color = QColor(NON_WALL_LINE_HEX)
         self.selected_color = QColor("#FF4444")
         self.temp_line_color = QColor("#FFFFFF")
         self.snap_marker_color = QColor("#FFDD00")
@@ -857,7 +860,7 @@ class CADWidget(QWidget):
     def check_cancel_visibility(self):
         # Show if in middle of operation
         show = False
-        if self.tool_mode == "line" and self.drawing_line:
+        if self.tool_mode in ("line", "non_wall_line") and self.drawing_line:
             show = True
         if self.tool_mode == "trim" and self.trim_step > 0:
             show = True
@@ -988,14 +991,16 @@ class CADWidget(QWidget):
                 painter.drawLine(0, int(sy0), self.width(), int(sy0))
         
         # Draw Lines
-        pen = QPen(self.line_color)
-        pen.setWidth(2)
-        
         sel_pen = QPen(self.selected_color)
         sel_pen.setWidth(3)
         
         for line in self.lines:
-            painter.setPen(sel_pen if line.selected else pen)
+            if line.selected:
+                painter.setPen(sel_pen)
+            else:
+                base_pen = QPen(QColor(getattr(line, "color", self.line_color.name())))
+                base_pen.setWidth(2)
+                painter.setPen(base_pen)
             if isinstance(line, Line):
                 sx1, sy1 = self.vp.world_to_screen(line.x1, line.y1)
                 sx2, sy2 = self.vp.world_to_screen(line.x2, line.y2)
@@ -1018,7 +1023,7 @@ class CADWidget(QWidget):
             tpen.setStyle(Qt.PenStyle.DashLine)
             painter.setPen(tpen)
             
-            if self.tool_mode == "line" and self.temp_line_start:
+            if self.tool_mode in ("line", "non_wall_line") and self.temp_line_start:
                 wx1, wy1 = self.temp_line_start
                 sx1, sy1 = self.vp.world_to_screen(wx1, wy1)
                 dsx, dsy = self.vp.world_to_screen(sx_snap, sy_snap)
@@ -1324,7 +1329,7 @@ class CADWidget(QWidget):
             
         elif event.button() == Qt.MouseButton.RightButton:
             # If in Line Mode, Right Click = Cancel / Finish Chain
-            if self.tool_mode == "line":
+            if self.tool_mode in ("line", "non_wall_line"):
                 self.cancel_operation()
                 return
 
@@ -1425,7 +1430,7 @@ class CADWidget(QWidget):
                 self.update()
                 return
 
-            if self.tool_mode == "line":
+            if self.tool_mode in ("line", "non_wall_line"):
                 # Snap logic first
                 sx_snap, sy_snap = self.snap_controller.get_snap(wx, wy, self.drawing_line)
                 
@@ -1469,7 +1474,8 @@ class CADWidget(QWidget):
                         sy_snap = start_y + dy
 
                     # Create Line
-                    new_line = Line(start_x, start_y, sx_snap, sy_snap)
+                    line_color = self.line_color.name() if self.tool_mode == "line" else self.non_wall_line_color.name()
+                    new_line = Line(start_x, start_y, sx_snap, sy_snap, line_color)
                     self.lines.append(new_line)
                     
                     # Chain Drawing: Start next line at end of this one
@@ -2174,6 +2180,13 @@ class MainWindow(QMainWindow):
         self.act_line.triggered.connect(lambda: self.set_tool("line"))
         self.line_actions.addAction(self.act_line)
         line_menu.addAction(self.act_line)
+
+        # Action: Non-Wall Line
+        self.act_non_wall_line = QAction("Non-Wall Line", self)
+        self.act_non_wall_line.setCheckable(True)
+        self.act_non_wall_line.triggered.connect(lambda: self.set_tool("non_wall_line"))
+        self.line_actions.addAction(self.act_non_wall_line)
+        line_menu.addAction(self.act_non_wall_line)
         
         # Action: Trim
         self.act_trim = QAction("Trim", self)
@@ -2633,8 +2646,8 @@ class MainWindow(QMainWindow):
             segments, error = extract_lines_from_pdf(filepath)
         elif filepath_lower.endswith(".svg"):
             try:
-                from svg_importer import extract_lines_from_svg
-                segments, error = extract_lines_from_svg(filepath)
+                from svg_importer import extract_styled_segments_from_svg
+                segments, error = extract_styled_segments_from_svg(filepath)
             except ImportError:
                 segments, error = [], "svg_importer module not found."
         else:
@@ -2660,8 +2673,13 @@ class MainWindow(QMainWindow):
         center_wy = (0 - vp.offy) / vp.scale
 
         # Find bounding center of imported geometry (segments are (x1,y1,x2,y2) tuples)
-        xs = [s[0] for s in segments] + [s[2] for s in segments]
-        ys = [s[1] for s in segments] + [s[3] for s in segments]
+        if filepath_lower.endswith(".svg"):
+            raw_segments = [entry["segment"] for entry in segments]
+        else:
+            raw_segments = list(segments)
+
+        xs = [s[0] for s in raw_segments] + [s[2] for s in raw_segments]
+        ys = [s[1] for s in raw_segments] + [s[3] for s in raw_segments]
 
         geom_cx = (min(xs) + max(xs)) / 2
         geom_cy = (min(ys) + max(ys)) / 2
@@ -2672,8 +2690,14 @@ class MainWindow(QMainWindow):
 
         # Create CAD line objects from flat (x1, y1, x2, y2) tuples
         new_elements = []
-        for x1, y1, x2, y2 in segments:
-            new_elements.append(Line(x1 + off_x, y1 + off_y, x2 + off_x, y2 + off_y))
+        if filepath_lower.endswith(".svg"):
+            for entry in segments:
+                x1, y1, x2, y2 = entry["segment"]
+                color = entry.get("color") or self.cad_canvas.line_color.name()
+                new_elements.append(Line(x1 + off_x, y1 + off_y, x2 + off_x, y2 + off_y, color))
+        else:
+            for x1, y1, x2, y2 in segments:
+                new_elements.append(Line(x1 + off_x, y1 + off_y, x2 + off_x, y2 + off_y))
         
         canvas.lines.extend(new_elements)
         canvas.trigger_lines_changed()
@@ -2847,6 +2871,7 @@ class MainWindow(QMainWindow):
     def trigger_current_line_tool(self):
         # Trigger whichever is active in the menu
         if self.act_line.isChecked(): self.set_tool("line")
+        elif self.act_non_wall_line.isChecked(): self.set_tool("non_wall_line")
         elif self.act_trim.isChecked(): self.set_tool("trim")
         elif self.act_extend.isChecked(): self.set_tool("extend")
         elif self.act_spline.isChecked(): self.set_tool("spline")
@@ -2859,13 +2884,16 @@ class MainWindow(QMainWindow):
         self.style_tool_btn_ribbon(self.btn_cursor, mode == "cursor")
         
         # Group logic: Active if mode is one of the drawing/editing tools
-        is_line_group = mode in ["line", "trim", "extend", "spline"]
+        is_line_group = mode in ["line", "non_wall_line", "trim", "extend", "spline"]
         self.style_line_group_custom(active=is_line_group)
         
         # Update text/icon and checked state of menu
         if mode == "line":
             self.btn_line_tool.setText("Line")
             self.act_line.setChecked(True)
+        elif mode == "non_wall_line":
+            self.btn_line_tool.setText("Non-Wall")
+            self.act_non_wall_line.setChecked(True)
         elif mode == "trim":
             self.btn_line_tool.setText("Trim")
             self.act_trim.setChecked(True)
@@ -2876,7 +2904,7 @@ class MainWindow(QMainWindow):
             self.btn_line_tool.setText("Spline")
             self.act_spline.setChecked(True)
         # If switching to cursor, clear snaps immediately
-        if mode != "line":
+        if mode not in ("line", "non_wall_line"):
             self.cad_canvas.snap_hint = None
             self.cad_canvas.alignment_guides = []
             

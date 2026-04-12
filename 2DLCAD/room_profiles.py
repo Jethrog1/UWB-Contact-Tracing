@@ -55,6 +55,15 @@ def build_room_profile(room, tag_height_ft=0.0, filter_mode="None"):
             }
             for x1, y1, x2, y2 in room.segments
         ],
+        "interior_segments_ft": [
+            {
+                "x1": round(float(x1), 3),
+                "y1": round(float(y1), 3),
+                "x2": round(float(x2), 3),
+                "y2": round(float(y2), 3),
+            }
+            for x1, y1, x2, y2 in room.interior_segments
+        ],
     }
 
 
@@ -125,9 +134,19 @@ def load_floorplan_manifest(filepath):
                 float(seg.get("y2", 0.0)),
             ))
 
+        interior_segments = []
+        for seg in room_payload.get("interior_segments_ft", []):
+            interior_segments.append((
+                float(seg.get("x1", 0.0)),
+                float(seg.get("y1", 0.0)),
+                float(seg.get("x2", 0.0)),
+                float(seg.get("y2", 0.0)),
+            ))
+
         room = Room(
             name=room_payload.get("room_name", "Room"),
             segments=segments,
+            interior_segments=interior_segments,
             rtls_settings=dict(room_payload.get("rtls_settings", {})),
         )
 

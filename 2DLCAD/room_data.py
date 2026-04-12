@@ -56,6 +56,7 @@ class Anchor:
 class Room:
     name: str
     segments: List[Tuple[float, float, float, float]]  # boundary sub-segments in world coords
+    interior_segments: List[Tuple[float, float, float, float]] = field(default_factory=list)
     anchors: List[Anchor] = field(default_factory=list)
     rtls_settings: dict = field(default_factory=dict)
     
