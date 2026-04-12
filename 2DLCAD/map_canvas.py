@@ -226,9 +226,13 @@ class MapCanvas(QWidget):
 
     def set_heatmap_enabled(self, enabled: bool):
         self._heatmap.set_enabled(enabled)
-        self._heatmap_snapshot_dirty = True
-        self._heatmap_live_dirty = True
+        if enabled:
+            self._heatmap_snapshot_dirty = True
+            self._heatmap_live_dirty = True
         self.update()
+
+    def heatmap_visible(self) -> bool:
+        return self._heatmap.is_visible()
 
     def set_heatmap_sensitivity(self, sensitivity: int):
         self._heatmap.set_sensitivity(sensitivity)
@@ -283,6 +287,8 @@ class MapCanvas(QWidget):
         if self._heatmap_snapshot_mode:
             if not self._heatmap_snapshot_dirty:
                 return
+            if not self._heatmap.is_visible():
+                return
             self._rebuild_heatmap_from_frames(self._history_frames_for_heatmap(), rooms)
             self._heatmap_snapshot_dirty = False
             self.update()
@@ -300,8 +306,21 @@ class MapCanvas(QWidget):
             accumulate=True,
         )
         self._heatmap_live_dirty = False
-        if self._active_tags_world:
+        if self._active_tags_world and self._heatmap.is_visible():
             self.update()
+
+    def _tag_color(self, tag_id: str) -> QColor:
+        palette = (
+            QColor("#4A9EFF"),
+            QColor("#E67E22"),
+            QColor("#9B59B6"),
+            QColor("#10B981"),
+            QColor("#EF4444"),
+            QColor("#F59E0B"),
+        )
+        if not tag_id:
+            return palette[0]
+        return palette[sum(ord(ch) for ch in tag_id) % len(palette)]
 
     # ──────────────────────────────────────────────────────────────────────────
     # Viewport helpers
@@ -814,6 +833,23 @@ class MapCanvas(QWidget):
                 room_path_screen.closeSubpath()
                 p.fillPath(room_path_screen, brush)
                 p.drawPath(room_path_screen)
+
+        if self._active_tags_world:
+            for tag_id, (world_x, world_y) in self._active_tags_world.items():
+                sx, sy = vp.world_to_screen(world_x, world_y)
+                color = self._tag_color(tag_id)
+                radius = max(5, min(int(vp.scale * 0.18), 10))
+
+                p.setPen(QPen(QColor("#ffffff"), 1.6))
+                p.setBrush(QBrush(color))
+                p.drawEllipse(QPointF(sx, sy), radius, radius)
+
+                label_rect = QRectF(sx + radius + 5, sy - 10, 46, 20)
+                p.setPen(Qt.PenStyle.NoPen)
+                p.setBrush(QBrush(QColor(10, 12, 18, 210)))
+                p.drawRoundedRect(label_rect, 6, 6)
+                p.setPen(QPen(color))
+                p.drawText(label_rect, Qt.AlignmentFlag.AlignCenter, tag_id)
 
         # ── Selected sub-segments: overlay (orange, thicker) ────────────────
         if self._selected_subsegments:

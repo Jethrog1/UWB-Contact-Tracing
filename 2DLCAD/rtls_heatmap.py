@@ -38,7 +38,7 @@ class ProximityHeatmapLayer:
 
     def __init__(self, tokens: HeatmapTokens | None = None):
         self.tokens = tokens or HeatmapTokens()
-        self.enabled = False
+        self.visible = False
         self.sensitivity = 20
 
         self._grid_w = 1
@@ -53,9 +53,10 @@ class ProximityHeatmapLayer:
         self._ensure_buffers(1, 1)
 
     def set_enabled(self, enabled: bool):
-        self.enabled = enabled
-        if not enabled:
-            self.clear()
+        self.visible = enabled
+
+    def is_visible(self) -> bool:
+        return self.visible
 
     def set_sensitivity(self, sensitivity: int):
         self.sensitivity = max(1, min(int(sensitivity), 100))
@@ -83,7 +84,7 @@ class ProximityHeatmapLayer:
         The heat field is accumulated in the reference-view image so normal
         camera motion can simply transform this cached layer.
         """
-        if not self.enabled or np is None or width <= 0 or height <= 0:
+        if np is None or width <= 0 or height <= 0:
             return
 
         self._ensure_reference_view(viewport, width, height)
@@ -97,7 +98,7 @@ class ProximityHeatmapLayer:
         self._rebuild_image()
 
     def paint(self, painter: QPainter, width: int, height: int, viewport):
-        if not self.enabled or self._image.isNull() or self._reference_view is None:
+        if not self.visible or self._image.isNull() or self._reference_view is None:
             return
 
         ref_scale = self._reference_view["scale"]

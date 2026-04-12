@@ -27,7 +27,7 @@ from PyQt6.QtWidgets import (
     QHBoxLayout, QVBoxLayout, QPushButton, QSizePolicy,
     QSplitter, QListWidget, QListWidgetItem, QInputDialog,
     QToolButton, QButtonGroup, QStackedWidget, QFrame, QMenu,
-    QComboBox, QSlider
+    QComboBox, QSlider, QTabWidget, QCheckBox
 )
 from PyQt6.QtGui import QAction, QIcon, QFont, QColor, QPalette, QPixmap
 from PyQt6.QtCore import Qt, QPointF, QEvent, QTimer, pyqtSignal
@@ -580,6 +580,11 @@ class RTLSDashboard(QMainWindow):
         self._feature_panel = self._build_feature_panel()
         self.splitter.addWidget(self._feature_panel)
 
+        self._visualization_overlay = None
+        if self.app_mode == self.MODE_RTLS:
+            self._visualization_overlay = self._build_visualization_overlay()
+            self._reposition_visualization_overlay()
+
         # Give the feature panel a minimum size, but make default smaller
         self.splitter.setSizes([1100, 300])
         self._feature_panel.setMinimumWidth(200)
@@ -875,10 +880,13 @@ class RTLSDashboard(QMainWindow):
     # Event filter – mouse coordinate readout
     # ──────────────────────────────────────────────────────────────────────────
     def eventFilter(self, obj, event):
-        if obj is self._canvas and event.type() == QEvent.Type.MouseMove:
-            pos = event.position()
-            wx, wy = self._canvas.vp.screen_to_world(pos.x(), pos.y())
-            self._lbl_coords.setText(f"x: {wx:.2f}  y: {wy:.2f} ft")
+        if obj is self._canvas:
+            if event.type() == QEvent.Type.MouseMove:
+                pos = event.position()
+                wx, wy = self._canvas.vp.screen_to_world(pos.x(), pos.y())
+                self._lbl_coords.setText(f"x: {wx:.2f}  y: {wy:.2f} ft")
+            elif event.type() in (QEvent.Type.Resize, QEvent.Type.Show):
+                self._reposition_visualization_overlay()
         return super().eventFilter(obj, event)
 
     # ──────────────────────────────────────────────────────────────────────────
@@ -1094,27 +1102,38 @@ class RTLSDashboard(QMainWindow):
         layout.setSpacing(10)
 
         # Header
-        header = QLabel("Room Manager")
+        header = QLabel("Operations")
         header.setObjectName("feature_header")
         layout.addWidget(header)
 
-        # Rooms section
+        tabs = QTabWidget(panel)
+        tabs.setDocumentMode(True)
+        layout.addWidget(tabs, 1)
+
+        room_tab = QWidget(panel)
+        room_layout = QVBoxLayout(room_tab)
+        room_layout.setContentsMargins(2, 6, 2, 2)
+        room_layout.setSpacing(10)
+
         rooms_label = QLabel("Rooms")
-        layout.addWidget(rooms_label)
+        room_layout.addWidget(rooms_label)
 
         self._room_list = QListWidget()
         self._room_list.itemDoubleClicked.connect(self._on_room_double_click)
         self._room_list.itemSelectionChanged.connect(self._on_list_selection)
         self._room_list.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self._room_list.customContextMenuRequested.connect(self._show_room_context_menu)
-        
-        # Connect map canvas double-click
         self._canvas.map_double_clicked.connect(self._on_map_double_click)
-        layout.addWidget(self._room_list)
+        room_layout.addWidget(self._room_list, 1)
 
         if self.app_mode == self.MODE_RTLS:
+            divider = QFrame(room_tab)
+            divider.setFrameShape(QFrame.Shape.HLine)
+            divider.setStyleSheet("color: #34384f; background: #34384f;")
+            room_layout.addWidget(divider)
+
             rtls_label = QLabel("Live RTLS")
-            layout.addWidget(rtls_label)
+            room_layout.addWidget(rtls_label)
 
             port_row = QHBoxLayout()
             port_row.setSpacing(6)
@@ -1124,70 +1143,163 @@ class RTLSDashboard(QMainWindow):
             self._rtls_connect_btn.toggled.connect(self._toggle_global_rtls)
             port_row.addWidget(self._rtls_port_combo, 1)
             port_row.addWidget(self._rtls_connect_btn)
-            layout.addLayout(port_row)
+            room_layout.addLayout(port_row)
 
-            action_row = QHBoxLayout()
-            action_row.setSpacing(6)
             refresh_btn = QPushButton("Refresh Ports")
             refresh_btn.clicked.connect(self._refresh_global_rtls_ports)
-            self._heatmap_toggle_btn = QPushButton("Heat Map")
-            self._heatmap_toggle_btn.setCheckable(True)
-            self._heatmap_toggle_btn.toggled.connect(self._toggle_heatmap)
-            action_row.addWidget(refresh_btn)
-            action_row.addWidget(self._heatmap_toggle_btn)
-            layout.addLayout(action_row)
-
-            heat_label = QLabel("Heat Sensitivity")
-            heat_label.setStyleSheet("font-size: 11px; color: #9aa4d6;")
-            layout.addWidget(heat_label)
-            self._heatmap_slider = QSlider(Qt.Orientation.Horizontal)
-            self._heatmap_slider.setRange(1, 100)
-            self._heatmap_slider.setValue(20)
-            self._heatmap_slider.valueChanged.connect(self._set_heatmap_sensitivity)
-            layout.addWidget(self._heatmap_slider)
+            room_layout.addWidget(refresh_btn)
 
             self._rtls_status_label = QLabel("Disconnected")
             self._rtls_status_label.setWordWrap(True)
             self._rtls_status_label.setStyleSheet("font-size: 11px; color: #9aa4d6;")
-            layout.addWidget(self._rtls_status_label)
+            room_layout.addWidget(self._rtls_status_label)
 
-            history_label = QLabel("Playback")
-            layout.addWidget(history_label)
+        room_layout.addStretch(1)
+        tabs.addTab(room_tab, "Room Manager")
 
-            self._history_slider = QSlider(Qt.Orientation.Horizontal)
-            self._history_slider.setRange(0, 0)
-            self._history_slider.setEnabled(False)
-            self._history_slider.sliderPressed.connect(self._on_history_slider_pressed)
-            self._history_slider.sliderReleased.connect(self._on_history_slider_released)
-            self._history_slider.valueChanged.connect(self._on_history_slider_changed)
-            layout.addWidget(self._history_slider)
+        if self.app_mode == self.MODE_RTLS:
+            visual_tab = QWidget(panel)
+            visual_layout = QVBoxLayout(visual_tab)
+            visual_layout.setContentsMargins(2, 8, 2, 2)
+            visual_layout.setSpacing(8)
 
-            self._history_meta_label = QLabel("No history yet")
-            self._history_meta_label.setWordWrap(True)
-            self._history_meta_label.setStyleSheet("font-size: 11px; color: #9aa4d6;")
-            layout.addWidget(self._history_meta_label)
+            heatmaps_label = QLabel("Heatmaps")
+            heatmaps_label.setStyleSheet("font-size: 11px; font-weight: 700; color: #c7cbea;")
+            visual_layout.addWidget(heatmaps_label)
 
-            playback_row = QHBoxLayout()
-            playback_row.setSpacing(6)
-            self._history_rewind_btn = QPushButton("⏪")
-            self._history_rewind_btn.clicked.connect(lambda: self._step_history_frame(-6))
-            self._history_play_btn = QPushButton("▶")
-            self._history_play_btn.setCheckable(True)
-            self._history_play_btn.toggled.connect(self._toggle_history_playback)
-            self._history_ff_btn = QPushButton("⏩")
-            self._history_ff_btn.clicked.connect(lambda: self._step_history_frame(6))
-            self._history_live_btn = QPushButton("Live")
-            self._history_live_btn.clicked.connect(self._jump_to_live_history)
-            playback_row.addWidget(self._history_rewind_btn)
-            playback_row.addWidget(self._history_play_btn)
-            playback_row.addWidget(self._history_ff_btn)
-            playback_row.addWidget(self._history_live_btn)
-            layout.addLayout(playback_row)
+            heatmaps_divider = QFrame(visual_tab)
+            heatmaps_divider.setFrameShape(QFrame.Shape.HLine)
+            heatmaps_divider.setStyleSheet("color: #34384f; background: #34384f;")
+            visual_layout.addWidget(heatmaps_divider)
+
+            self._heatmap_toggle_btn = QCheckBox("Population Density", visual_tab)
+            self._heatmap_toggle_btn.toggled.connect(self._toggle_heatmap)
+            visual_layout.addWidget(self._heatmap_toggle_btn)
+
+            visual_hint = QLabel(
+                "Hide or show the overlay without interrupting the live density pipeline.",
+                visual_tab,
+            )
+            visual_hint.setWordWrap(True)
+            visual_hint.setStyleSheet("font-size: 11px; color: #9aa4d6;")
+            visual_layout.addWidget(visual_hint)
+            visual_layout.addStretch(1)
+            tabs.addTab(visual_tab, "Visualizations")
+
+            filter_tab = QWidget(panel)
+            filter_layout = QVBoxLayout(filter_tab)
+            filter_layout.setContentsMargins(2, 8, 2, 2)
+            filter_layout.setSpacing(8)
+
+            filter_label = QLabel("Filtering Options")
+            filter_label.setStyleSheet("font-size: 11px; font-weight: 700; color: #c7cbea;")
+            filter_layout.addWidget(filter_label)
+
+            filter_divider = QFrame(filter_tab)
+            filter_divider.setFrameShape(QFrame.Shape.HLine)
+            filter_divider.setStyleSheet("color: #34384f; background: #34384f;")
+            filter_layout.addWidget(filter_divider)
+
+            filter_hint = QLabel(
+                "Global filtering tools will live here as the dashboard expands.",
+                filter_tab,
+            )
+            filter_hint.setWordWrap(True)
+            filter_hint.setStyleSheet("font-size: 11px; color: #9aa4d6;")
+            filter_layout.addWidget(filter_hint)
+            filter_layout.addStretch(1)
+            tabs.addTab(filter_tab, "Filtering")
+
             self._refresh_global_rtls_ports()
-            self._refresh_history_controls()
 
-        layout.addStretch()
         return panel
+
+    def _build_visualization_overlay(self):
+        overlay = QFrame(self._canvas)
+        overlay.setStyleSheet(
+            """
+            QFrame#visualization_overlay {
+                background-color: rgba(18, 18, 31, 232);
+                border: 1px solid rgba(72, 82, 122, 0.86);
+                border-radius: 12px;
+            }
+            QLabel {
+                color: #dce3ff;
+            }
+            QLabel#overlay_title {
+                font-size: 12px;
+                font-weight: 700;
+                color: #f4f6ff;
+            }
+            QLabel#overlay_meta {
+                font-size: 11px;
+                color: #9aa4d6;
+            }
+            """
+        )
+        overlay.setObjectName("visualization_overlay")
+        overlay_layout = QVBoxLayout(overlay)
+        overlay_layout.setContentsMargins(12, 10, 12, 10)
+        overlay_layout.setSpacing(8)
+
+        title = QLabel("Population Density", overlay)
+        title.setObjectName("overlay_title")
+        overlay_layout.addWidget(title)
+
+        heat_label = QLabel("Sensitivity", overlay)
+        heat_label.setObjectName("overlay_meta")
+        overlay_layout.addWidget(heat_label)
+
+        self._heatmap_slider = QSlider(Qt.Orientation.Horizontal)
+        self._heatmap_slider.setRange(1, 100)
+        self._heatmap_slider.setValue(20)
+        self._heatmap_slider.valueChanged.connect(self._set_heatmap_sensitivity)
+        overlay_layout.addWidget(self._heatmap_slider)
+
+        playback_label = QLabel("Playback", overlay)
+        playback_label.setObjectName("overlay_meta")
+        overlay_layout.addWidget(playback_label)
+
+        self._history_slider = QSlider(Qt.Orientation.Horizontal)
+        self._history_slider.setRange(0, 0)
+        self._history_slider.setEnabled(False)
+        self._history_slider.sliderPressed.connect(self._on_history_slider_pressed)
+        self._history_slider.sliderReleased.connect(self._on_history_slider_released)
+        self._history_slider.valueChanged.connect(self._on_history_slider_changed)
+        overlay_layout.addWidget(self._history_slider)
+
+        self._history_meta_label = QLabel("No history yet", overlay)
+        self._history_meta_label.setWordWrap(True)
+        self._history_meta_label.setObjectName("overlay_meta")
+        overlay_layout.addWidget(self._history_meta_label)
+
+        playback_row = QHBoxLayout()
+        playback_row.setSpacing(6)
+        self._history_rewind_btn = QPushButton("⏪")
+        self._history_rewind_btn.clicked.connect(lambda: self._step_history_frame(-6))
+        self._history_play_btn = QPushButton("▶")
+        self._history_play_btn.setCheckable(True)
+        self._history_play_btn.toggled.connect(self._toggle_history_playback)
+        self._history_ff_btn = QPushButton("⏩")
+        self._history_ff_btn.clicked.connect(lambda: self._step_history_frame(6))
+        self._history_live_btn = QPushButton("Live")
+        self._history_live_btn.clicked.connect(self._jump_to_live_history)
+        playback_row.addWidget(self._history_rewind_btn)
+        playback_row.addWidget(self._history_play_btn)
+        playback_row.addWidget(self._history_ff_btn)
+        playback_row.addWidget(self._history_live_btn)
+        overlay_layout.addLayout(playback_row)
+
+        overlay.hide()
+        self._refresh_history_controls()
+        return overlay
+
+    def _reposition_visualization_overlay(self):
+        if self._visualization_overlay is None:
+            return
+        width = min(360, max(300, self._canvas.width() - 40))
+        self._visualization_overlay.resize(width, self._visualization_overlay.sizeHint().height())
+        self._visualization_overlay.move(16, max(16, self._canvas.height() - self._visualization_overlay.height() - 16))
 
     def _refresh_room_list(self):
         self._room_list.clear()
@@ -1437,8 +1549,11 @@ class RTLSDashboard(QMainWindow):
 
     def _toggle_heatmap(self, checked: bool):
         self._canvas.set_heatmap_enabled(checked)
+        if self._visualization_overlay is not None:
+            self._visualization_overlay.setVisible(checked)
+            self._reposition_visualization_overlay()
         if hasattr(self, "_rtls_status_label") and not self._global_rtls_connected():
-            self._rtls_status_label.setText("Heat map enabled" if checked else "Heat map disabled")
+            self._rtls_status_label.setText("Population Density visible" if checked else "Population Density hidden")
 
     def _set_heatmap_sensitivity(self, value: int):
         self._canvas.set_heatmap_sensitivity(value)

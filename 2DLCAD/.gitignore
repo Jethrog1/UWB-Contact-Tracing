@@ -12,3 +12,6 @@ debug_zoom.png
 test_dummy.svg
 test_meta.svg
 web-app/
+*.rtlsproj
+room_profiles/*.json
+tag_profiles/*.json
