@@ -230,6 +230,13 @@
   font-family: 'JetBrains Mono', monospace;
 }
 
+.crp-helper-text {
+  padding: 4px 4px 2px;
+  font-size: 11px;
+  color: #6a7a94;
+  line-height: 1.45;
+}
+
 /* ── Error banner ────────────────────────────────────────────────── */
 .crp-error {
   display: flex;

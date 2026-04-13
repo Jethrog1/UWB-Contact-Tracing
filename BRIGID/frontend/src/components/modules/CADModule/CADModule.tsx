@@ -1,14 +1,12 @@
-// ── CAD Module ────────────────────────────────────────────────────
-import React, { useCallback, useRef, useState } from 'react'
-import { motion, AnimatePresence } from 'motion/react'
+import React, { useCallback, useEffect, useRef, useState } from 'react'
+import { AnimatePresence, motion } from 'motion/react'
 import { useCADWebSocket } from './useCADWebSocket'
 import CADCanvas from './CADCanvas'
-import FeatureManager from './FeatureManager'
 import CADRightPanel from './CADRightPanel'
-import { CADCommand } from './types'
+import FeatureManager from './FeatureManager'
+import { CADCommand, CADContextMenuItem } from './types'
 import './CADModule.css'
 
-// ── Dialog modal (replaces Python simpledialog.askfloat) ──────────
 interface DialogProps {
   title: string
   label: string
@@ -28,7 +26,9 @@ const FloatDialog: React.FC<DialogProps> = ({ title, label, initial, onConfirm, 
 
   const confirm = () => {
     const n = parseFloat(value)
-    if (!isNaN(n)) onConfirm(n)
+    if (!Number.isNaN(n)) {
+      onConfirm(n)
+    }
   }
 
   return (
@@ -55,23 +55,44 @@ const FloatDialog: React.FC<DialogProps> = ({ title, label, initial, onConfirm, 
         />
         <div className="cad-dialog-btns">
           <button className="cad-dialog-btn cad-dialog-btn--cancel" onClick={onCancel}>Cancel</button>
-          <button className="cad-dialog-btn cad-dialog-btn--ok"     onClick={confirm}>OK</button>
+          <button className="cad-dialog-btn cad-dialog-btn--ok" onClick={confirm}>OK</button>
         </div>
       </motion.div>
     </div>
   )
 }
 
-// ── CAD Module ────────────────────────────────────────────────────
+const ContextMenuItemRow: React.FC<{
+  item: CADContextMenuItem
+  onClick: () => void
+}> = ({ item, onClick }) => (
+  <button className="cad-context-item" disabled={item.disabled} onClick={onClick}>
+    <span>{item.label}</span>
+    {item.kind === 'toggle' && <span className="cad-context-check">{item.checked ? 'On' : 'Off'}</span>}
+  </button>
+)
+
 const CADModule: React.FC = () => {
   const { state, status, sendCommand, reconnect } = useCADWebSocket()
+  const dialog = state?.pending_dialog ?? null
+  const contextMenu = state?.context_menu ?? null
+  const contextRef = useRef<HTMLDivElement>(null)
 
   const handleCommand = useCallback((cmd: CADCommand) => {
     sendCommand(cmd)
   }, [sendCommand])
 
-  // ── Resolve pending_dialog ────────────────────────────────────
-  const dialog = state?.pending_dialog ?? null
+  useEffect(() => {
+    if (!contextMenu) return
+
+    const onPointerDown = (event: MouseEvent) => {
+      if (contextRef.current?.contains(event.target as Node)) return
+      sendCommand({ type: 'context_close' })
+    }
+
+    window.addEventListener('mousedown', onPointerDown)
+    return () => window.removeEventListener('mousedown', onPointerDown)
+  }, [contextMenu, sendCommand])
 
   const handleDialogConfirm = useCallback((value: number) => {
     if (!dialog) return
@@ -85,16 +106,14 @@ const CADModule: React.FC = () => {
 
   return (
     <>
-      {/* ── Canvas area (spans "canvas" grid cell) ──────────── */}
       <div className="cad-canvas-area">
-        {/* Disconnected overlay */}
         {status !== 'connected' && !state && (
           <div className="cad-offline-overlay">
-            <div className="cad-offline-icon">⬡</div>
+            <div className="cad-offline-icon">□</div>
             <div className="cad-offline-title">CAD Engine Offline</div>
             <div className="cad-offline-sub">
               {status === 'connecting'
-                ? 'Connecting to Python backend…'
+                ? 'Connecting to the Python CAD backend...'
                 : 'Could not reach the CAD server on localhost:8765'}
             </div>
             {status !== 'connecting' && (
@@ -105,13 +124,16 @@ const CADModule: React.FC = () => {
           </div>
         )}
 
-        {/* Canvas */}
         <CADCanvas state={state} onCommand={handleCommand} />
-
-        {/* Floating feature manager */}
         <FeatureManager state={state} />
 
-        {/* Cursor world coord readout */}
+        {state?.last_notice && (
+          <div className={`cad-notice cad-notice--${state.last_notice.kind}`}>
+            <div className="cad-notice-title">{state.last_notice.title}</div>
+            <div className="cad-notice-message">{state.last_notice.message}</div>
+          </div>
+        )}
+
         {state && (
           <div className="cad-coord-readout">
             X {state.cursor_world_snapped[0].toFixed(2)}
@@ -119,14 +141,33 @@ const CADModule: React.FC = () => {
             Y {state.cursor_world_snapped[1].toFixed(2)}
           </div>
         )}
+
+        {contextMenu && (
+          <div
+            ref={contextRef}
+            className="cad-context-menu"
+            style={{ left: contextMenu.x, top: contextMenu.y }}
+          >
+            {contextMenu.sections.map(section => (
+              <div key={section.title} className="cad-context-section">
+                <div className="cad-context-title">{section.title}</div>
+                {section.items.map(item => (
+                  <ContextMenuItemRow
+                    key={item.id}
+                    item={item}
+                    onClick={() => sendCommand({ type: 'context_action', action: item.id })}
+                  />
+                ))}
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
-      {/* ── Right panel (spans "right" grid cell) ───────────── */}
       <CADRightPanel state={state} onCommand={handleCommand} status={status} />
 
-      {/* ── Float dialog portal ──────────────────────────────── */}
       <AnimatePresence>
-        {dialog && dialog.kind === 'prompt_float' && (
+        {dialog?.kind === 'prompt_float' && (
           <FloatDialog
             key={dialog.request_id}
             title={dialog.title}
@@ -142,3 +183,4 @@ const CADModule: React.FC = () => {
 }
 
 export default CADModule
+

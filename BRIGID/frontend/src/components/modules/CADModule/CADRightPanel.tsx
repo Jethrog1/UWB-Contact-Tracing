@@ -1,7 +1,6 @@
-// ── CAD Right Panel ───────────────────────────────────────────────
 import React from 'react'
 import { Icon, Tooltip } from '@blueprintjs/core'
-import { CADState, CADCommand, ToolMode } from './types'
+import { CADCommand, CADState, ToolMode } from './types'
 import './CADRightPanel.css'
 
 interface Props {
@@ -10,66 +9,64 @@ interface Props {
   status: 'connecting' | 'connected' | 'disconnected' | 'error'
 }
 
-// ── Tool definitions ──────────────────────────────────────────────
 const TOOLS: { mode: ToolMode; icon: string; label: string; shortcut: string }[] = [
-  { mode: 'cursor', icon: 'cursor',     label: 'Select / Move',  shortcut: 'V' },
-  { mode: 'line',   icon: 'slash',      label: 'Draw Line',      shortcut: 'L' },
-  { mode: 'vertex', icon: 'dot',        label: 'Vertex Mode',    shortcut: 'N' },
-  { mode: 'dim',    icon: 'arrows-horizontal', label: 'Dimension Tool', shortcut: 'D' },
+  { mode: 'cursor', icon: 'cursor', label: 'Select / Move', shortcut: 'V' },
+  { mode: 'line', icon: 'slash', label: 'Draw Line', shortcut: 'L' },
+  { mode: 'vertex', icon: 'dot', label: 'Vertex Mode', shortcut: 'N' },
+  { mode: 'dim', icon: 'arrows-horizontal', label: 'Dimension Tool', shortcut: 'D' },
 ]
 
 const CADRightPanel: React.FC<Props> = ({ state, onCommand, status }) => {
-  const tool    = state?.tool_mode ?? 'cursor'
-  const flags   = {
+  const tool = state?.tool_mode ?? 'cursor'
+  const flags = {
     manipulate_line: state?.manipulate_line ?? false,
-    snap_axis:       state?.snap_axis       ?? false,
-    line_match:      state?.line_match      ?? false,
-    disable_vpoint:  state?.disable_vpoint  ?? false,
+    snap_axis: state?.snap_axis ?? false,
+    line_match: state?.line_match ?? false,
+    disable_vpoint: state?.disable_vpoint ?? false,
   }
 
-  const setTool = (t: ToolMode) => onCommand({ type: 'tool_change', tool: t })
-  const toggle  = (f: keyof typeof flags) =>
-    onCommand({ type: 'toggle_flag', flag: f, value: !flags[f] })
+  const setTool = (nextTool: ToolMode) => onCommand({ type: 'tool_change', tool: nextTool })
+  const toggle = (flag: keyof typeof flags) => onCommand({ type: 'toggle_flag', flag, value: !flags[flag] })
 
   return (
     <aside className="cad-right-panel">
-      {/* ── Connection badge ─────────────────────────────────── */}
       <div className={`crp-status crp-status--${status}`}>
         <span className="crp-status-dot" />
         <span className="crp-status-label">
-          {status === 'connected'    ? 'Backend connected'
-         : status === 'connecting'  ? 'Connecting…'
-         : status === 'error'       ? 'Connection error'
-                                    : 'Disconnected'}
+          {status === 'connected'
+            ? 'Backend connected'
+            : status === 'connecting'
+              ? 'Connecting...'
+              : status === 'error'
+                ? 'Connection error'
+                : 'Disconnected'}
         </span>
       </div>
 
-      {/* ── Tools ────────────────────────────────────────────── */}
       <Section title="Tools">
         <div className="crp-tool-grid">
-          {TOOLS.map(t => (
-            <Tooltip key={t.mode} content={`${t.label} (${t.shortcut})`} placement="left">
+          {TOOLS.map(entry => (
+            <Tooltip key={entry.mode} content={`${entry.label} (${entry.shortcut})`} placement="left">
               <button
-                className={`crp-tool-btn${tool === t.mode ? ' crp-tool-btn--active' : ''}`}
-                onClick={() => setTool(t.mode)}
+                className={`crp-tool-btn${tool === entry.mode ? ' crp-tool-btn--active' : ''}`}
+                onClick={() => setTool(entry.mode)}
               >
-                <Icon icon={t.icon as any} size={14} />
-                <span>{t.label}</span>
+                <Icon icon={entry.icon as any} size={14} />
+                <span>{entry.label}</span>
               </button>
             </Tooltip>
           ))}
         </div>
       </Section>
 
-      {/* ── Edit actions ─────────────────────────────────────── */}
       <Section title="Edit">
         <div className="crp-btn-row">
           <ActionBtn icon="undo" label="Undo" shortcut="Ctrl+Z" onClick={() => onCommand({ type: 'undo' })} />
-          <ActionBtn icon="redo" label="Redo" shortcut="Ctrl+Y" onClick={() => onCommand({ type: 'redo' })} />
+          <ActionBtn icon="redo" label="Redo" shortcut="Ctrl+Y / Ctrl+Shift+Z" onClick={() => onCommand({ type: 'redo' })} />
         </div>
         <div className="crp-btn-row">
-          <ActionBtn icon="duplicate" label="Copy"   shortcut="Ctrl+C" onClick={() => onCommand({ type: 'copy' })} />
-          <ActionBtn icon="clipboard" label="Paste"  shortcut="Ctrl+V" onClick={() => onCommand({ type: 'paste' })} />
+          <ActionBtn icon="duplicate" label="Copy" shortcut="Ctrl+C" onClick={() => onCommand({ type: 'copy' })} />
+          <ActionBtn icon="clipboard" label="Paste" shortcut="Ctrl+V" onClick={() => onCommand({ type: 'paste' })} />
         </div>
         <div className="crp-btn-row">
           <ActionBtn icon="trash" label="Delete" shortcut="Del" onClick={() => onCommand({ type: 'delete' })} danger />
@@ -77,61 +74,49 @@ const CADRightPanel: React.FC<Props> = ({ state, onCommand, status }) => {
         </div>
       </Section>
 
-      {/* ── View / Zoom ──────────────────────────────────────── */}
       <Section title="View">
         <div className="crp-btn-row">
-          <ActionBtn icon="zoom-in"  label="Zoom In"    shortcut="+" onClick={() => onCommand({ type: 'zoom_in' })} />
-          <ActionBtn icon="zoom-out" label="Zoom Out"   shortcut="-" onClick={() => onCommand({ type: 'zoom_out' })} />
+          <ActionBtn icon="zoom-in" label="Zoom In" shortcut="+" onClick={() => onCommand({ type: 'zoom_in' })} />
+          <ActionBtn icon="zoom-out" label="Zoom Out" shortcut="-" onClick={() => onCommand({ type: 'zoom_out' })} />
         </div>
         <ActionBtn icon="zoom-to-fit" label="Reset View" shortcut="0" onClick={() => onCommand({ type: 'zoom_reset' })} wide />
       </Section>
 
-      {/* ── Feature flags ────────────────────────────────────── */}
-      <Section title="Snap &amp; Behaviour">
-        <ToggleRow
-          label="Manipulate Line"
-          active={flags.manipulate_line}
-          onToggle={() => toggle('manipulate_line')}
-        />
-        <ToggleRow
-          label="Axis Snap"
-          active={flags.snap_axis}
-          onToggle={() => toggle('snap_axis')}
-        />
-        <ToggleRow
-          label="Line Match"
-          active={flags.line_match}
-          onToggle={() => toggle('line_match')}
-        />
-        <ToggleRow
-          label="Disable Vanishing Point"
-          active={flags.disable_vpoint}
-          onToggle={() => toggle('disable_vpoint')}
-        />
+      <Section title="Advanced Tools">
+        <div className="crp-btn-row">
+          <ActionBtn icon="repeat" label="Rotate" shortcut="Panel / menu" onClick={() => onCommand({ type: 'context_action', action: 'rotate' })} />
+          <ActionBtn icon="cut" label="Trim" shortcut="Panel / menu" onClick={() => onCommand({ type: 'context_action', action: 'trim' })} />
+        </div>
       </Section>
 
-      {/* ── Angle snaps ──────────────────────────────────────── */}
+      <Section title="Snap & Behaviour">
+        <ToggleRow label="Manipulate Line" active={flags.manipulate_line} onToggle={() => toggle('manipulate_line')} />
+        <ToggleRow label="Axis Snap" active={flags.snap_axis} onToggle={() => toggle('snap_axis')} />
+        <ToggleRow label="Line Match" active={flags.line_match} onToggle={() => toggle('line_match')} />
+        <ToggleRow label="Disable Vanishing Point" active={flags.disable_vpoint} onToggle={() => toggle('disable_vpoint')} />
+      </Section>
+
       <Section title="Angle Snap Values">
         <div className="crp-angle-grid">
-          {(state?.angle_snap_values ?? ['0', '45', '90', '135']).map((val, i) => (
+          {(state?.angle_snap_values ?? ['', '', '', '']).map((value, index) => (
             <input
-              key={i}
+              key={index}
               className="crp-angle-input"
-              value={val}
-              onChange={e => onCommand({ type: 'angle_snap_set', index: i, value: e.target.value })}
-              placeholder={`Angle ${i + 1}`}
+              value={value}
+              onChange={e => onCommand({ type: 'angle_snap_set', index, value: e.target.value })}
+              placeholder={`Angle ${index + 1}`}
             />
           ))}
         </div>
       </Section>
 
-      {/* ── Geometry stats ───────────────────────────────────── */}
       <Section title="Geometry">
         <div className="crp-stats">
-          <StatRow label="Lines"      value={state?.lines.length ?? 0} />
+          <StatRow label="Lines" value={state?.lines.length ?? 0} />
           <StatRow label="Fixed Dims" value={state ? Object.keys(state.fixed_lengths).length : 0} />
-          <StatRow label="Distances"  value={state?.distance_constraints.length ?? 0} />
-          <StatRow label="Angles"     value={state?.angle_constraints.length ?? 0} />
+          <StatRow label="Distances" value={state?.distance_constraints.length ?? 0} />
+          <StatRow label="Angles" value={state?.angle_constraints.length ?? 0} />
+          <StatRow label="Clipboard" value={state?.clipboard.line_count ?? 0} />
         </div>
         {state?.selected_id && (
           <div className="crp-selection-info">
@@ -142,12 +127,42 @@ const CADRightPanel: React.FC<Props> = ({ state, onCommand, status }) => {
         {(state?.multi_selected_ids.length ?? 0) > 1 && (
           <div className="crp-selection-info">
             <span className="crp-label">Multi</span>
-            <span className="crp-value">{state!.multi_selected_ids.length} lines</span>
+            <span className="crp-value">{state?.multi_selected_ids.length} lines</span>
           </div>
         )}
       </Section>
 
-      {/* ── Error banner ─────────────────────────────────────── */}
+      {state?.rotate_state.active && (
+        <Section title="Rotate">
+          <div className="crp-helper-text">
+            {state.rotate_state.state === 'select_pivot' && 'Pick the pivot vertex on the selected geometry.'}
+            {state.rotate_state.state === 'select_axis' && 'Pick a second vertex to define the rotation axis.'}
+            {state.rotate_state.state === 'rotating' && `Rotation preview: ${state.rotate_state.current_angle_deg.toFixed(1)}°`}
+          </div>
+        </Section>
+      )}
+
+      {state?.trim_state.active && (
+        <Section title="Trim">
+          <div className="crp-angle-grid">
+            <input
+              className="crp-angle-input"
+              value={state.trim_state.trim1_text}
+              placeholder="Trim Point 1"
+              onChange={e => onCommand({ type: 'trim_value_set', point: 1, value: e.target.value })}
+            />
+            <input
+              className="crp-angle-input"
+              value={state.trim_state.trim2_text}
+              placeholder="Trim Point 2"
+              onChange={e => onCommand({ type: 'trim_value_set', point: 2, value: e.target.value })}
+            />
+          </div>
+          <div className="crp-helper-text">{state.trim_state.distance_text || 'Pick two trim points or type distances.'}</div>
+          <ActionBtn icon="endorsed" label="Apply Trim" shortcut="Enter" onClick={() => onCommand({ type: 'trim_apply' })} wide />
+        </Section>
+      )}
+
       {state?.last_error && (
         <div className="crp-error">
           <Icon icon="warning-sign" size={12} />
@@ -158,7 +173,6 @@ const CADRightPanel: React.FC<Props> = ({ state, onCommand, status }) => {
   )
 }
 
-// ── Sub-components ────────────────────────────────────────────────
 const Section: React.FC<{ title: string; children: React.ReactNode }> = ({ title, children }) => (
   <div className="crp-section">
     <div className="crp-section-title">{title}</div>
@@ -167,8 +181,12 @@ const Section: React.FC<{ title: string; children: React.ReactNode }> = ({ title
 )
 
 const ActionBtn: React.FC<{
-  icon: string; label: string; shortcut: string
-  onClick: () => void; danger?: boolean; wide?: boolean
+  icon: string
+  label: string
+  shortcut: string
+  onClick: () => void
+  danger?: boolean
+  wide?: boolean
 }> = ({ icon, label, shortcut, onClick, danger, wide }) => (
   <Tooltip content={`${label} (${shortcut})`} placement="left">
     <button
@@ -198,3 +216,4 @@ const StatRow: React.FC<{ label: string; value: number }> = ({ label, value }) =
 )
 
 export default CADRightPanel
+

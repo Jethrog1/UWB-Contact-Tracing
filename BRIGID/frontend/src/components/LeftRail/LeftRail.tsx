@@ -20,11 +20,12 @@ const MODULE_ITEMS: ModuleItem[] = [
 ]
 
 interface LeftRailProps {
-  activeModule: AppModule
+  activeModule: AppModule | null
   onModuleChange: (module: AppModule) => void
+  disabled?: boolean
 }
 
-const LeftRail: React.FC<LeftRailProps> = ({ activeModule, onModuleChange }) => {
+const LeftRail: React.FC<LeftRailProps> = ({ activeModule, onModuleChange, disabled = false }) => {
   return (
     <motion.aside
       className="left-rail"
@@ -57,6 +58,7 @@ const LeftRail: React.FC<LeftRailProps> = ({ activeModule, onModuleChange }) => 
                 className={`left-rail__btn ${isActive ? 'left-rail__btn--active' : ''}`}
                 onClick={() => onModuleChange(item.id)}
                 aria-label={item.label}
+                disabled={disabled}
               >
                 {isActive && (
                   <motion.div

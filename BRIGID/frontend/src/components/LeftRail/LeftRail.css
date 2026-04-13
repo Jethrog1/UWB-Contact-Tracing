@@ -63,9 +63,19 @@
   flex-shrink: 0;
 }
 
+.left-rail__btn:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
 .left-rail__btn:hover {
   color: #8a9ab8;
   background: rgba(56, 68, 94, 0.2);
+}
+
+.left-rail__btn:disabled:hover {
+  color: #3d4d60;
+  background: transparent;
 }
 
 .left-rail__btn--active {

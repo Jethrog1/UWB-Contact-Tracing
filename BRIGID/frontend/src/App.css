@@ -27,3 +27,59 @@
 /* When CAD module is active, CADModule owns the "canvas + right" cells
    and renders its own internal layout (canvas area + feature manager + right panel).
    The grid-area assignments for canvas and right are therefore handled inside CADModule. */
+
+.app-empty-state,
+.app-module-placeholder {
+  grid-area: canvas;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background:
+    radial-gradient(circle at top, rgba(56, 189, 248, 0.08), transparent 35%),
+    linear-gradient(180deg, #08101b 0%, #060b14 100%);
+  color: #6a7a94;
+  gap: 10px;
+  text-align: center;
+  padding: 40px;
+}
+
+.app-empty-icon,
+.app-module-icon {
+  width: 56px;
+  height: 56px;
+  border-radius: 18px;
+  display: grid;
+  place-items: center;
+  background: rgba(56, 68, 94, 0.16);
+  color: #d7e7f6;
+  font-size: 28px;
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.24);
+}
+
+.app-empty-title,
+.app-module-title {
+  font-size: 20px;
+  font-weight: 600;
+  color: #eff6ff;
+}
+
+.app-empty-sub,
+.app-module-sub {
+  max-width: 520px;
+  font-size: 13px;
+  line-height: 1.6;
+  color: #8aa0b7;
+}
+
+.app-module-pill {
+  margin-top: 8px;
+  padding: 8px 14px;
+  border-radius: 999px;
+  border: 1px solid rgba(56, 189, 248, 0.25);
+  background: rgba(56, 189, 248, 0.08);
+  color: #9ed7f7;
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
