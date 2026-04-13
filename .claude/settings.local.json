@@ -2,7 +2,9 @@
   "permissions": {
     "allow": [
       "Bash(npx tsc:*)",
-      "Bash(py -3 -c ':*)"
+      "Bash(py -3 -c ':*)",
+      "Bash(python -c ':*)",
+      "Bash(node -e ':*)"
     ]
   }
 }

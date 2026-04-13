@@ -34,8 +34,6 @@ const buildMenus = (canCloseTab: boolean): MenuEntry[] => [
       { label: 'Save As...', shortcut: 'Ctrl+Shift+S', disabled: true },
       { separator: true, label: '' },
       { label: 'Import SVG Floor Plan...', disabled: true },
-      { label: 'Export as PNG...', disabled: true },
-      { label: 'Export as SVG...', disabled: true },
       { separator: true, label: '' },
       { label: 'Close Tab', shortcut: 'Ctrl+W', action: 'close-tab', disabled: !canCloseTab },
       { label: 'Close Project', disabled: true },
@@ -165,4 +163,3 @@ const HotBar: React.FC<HotBarProps> = ({ canCloseTab, onNewWorkspace, onCloseTab
 }
 
 export default HotBar
-

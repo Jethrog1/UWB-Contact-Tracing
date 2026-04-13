@@ -1,4 +1,4 @@
-import { _ as __awaiter, a as __generator, b as __vitePreload, p as pascalCase, I as IconSize } from "./index-DeVXooV8.js";
+import { _ as __awaiter, a as __generator, b as __vitePreload, p as pascalCase, I as IconSize } from "./index-Bi5aevYv.js";
 var splitPathsBySizeLoader = function(name, size) {
   return __awaiter(void 0, void 0, void 0, function() {
     var key, pathsRecord;

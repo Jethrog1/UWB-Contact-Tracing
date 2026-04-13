@@ -2,10 +2,16 @@
 const electron = require("electron");
 const child_process = require("child_process");
 const path = require("path");
+const util = require("util");
 const utils = require("@electron-toolkit/utils");
 let cadServer = null;
 let mainWindow = null;
+let shutdownPromise = null;
+let appQuitInFlight = false;
 const CAD_SERVER_HEALTH_URL = "http://127.0.0.1:8765/health";
+const CAD_SERVER_PORT = 8765;
+const execFileAsync = util.promisify(child_process.execFile);
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 async function isCadServerReachable() {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 1200);
@@ -18,12 +24,65 @@ async function isCadServerReachable() {
     clearTimeout(timeout);
   }
 }
+async function listCadServerPids() {
+  try {
+    if (process.platform === "win32") {
+      const { stdout: stdout2 } = await execFileAsync("netstat", ["-ano", "-p", "tcp"]);
+      const matches = stdout2.split(/\r?\n/).map((line) => line.trim()).filter((line) => line.startsWith("TCP")).map((line) => line.split(/\s+/)).filter((parts) => parts.length >= 5 && parts[1].endsWith(`:${CAD_SERVER_PORT}`) && parts[3] === "LISTENING").map((parts) => Number.parseInt(parts[4], 10)).filter((pid) => Number.isInteger(pid) && pid > 0);
+      return [...new Set(matches)];
+    }
+    const { stdout } = await execFileAsync("lsof", ["-ti", `tcp:${CAD_SERVER_PORT}`, "-sTCP:LISTEN"]);
+    return stdout.split(/\r?\n/).map((line) => Number.parseInt(line.trim(), 10)).filter((pid) => Number.isInteger(pid) && pid > 0);
+  } catch {
+    return [];
+  }
+}
+async function killProcessTree(pid) {
+  if (!Number.isInteger(pid) || pid <= 0 || pid === process.pid) return;
+  try {
+    if (process.platform === "win32") {
+      await execFileAsync("taskkill", ["/PID", String(pid), "/T", "/F"]);
+      return;
+    }
+    process.kill(pid, "SIGTERM");
+    await sleep(500);
+    try {
+      process.kill(pid, 0);
+      process.kill(pid, "SIGKILL");
+    } catch {
+    }
+  } catch {
+  }
+}
+async function stopCadServersOnPort(excludePid) {
+  const pids = await listCadServerPids();
+  for (const pid of pids) {
+    await killProcessTree(pid);
+  }
+  const deadline = Date.now() + 4e3;
+  while (Date.now() < deadline) {
+    const remaining = await listCadServerPids();
+    const live = remaining;
+    if (live.length === 0 && !await isCadServerReachable()) return;
+    await sleep(120);
+  }
+}
+async function waitForCadServerReady() {
+  const deadline = Date.now() + 1e4;
+  while (Date.now() < deadline) {
+    if (await isCadServerReachable()) return;
+    if (cadServer?.exitCode != null) {
+      throw new Error(`CAD server exited early with code ${cadServer.exitCode}`);
+    }
+    await sleep(150);
+  }
+  throw new Error("Timed out waiting for CAD server to become ready.");
+}
 async function startCadServer() {
-  if (await isCadServerReachable()) {
-    console.log("[main] Reusing existing CAD server on 127.0.0.1:8765");
-    cadServer = null;
+  if (cadServer && cadServer.exitCode == null && !cadServer.killed) {
     return;
   }
+  await stopCadServersOnPort();
   const backendDir = utils.is.dev ? path.join(electron.app.getAppPath(), "..", "backend") : path.join(process.resourcesPath, "backend");
   const pythonCmd = process.platform === "win32" ? "py" : "python3";
   const pythonArgs = process.platform === "win32" ? ["-3"] : [];
@@ -34,7 +93,8 @@ async function startCadServer() {
     {
       cwd: backendDir,
       stdio: ["ignore", "pipe", "pipe"],
-      env: { ...process.env, PYTHONUNBUFFERED: "1" }
+      env: { ...process.env, PYTHONUNBUFFERED: "1" },
+      windowsHide: true
     }
   );
   cadServer.stdout?.on("data", (data) => {
@@ -44,19 +104,34 @@ async function startCadServer() {
     process.stderr.write(`[cad-server] ${data}`);
   });
   cadServer.on("exit", async (code) => {
-    if (code !== 0 && await isCadServerReachable()) {
-      console.log("[main] CAD server already active on 127.0.0.1:8765, reusing existing instance");
-      cadServer = null;
-      return;
-    }
     console.log(`[main] CAD server exited with code ${code}`);
     cadServer = null;
   });
+  await waitForCadServerReady();
 }
-function stopCadServer() {
-  if (!cadServer) return;
-  cadServer.kill();
-  cadServer = null;
+async function stopCadServer() {
+  if (shutdownPromise) {
+    await shutdownPromise;
+    return;
+  }
+  shutdownPromise = (async () => {
+    const child = cadServer;
+    cadServer = null;
+    if (child?.pid) {
+      try {
+        child.kill("SIGTERM");
+      } catch {
+      }
+      await sleep(300);
+      await killProcessTree(child.pid);
+    }
+    await stopCadServersOnPort();
+  })();
+  try {
+    await shutdownPromise;
+  } finally {
+    shutdownPromise = null;
+  }
 }
 const brigidRoot = utils.is.dev ? path.join(electron.app.getAppPath(), "..") : path.join(process.resourcesPath, "..");
 electron.ipcMain.handle("app:get-paths", () => ({
@@ -79,7 +154,7 @@ electron.ipcMain.handle("cad:status", async () => {
   return { running };
 });
 electron.ipcMain.handle("cad:restart", async () => {
-  stopCadServer();
+  await stopCadServer();
   await startCadServer();
   const running = cadServer !== null && !cadServer.killed || await isCadServerReachable();
   return { ok: running };
@@ -159,18 +234,26 @@ if (!gotSingleInstanceLock) {
   });
 }
 electron.app.whenReady().then(async () => {
-  await startCadServer();
+  try {
+    await startCadServer();
+  } catch (error) {
+    console.error("[main] Failed to start CAD server:", error);
+  }
   createWindow();
   electron.app.on("activate", () => {
     if (electron.BrowserWindow.getAllWindows().length === 0) createWindow();
   });
 });
 electron.app.on("window-all-closed", () => {
-  stopCadServer();
   if (process.platform !== "darwin") {
     electron.app.quit();
   }
 });
-electron.app.on("before-quit", () => {
-  stopCadServer();
+electron.app.on("before-quit", (event) => {
+  if (appQuitInFlight) return;
+  event.preventDefault();
+  appQuitInFlight = true;
+  void stopCadServer().finally(() => {
+    electron.app.exit(0);
+  });
 });

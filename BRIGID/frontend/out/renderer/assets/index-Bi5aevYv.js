@@ -7063,8 +7063,6 @@ intentClass(Intent.WARNING);
 intentClass(Intent.DANGER);
 var FOCUS_DISABLED = "".concat(NS$1, "-focus-disabled");
 var BUTTON = "".concat(NS$1, "-button");
-var COLLAPSE = "".concat(NS$1, "-collapse");
-var COLLAPSE_BODY = "".concat(COLLAPSE, "-body");
 var OVERLAY = "".concat(NS$1, "-overlay");
 var OVERLAY_BACKDROP = "".concat(OVERLAY, "-backdrop");
 var OVERLAY_CONTENT = "".concat(OVERLAY, "-content");
@@ -7401,7 +7399,7 @@ function isRefObject$1(value) {
 function isRefCallback(value) {
   return typeof value === "function";
 }
-function setRef$1(refTarget, ref) {
+function setRef$2(refTarget, ref) {
   if (isRefObject$1(refTarget)) {
     refTarget.current = ref;
   } else if (isRefCallback(refTarget)) {
@@ -7415,7 +7413,7 @@ function mergeRefs() {
   }
   return function(value) {
     refs.forEach(function(ref) {
-      setRef$1(ref, value);
+      setRef$2(ref, value);
     });
   };
 }
@@ -7431,7 +7429,7 @@ function getRef(ref) {
 function refHandler(refTargetParent, refTargetKey, refProp) {
   return function(ref) {
     refTargetParent[refTargetKey] = ref;
-    setRef$1(refProp, ref);
+    setRef$2(refProp, ref);
   };
 }
 var AbstractPureComponent = (
@@ -8502,14 +8500,14 @@ function getLoaderFn(options) {
           if (!(loader === "all")) return [3, 3];
           return [4, __vitePreload(() => import(
             /* webpackChunkName: "blueprint-icons-all-paths-loader" */
-            "./allPathsLoader-BBCmJ5uE.js"
+            "./allPathsLoader-AtqQ0EaF.js"
           ), true ? [] : void 0, import.meta.url)];
         case 2:
           return [2, _b.sent().allPathsLoader];
         case 3:
           return [4, __vitePreload(() => import(
             /* webpackChunkName: "blueprint-icons-split-paths-by-size-loader" */
-            "./splitPathsBySizeLoader-B84Sz53m.js"
+            "./splitPathsBySizeLoader-CBxD5NCa.js"
           ), true ? [] : void 0, import.meta.url)];
         case 4:
           return [2, _b.sent().splitPathsBySizeLoader];
@@ -9842,7 +9840,7 @@ var Overlay2 = reactExports.forwardRef(function(props, forwardedRef) {
       setIsAutoFocusing(true);
       bringFocusInsideOverlay();
     }
-    setRef$1(lastActiveElementBeforeOpened, getActiveElement(getRef(containerElement)));
+    setRef$2(lastActiveElementBeforeOpened, getActiveElement(getRef(containerElement)));
   }, [autoFocus, bringFocusInsideOverlay, getLastOpened, openOverlay]);
   var overlayWillClose = reactExports.useCallback(function() {
     var _a2;
@@ -10149,7 +10147,7 @@ var safeInvoke = function safeInvoke2(fn2) {
     return fn2.apply(void 0, args);
   }
 };
-var setRef = function setRef2(ref, node) {
+var setRef$1 = function setRef(ref, node) {
   if (typeof ref === "function") {
     return safeInvoke(ref, node);
   } else if (ref != null) {
@@ -11693,7 +11691,7 @@ function Popper(_ref) {
   var _React$useState = reactExports.useState(null), popperElement = _React$useState[0], setPopperElement = _React$useState[1];
   var _React$useState2 = reactExports.useState(null), arrowElement = _React$useState2[0], setArrowElement = _React$useState2[1];
   reactExports.useEffect(function() {
-    setRef(innerRef, popperElement);
+    setRef$1(innerRef, popperElement);
   }, [innerRef, popperElement]);
   var options = reactExports.useMemo(function() {
     return {
@@ -11743,12 +11741,12 @@ function Reference(_ref) {
   var children = _ref.children, innerRef = _ref.innerRef;
   var setReferenceNode = reactExports.useContext(ManagerReferenceNodeSetterContext);
   var refHandler2 = reactExports.useCallback(function(node) {
-    setRef(innerRef, node);
+    setRef$1(innerRef, node);
     safeInvoke(setReferenceNode, node);
   }, [innerRef, setReferenceNode]);
   reactExports.useEffect(function() {
     return function() {
-      return setRef(innerRef, null);
+      return setRef$1(innerRef, null);
     };
   }, []);
   reactExports.useEffect(function() {
@@ -12477,148 +12475,6 @@ function isEscapeKeypressEvent(e) {
 }
 function noop$1() {
 }
-var AnimationStates;
-(function(AnimationStates2) {
-  AnimationStates2[AnimationStates2["OPEN_START"] = 0] = "OPEN_START";
-  AnimationStates2[AnimationStates2["OPENING"] = 1] = "OPENING";
-  AnimationStates2[AnimationStates2["OPEN"] = 2] = "OPEN";
-  AnimationStates2[AnimationStates2["CLOSING_START"] = 3] = "CLOSING_START";
-  AnimationStates2[AnimationStates2["CLOSING"] = 4] = "CLOSING";
-  AnimationStates2[AnimationStates2["CLOSED"] = 5] = "CLOSED";
-})(AnimationStates || (AnimationStates = {}));
-var Collapse = (
-  /** @class */
-  (function(_super) {
-    __extends(Collapse2, _super);
-    function Collapse2() {
-      var _this = _super !== null && _super.apply(this, arguments) || this;
-      _this.state = {
-        animationState: _this.props.isOpen ? AnimationStates.OPEN : AnimationStates.CLOSED,
-        height: void 0,
-        heightWhenOpen: void 0
-      };
-      _this.contents = null;
-      _this.contentsRefHandler = function(el) {
-        _this.contents = el;
-        if (_this.contents != null) {
-          var height = _this.contents.clientHeight;
-          _this.setState({
-            animationState: _this.props.isOpen ? AnimationStates.OPEN : AnimationStates.CLOSED,
-            height: height === 0 ? void 0 : "".concat(height, "px"),
-            heightWhenOpen: height === 0 ? void 0 : height
-          });
-        }
-      };
-      return _this;
-    }
-    Collapse2.getDerivedStateFromProps = function(props, state) {
-      var isOpen = props.isOpen;
-      var animationState = state.animationState;
-      if (isOpen) {
-        switch (animationState) {
-          case AnimationStates.OPEN:
-            break;
-          case AnimationStates.OPENING:
-            break;
-          default:
-            return { animationState: AnimationStates.OPEN_START };
-        }
-      } else {
-        switch (animationState) {
-          case AnimationStates.CLOSED:
-            break;
-          case AnimationStates.CLOSING:
-            break;
-          default:
-            return {
-              animationState: AnimationStates.CLOSING_START,
-              height: "".concat(state.heightWhenOpen, "px")
-            };
-        }
-      }
-      return null;
-    };
-    Collapse2.prototype.render = function() {
-      var isContentVisible = this.state.animationState !== AnimationStates.CLOSED;
-      var shouldRenderChildren = isContentVisible || this.props.keepChildrenMounted;
-      var displayWithTransform = isContentVisible && this.state.animationState !== AnimationStates.CLOSING;
-      var isAutoHeight = this.state.height === "auto";
-      var containerStyle = {
-        height: isContentVisible ? this.state.height : void 0,
-        overflowY: isAutoHeight ? "visible" : void 0,
-        // transitions don't work with height: auto
-        transition: isAutoHeight ? "none" : void 0
-      };
-      var contentsStyle = {
-        // only use heightWhenOpen while closing
-        transform: displayWithTransform ? "translateY(0)" : "translateY(-".concat(this.state.heightWhenOpen, "px)"),
-        // transitions don't work with height: auto
-        transition: isAutoHeight ? "none" : void 0
-      };
-      return reactExports.createElement(this.props.component, {
-        className: classNames(COLLAPSE, this.props.className),
-        style: containerStyle
-      }, reactExports.createElement("div", { className: COLLAPSE_BODY, ref: this.contentsRefHandler, style: contentsStyle, "aria-hidden": !isContentVisible }, shouldRenderChildren ? this.props.children : null));
-    };
-    Collapse2.prototype.componentDidMount = function() {
-      this.forceUpdate();
-      if (this.props.isOpen) {
-        this.setState({ animationState: AnimationStates.OPEN, height: "auto" });
-      } else {
-        this.setState({ animationState: AnimationStates.CLOSED, height: "0px" });
-      }
-    };
-    Collapse2.prototype.componentDidUpdate = function() {
-      var _this = this;
-      if (this.contents == null) {
-        return;
-      }
-      var transitionDuration = this.props.transitionDuration;
-      var animationState = this.state.animationState;
-      if (animationState === AnimationStates.OPEN_START) {
-        var clientHeight = this.contents.clientHeight;
-        this.setState({
-          animationState: AnimationStates.OPENING,
-          height: "".concat(clientHeight, "px"),
-          heightWhenOpen: clientHeight
-        });
-        this.setTimeout(function() {
-          return _this.onDelayedStateChange();
-        }, transitionDuration);
-      } else if (animationState === AnimationStates.CLOSING_START) {
-        var clientHeight_1 = this.contents.clientHeight;
-        this.setTimeout(function() {
-          return _this.setState({
-            animationState: AnimationStates.CLOSING,
-            height: "0px",
-            heightWhenOpen: clientHeight_1
-          });
-        });
-        this.setTimeout(function() {
-          return _this.onDelayedStateChange();
-        }, transitionDuration);
-      }
-    };
-    Collapse2.prototype.onDelayedStateChange = function() {
-      switch (this.state.animationState) {
-        case AnimationStates.OPENING:
-          this.setState({ animationState: AnimationStates.OPEN, height: "auto" });
-          break;
-        case AnimationStates.CLOSING:
-          this.setState({ animationState: AnimationStates.CLOSED });
-          break;
-      }
-    };
-    Collapse2.displayName = "".concat(DISPLAYNAME_PREFIX, ".Collapse");
-    Collapse2.defaultProps = {
-      component: "div",
-      isOpen: false,
-      keepChildrenMounted: false,
-      transitionDuration: 200
-    };
-    return Collapse2;
-  })(AbstractPureComponent)
-);
 const LayoutGroupContext = reactExports.createContext({});
 function useConstant(init) {
   const ref = reactExports.useRef(null);
@@ -18673,6 +18529,153 @@ const MotionConfigContext = reactExports.createContext({
   isStatic: false,
   reducedMotion: "never"
 });
+function setRef2(ref, value) {
+  if (typeof ref === "function") {
+    return ref(value);
+  } else if (ref !== null && ref !== void 0) {
+    ref.current = value;
+  }
+}
+function composeRefs(...refs) {
+  return (node) => {
+    let hasCleanup = false;
+    const cleanups = refs.map((ref) => {
+      const cleanup = setRef2(ref, node);
+      if (!hasCleanup && typeof cleanup === "function") {
+        hasCleanup = true;
+      }
+      return cleanup;
+    });
+    if (hasCleanup) {
+      return () => {
+        for (let i = 0; i < cleanups.length; i++) {
+          const cleanup = cleanups[i];
+          if (typeof cleanup === "function") {
+            cleanup();
+          } else {
+            setRef2(refs[i], null);
+          }
+        }
+      };
+    }
+  };
+}
+function useComposedRefs(...refs) {
+  return reactExports.useCallback(composeRefs(...refs), refs);
+}
+class PopChildMeasure extends reactExports.Component {
+  getSnapshotBeforeUpdate(prevProps) {
+    const element = this.props.childRef.current;
+    if (isHTMLElement(element) && prevProps.isPresent && !this.props.isPresent && this.props.pop !== false) {
+      const parent = element.offsetParent;
+      const parentWidth = isHTMLElement(parent) ? parent.offsetWidth || 0 : 0;
+      const parentHeight = isHTMLElement(parent) ? parent.offsetHeight || 0 : 0;
+      const computedStyle = getComputedStyle(element);
+      const size = this.props.sizeRef.current;
+      size.height = parseFloat(computedStyle.height);
+      size.width = parseFloat(computedStyle.width);
+      size.top = element.offsetTop;
+      size.left = element.offsetLeft;
+      size.right = parentWidth - size.width - size.left;
+      size.bottom = parentHeight - size.height - size.top;
+    }
+    return null;
+  }
+  /**
+   * Required with getSnapshotBeforeUpdate to stop React complaining.
+   */
+  componentDidUpdate() {
+  }
+  render() {
+    return this.props.children;
+  }
+}
+function PopChild({ children, isPresent, anchorX, anchorY, root, pop }) {
+  const id2 = reactExports.useId();
+  const ref = reactExports.useRef(null);
+  const size = reactExports.useRef({
+    width: 0,
+    height: 0,
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0
+  });
+  const { nonce } = reactExports.useContext(MotionConfigContext);
+  const childRef = children.props?.ref ?? children?.ref;
+  const composedRef = useComposedRefs(ref, childRef);
+  reactExports.useInsertionEffect(() => {
+    const { width, height, top: top2, left: left2, right: right2, bottom: bottom2 } = size.current;
+    if (isPresent || pop === false || !ref.current || !width || !height)
+      return;
+    const x = anchorX === "left" ? `left: ${left2}` : `right: ${right2}`;
+    const y = anchorY === "bottom" ? `bottom: ${bottom2}` : `top: ${top2}`;
+    ref.current.dataset.motionPopId = id2;
+    const style = document.createElement("style");
+    if (nonce)
+      style.nonce = nonce;
+    const parent = root ?? document.head;
+    parent.appendChild(style);
+    if (style.sheet) {
+      style.sheet.insertRule(`
+          [data-motion-pop-id="${id2}"] {
+            position: absolute !important;
+            width: ${width}px !important;
+            height: ${height}px !important;
+            ${x}px !important;
+            ${y}px !important;
+          }
+        `);
+    }
+    return () => {
+      ref.current?.removeAttribute("data-motion-pop-id");
+      if (parent.contains(style)) {
+        parent.removeChild(style);
+      }
+    };
+  }, [isPresent]);
+  return jsxRuntimeExports.jsx(PopChildMeasure, { isPresent, childRef: ref, sizeRef: size, pop, children: pop === false ? children : reactExports.cloneElement(children, { ref: composedRef }) });
+}
+const PresenceChild = ({ children, initial, isPresent, onExitComplete, custom, presenceAffectsLayout, mode, anchorX, anchorY, root }) => {
+  const presenceChildren = useConstant(newChildrenMap);
+  const id2 = reactExports.useId();
+  let isReusedContext = true;
+  let context = reactExports.useMemo(() => {
+    isReusedContext = false;
+    return {
+      id: id2,
+      initial,
+      isPresent,
+      custom,
+      onExitComplete: (childId) => {
+        presenceChildren.set(childId, true);
+        for (const isComplete of presenceChildren.values()) {
+          if (!isComplete)
+            return;
+        }
+        onExitComplete && onExitComplete();
+      },
+      register: (childId) => {
+        presenceChildren.set(childId, false);
+        return () => presenceChildren.delete(childId);
+      }
+    };
+  }, [isPresent, presenceChildren, onExitComplete]);
+  if (presenceAffectsLayout && isReusedContext) {
+    context = { ...context };
+  }
+  reactExports.useMemo(() => {
+    presenceChildren.forEach((_, key) => presenceChildren.set(key, false));
+  }, [isPresent]);
+  reactExports.useEffect(() => {
+    !isPresent && !presenceChildren.size && onExitComplete && onExitComplete();
+  }, [isPresent]);
+  children = jsxRuntimeExports.jsx(PopChild, { pop: mode === "popLayout", isPresent, anchorX, anchorY, root, children });
+  return jsxRuntimeExports.jsx(PresenceContext.Provider, { value: context, children });
+};
+function newChildrenMap() {
+  return /* @__PURE__ */ new Map();
+}
 function usePresence(subscribe = true) {
   const context = reactExports.useContext(PresenceContext);
   if (context === null)
@@ -18687,6 +18690,87 @@ function usePresence(subscribe = true) {
   const safeToRemove = reactExports.useCallback(() => subscribe && onExitComplete && onExitComplete(id2), [id2, onExitComplete, subscribe]);
   return !isPresent && onExitComplete ? [false, safeToRemove] : [true];
 }
+const getChildKey = (child) => child.key || "";
+function onlyElements(children) {
+  const filtered = [];
+  reactExports.Children.forEach(children, (child) => {
+    if (reactExports.isValidElement(child))
+      filtered.push(child);
+  });
+  return filtered;
+}
+const AnimatePresence = ({ children, custom, initial = true, onExitComplete, presenceAffectsLayout = true, mode = "sync", propagate = false, anchorX = "left", anchorY = "top", root }) => {
+  const [isParentPresent, safeToRemove] = usePresence(propagate);
+  const presentChildren = reactExports.useMemo(() => onlyElements(children), [children]);
+  const presentKeys = propagate && !isParentPresent ? [] : presentChildren.map(getChildKey);
+  const isInitialRender = reactExports.useRef(true);
+  const pendingPresentChildren = reactExports.useRef(presentChildren);
+  const exitComplete = useConstant(() => /* @__PURE__ */ new Map());
+  const exitingComponents = reactExports.useRef(/* @__PURE__ */ new Set());
+  const [diffedChildren, setDiffedChildren] = reactExports.useState(presentChildren);
+  const [renderedChildren, setRenderedChildren] = reactExports.useState(presentChildren);
+  useIsomorphicLayoutEffect(() => {
+    isInitialRender.current = false;
+    pendingPresentChildren.current = presentChildren;
+    for (let i = 0; i < renderedChildren.length; i++) {
+      const key = getChildKey(renderedChildren[i]);
+      if (!presentKeys.includes(key)) {
+        if (exitComplete.get(key) !== true) {
+          exitComplete.set(key, false);
+        }
+      } else {
+        exitComplete.delete(key);
+        exitingComponents.current.delete(key);
+      }
+    }
+  }, [renderedChildren, presentKeys.length, presentKeys.join("-")]);
+  const exitingChildren = [];
+  if (presentChildren !== diffedChildren) {
+    let nextChildren = [...presentChildren];
+    for (let i = 0; i < renderedChildren.length; i++) {
+      const child = renderedChildren[i];
+      const key = getChildKey(child);
+      if (!presentKeys.includes(key)) {
+        nextChildren.splice(i, 0, child);
+        exitingChildren.push(child);
+      }
+    }
+    if (mode === "wait" && exitingChildren.length) {
+      nextChildren = exitingChildren;
+    }
+    setRenderedChildren(onlyElements(nextChildren));
+    setDiffedChildren(presentChildren);
+    return null;
+  }
+  const { forceRender } = reactExports.useContext(LayoutGroupContext);
+  return jsxRuntimeExports.jsx(jsxRuntimeExports.Fragment, { children: renderedChildren.map((child) => {
+    const key = getChildKey(child);
+    const isPresent = propagate && !isParentPresent ? false : presentChildren === renderedChildren || presentKeys.includes(key);
+    const onExit = () => {
+      if (exitingComponents.current.has(key)) {
+        return;
+      }
+      if (exitComplete.has(key)) {
+        exitingComponents.current.add(key);
+        exitComplete.set(key, true);
+      } else {
+        return;
+      }
+      let isEveryExitComplete = true;
+      exitComplete.forEach((isExitComplete) => {
+        if (!isExitComplete)
+          isEveryExitComplete = false;
+      });
+      if (isEveryExitComplete) {
+        forceRender?.();
+        setRenderedChildren(pendingPresentChildren.current);
+        propagate && safeToRemove?.();
+        onExitComplete && onExitComplete();
+      }
+    };
+    return jsxRuntimeExports.jsx(PresenceChild, { isPresent, initial: !isInitialRender.current || initial ? void 0 : false, custom, presenceAffectsLayout, mode, root, onExitComplete: isPresent ? void 0 : onExit, anchorX, anchorY, children: child }, key);
+  }) });
+};
 const LazyContext = reactExports.createContext({ strict: false });
 const featureProps = {
   animation: [
@@ -20394,89 +20478,137 @@ const featureBundle = {
   ...layout
 };
 const motion = /* @__PURE__ */ createMotionProxy(featureBundle, createDomVisualElement);
-const modules = [
-  { id: "rtls", label: "RTLS Dashboard" },
-  { id: "cad", label: "CAD Modeling" },
-  { id: "anchors", label: "Anchor Placement" },
-  { id: "profiling", label: "Profiling" }
+const buildMenus = (canCloseTab) => [
+  {
+    label: "File",
+    items: [
+      { label: "New Workspace", shortcut: "Ctrl+N", action: "new-workspace" },
+      { label: "Open Project...", shortcut: "Ctrl+O", disabled: true },
+      { separator: true, label: "" },
+      { label: "Save", shortcut: "Ctrl+S", disabled: true },
+      { label: "Save As...", shortcut: "Ctrl+Shift+S", disabled: true },
+      { separator: true, label: "" },
+      { label: "Import SVG Floor Plan...", disabled: true },
+      { separator: true, label: "" },
+      { label: "Close Tab", shortcut: "Ctrl+W", action: "close-tab", disabled: !canCloseTab },
+      { label: "Close Project", disabled: true }
+    ]
+  },
+  {
+    label: "Edit",
+    items: [
+      { label: "Undo", shortcut: "Ctrl+Z", disabled: true },
+      { label: "Redo", shortcut: "Ctrl+Y", disabled: true },
+      { separator: true, label: "" },
+      { label: "Cut", shortcut: "Ctrl+X", disabled: true },
+      { label: "Copy", shortcut: "Ctrl+C", disabled: true },
+      { label: "Paste", shortcut: "Ctrl+V", disabled: true },
+      { separator: true, label: "" },
+      { label: "Select All", shortcut: "Ctrl+A", disabled: true },
+      { label: "Delete Selected", shortcut: "Del", disabled: true }
+    ]
+  },
+  {
+    label: "View",
+    items: [
+      { label: "Zoom In", shortcut: "Ctrl+=", disabled: true },
+      { label: "Zoom Out", shortcut: "Ctrl+-", disabled: true },
+      { label: "Zoom Reset", shortcut: "Ctrl+0", disabled: true }
+    ]
+  },
+  {
+    label: "Tools",
+    items: [
+      { label: "Cursor Tool", shortcut: "V", disabled: true },
+      { label: "Line Tool", shortcut: "L", disabled: true },
+      { label: "Dimension Tool", shortcut: "D", disabled: true },
+      { label: "Vertex Manipulate", shortcut: "N", disabled: true },
+      { separator: true, label: "" },
+      { label: "Rotate Selection", disabled: true },
+      { label: "Trim Line", disabled: true }
+    ]
+  },
+  {
+    label: "Window",
+    items: [
+      { label: "Minimize", shortcut: "Win+Down", disabled: true },
+      { label: "Maximize / Restore", disabled: true },
+      { separator: true, label: "" },
+      { label: "BRIGID Dashboard", disabled: true }
+    ]
+  },
+  {
+    label: "Help",
+    items: [
+      { label: "BRIGID Documentation", disabled: true },
+      { label: "Keyboard Shortcuts", disabled: true },
+      { separator: true, label: "" },
+      { label: "About BRIGID", disabled: true }
+    ]
+  }
 ];
-const TopBar = ({ activeModule, onModuleChange }) => {
-  return /* @__PURE__ */ jsxRuntimeExports.jsxs(
-    motion.header,
-    {
-      className: "topbar",
-      initial: { opacity: 0, y: -8 },
-      animate: { opacity: 1, y: 0 },
-      transition: { duration: 0.4, ease: [0.4, 0, 0.2, 1] },
-      children: [
-        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "topbar__left electron-no-drag", children: [
-          /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "topbar__brand-mark", children: [
-            /* @__PURE__ */ jsxRuntimeExports.jsx(Icon, { icon: "locate", size: 14 }),
-            /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "topbar__brand-name", children: "BRIGID" })
-          ] }),
-          /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "topbar__search", children: [
-            /* @__PURE__ */ jsxRuntimeExports.jsx(Icon, { icon: "search", size: 13, className: "topbar__search-icon" }),
-            /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "topbar__search-text", children: "Search workspace..." }),
-            /* @__PURE__ */ jsxRuntimeExports.jsx("kbd", { className: "topbar__search-kbd", children: "Ctrl+K" })
-          ] })
-        ] }),
-        /* @__PURE__ */ jsxRuntimeExports.jsx("nav", { className: "topbar__center electron-no-drag", children: modules.map((mod) => /* @__PURE__ */ jsxRuntimeExports.jsxs(
+const HotBar = ({ canCloseTab, onNewWorkspace, onCloseTab }) => {
+  const [openMenu, setOpenMenu] = reactExports.useState(null);
+  const barRef = reactExports.useRef(null);
+  const menus = buildMenus(canCloseTab);
+  reactExports.useEffect(() => {
+    const handleClick = (event) => {
+      if (barRef.current && !barRef.current.contains(event.target)) {
+        setOpenMenu(null);
+      }
+    };
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, []);
+  const toggleMenu = (label) => {
+    setOpenMenu((current) => current === label ? null : label);
+  };
+  const runAction = (action) => {
+    if (action === "new-workspace") onNewWorkspace();
+    if (action === "close-tab") onCloseTab();
+    setOpenMenu(null);
+  };
+  return /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "hot-bar electron-drag", ref: barRef, children: [
+    /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "hot-bar__brand electron-no-drag", children: [
+      /* @__PURE__ */ jsxRuntimeExports.jsx(Icon, { icon: "locate", size: 13, color: "#38bdf8" }),
+      /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "hot-bar__brand-name", children: "BRIGID" })
+    ] }),
+    /* @__PURE__ */ jsxRuntimeExports.jsx("nav", { className: "hot-bar__menus electron-no-drag", children: menus.map((menu) => /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "hot-bar__menu-root", children: [
+      /* @__PURE__ */ jsxRuntimeExports.jsx(
+        "button",
+        {
+          className: `hot-bar__menu-btn ${openMenu === menu.label ? "hot-bar__menu-btn--open" : ""}`,
+          onClick: () => toggleMenu(menu.label),
+          onMouseEnter: () => openMenu !== null && setOpenMenu(menu.label),
+          children: menu.label
+        }
+      ),
+      openMenu === menu.label && /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "hot-bar__dropdown", children: menu.items.map(
+        (item, index) => item.separator ? /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "hot-bar__dropdown-sep" }, index) : /* @__PURE__ */ jsxRuntimeExports.jsxs(
           "button",
           {
-            className: `topbar__tab ${activeModule === mod.id ? "topbar__tab--active" : ""}`,
-            onClick: () => onModuleChange(mod.id),
+            className: `hot-bar__dropdown-item ${item.disabled ? "hot-bar__dropdown-item--disabled" : ""}`,
+            onClick: () => !item.disabled && runAction(item.action ?? null),
             children: [
-              activeModule === mod.id && /* @__PURE__ */ jsxRuntimeExports.jsx(
-                motion.div,
-                {
-                  className: "topbar__tab-indicator",
-                  layoutId: "topbar-tab-indicator",
-                  transition: { type: "spring", stiffness: 400, damping: 35 }
-                }
-              ),
-              /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "topbar__tab-label", children: mod.label })
+              /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "hot-bar__dropdown-label", children: item.label }),
+              item.shortcut && /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "hot-bar__dropdown-shortcut", children: item.shortcut })
             ]
           },
-          mod.id
-        )) }),
-        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "topbar__right electron-no-drag", children: [
-          /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "topbar__save-indicator", children: [
-            /* @__PURE__ */ jsxRuntimeExports.jsx(Icon, { icon: "tick-circle", size: 12, className: "topbar__save-icon" }),
-            /* @__PURE__ */ jsxRuntimeExports.jsx("span", { children: "Saved" })
-          ] }),
-          /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "topbar__separator" }),
-          /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "topbar__workspace", children: [
-            /* @__PURE__ */ jsxRuntimeExports.jsx(Icon, { icon: "projects", size: 13 }),
-            /* @__PURE__ */ jsxRuntimeExports.jsx("span", { children: "Default Workspace" }),
-            /* @__PURE__ */ jsxRuntimeExports.jsx(Icon, { icon: "chevron-down", size: 12 })
-          ] }),
-          /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "topbar__separator" }),
-          /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "topbar__actions", children: [
-            /* @__PURE__ */ jsxRuntimeExports.jsx("button", { className: "topbar__icon-btn", title: "Connections", children: /* @__PURE__ */ jsxRuntimeExports.jsx(Icon, { icon: "feed", size: 14 }) }),
-            /* @__PURE__ */ jsxRuntimeExports.jsx("button", { className: "topbar__icon-btn topbar__icon-btn--circle", title: "System Status", children: /* @__PURE__ */ jsxRuntimeExports.jsx(Icon, { icon: "pulse", size: 14 }) }),
-            /* @__PURE__ */ jsxRuntimeExports.jsx("button", { className: "topbar__icon-btn topbar__icon-btn--circle", title: "Settings", children: /* @__PURE__ */ jsxRuntimeExports.jsx(Icon, { icon: "cog", size: 14 }) })
-          ] })
-        ] })
-      ]
-    }
-  );
+          index
+        )
+      ) })
+    ] }, menu.label)) }),
+    /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "hot-bar__spacer" })
+  ] });
 };
-const navItems = [
-  { id: "dashboard", icon: "dashboard", label: "Dashboard Overview" },
-  { id: "floorplan", icon: "map", label: "Floor Plan View" },
+const MODULE_ITEMS = [
+  { id: "profile", icon: "person", label: "Profile Manager" },
+  { id: "calibration", icon: "regression-chart", label: "Calibration Tool" },
+  { id: "cad", icon: "draw", label: "2D CAD Modeling" },
   { id: "anchors", icon: "cell-tower", label: "Anchor Manager" },
-  { id: "tags", icon: "locate", label: "Tag Tracker" },
-  { id: "calibration", icon: "regression-chart", label: "Calibration Tools" },
-  { id: "serial", icon: "feed", label: "Serial Monitor" },
-  { id: "profiles", icon: "people", label: "Profile Manager" },
-  { id: "layers", icon: "layers", label: "Layers & Overlays" }
+  { id: "rtls", icon: "pulse", label: "RTLS Dashboard" }
 ];
-const bottomItems = [
-  { id: "docs", icon: "manual", label: "Documentation" },
-  { id: "settings", icon: "cog", label: "Settings" }
-];
-const LeftRail = () => {
-  const [activeItem, setActiveItem] = reactExports.useState("dashboard");
+const LeftRail = ({ activeModule, onModuleChange, disabled = false }) => {
   return /* @__PURE__ */ jsxRuntimeExports.jsxs(
     motion.aside,
     {
@@ -20485,439 +20617,3867 @@ const LeftRail = () => {
       animate: { opacity: 1, x: 0 },
       transition: { duration: 0.4, delay: 0.1, ease: [0.4, 0, 0.2, 1] },
       children: [
-        /* @__PURE__ */ jsxRuntimeExports.jsx("nav", { className: "left-rail__nav", children: navItems.map((item) => /* @__PURE__ */ jsxRuntimeExports.jsx(
-          Tooltip,
-          {
-            content: item.label,
-            placement: "right",
-            minimal: true,
-            hoverOpenDelay: 300,
-            children: /* @__PURE__ */ jsxRuntimeExports.jsxs(
-              "button",
-              {
-                className: `left-rail__btn ${activeItem === item.id ? "left-rail__btn--active" : ""}`,
-                onClick: () => setActiveItem(item.id),
-                "aria-label": item.label,
-                children: [
-                  activeItem === item.id && /* @__PURE__ */ jsxRuntimeExports.jsx(
-                    motion.div,
-                    {
-                      className: "left-rail__active-bar",
-                      layoutId: "left-rail-active",
-                      transition: { type: "spring", stiffness: 350, damping: 30 }
-                    }
-                  ),
-                  /* @__PURE__ */ jsxRuntimeExports.jsx(Icon, { icon: item.icon, size: 16 })
-                ]
-              }
-            )
-          },
-          item.id
-        )) }),
-        /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "left-rail__bottom", children: bottomItems.map((item) => /* @__PURE__ */ jsxRuntimeExports.jsx(
-          Tooltip,
-          {
-            content: item.label,
-            placement: "right",
-            minimal: true,
-            hoverOpenDelay: 300,
-            children: /* @__PURE__ */ jsxRuntimeExports.jsx(
-              "button",
-              {
-                className: `left-rail__btn ${activeItem === item.id ? "left-rail__btn--active" : ""}`,
-                onClick: () => setActiveItem(item.id),
-                "aria-label": item.label,
-                children: /* @__PURE__ */ jsxRuntimeExports.jsx(Icon, { icon: item.icon, size: 16 })
-              }
-            )
-          },
-          item.id
-        )) })
-      ]
-    }
-  );
-};
-const moduleInfo = {
-  rtls: {
-    title: "RTLS Live Tracking",
-    subtitle: "Real-time UWB/BLE tag position monitoring",
-    icon: "◉"
-  },
-  cad: {
-    title: "CAD Floor Plan Editor",
-    subtitle: "Draw, import, and edit facility geometry",
-    icon: "⬡"
-  },
-  anchors: {
-    title: "Anchor Placement Workspace",
-    subtitle: "Position anchors on the floor plan",
-    icon: "⊕"
-  },
-  profiling: {
-    title: "Calibration & Profiling",
-    subtitle: "Tag profiling and distance correction",
-    icon: "◈"
-  }
-};
-const CentralCanvas = ({ activeModule }) => {
-  const info = moduleInfo[activeModule];
-  return /* @__PURE__ */ jsxRuntimeExports.jsxs(
-    motion.section,
-    {
-      className: "central-canvas",
-      initial: { opacity: 0 },
-      animate: { opacity: 1 },
-      transition: { duration: 0.8, delay: 0.2 },
-      children: [
-        /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "central-canvas__grid" }),
-        /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "central-canvas__vignette" }),
-        /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "central-canvas__glow" }),
-        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "central-canvas__module-label", children: [
-          /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "central-canvas__module-icon", children: info.icon }),
-          /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "central-canvas__module-title", children: info.title })
-        ] }),
-        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "central-canvas__center-prompt", children: [
-          /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "central-canvas__crosshair", children: [
-            /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "central-canvas__crosshair-h" }),
-            /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "central-canvas__crosshair-v" }),
-            /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "central-canvas__crosshair-dot" })
-          ] }),
-          /* @__PURE__ */ jsxRuntimeExports.jsxs(
-            motion.div,
+        /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "left-rail__logo", children: /* @__PURE__ */ jsxRuntimeExports.jsx(Icon, { icon: "locate", size: 18, color: "#38bdf8" }) }),
+        /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "left-rail__divider" }),
+        /* @__PURE__ */ jsxRuntimeExports.jsx("nav", { className: "left-rail__nav", children: MODULE_ITEMS.map((item) => {
+          const isActive = activeModule === item.id;
+          return /* @__PURE__ */ jsxRuntimeExports.jsx(
+            Tooltip,
             {
-              className: "central-canvas__prompt-text",
-              initial: { opacity: 0, y: 6 },
-              animate: { opacity: 1, y: 0 },
-              transition: { duration: 0.5, delay: 0.3 },
-              children: [
-                activeModule === "rtls" && "Load a floor plan project to begin live tracking",
-                activeModule === "cad" && "Import an SVG floor plan or start a new drawing",
-                activeModule === "anchors" && "Load a floor plan, then place anchors on the layout",
-                activeModule === "profiling" && "Connect a BLE module to begin tag profiling"
-              ]
+              content: /* @__PURE__ */ jsxRuntimeExports.jsx("span", { style: { fontSize: 12 }, children: item.label }),
+              placement: "right",
+              minimal: true,
+              hoverOpenDelay: 400,
+              children: /* @__PURE__ */ jsxRuntimeExports.jsxs(
+                "button",
+                {
+                  className: `left-rail__btn ${isActive ? "left-rail__btn--active" : ""}`,
+                  onClick: () => onModuleChange(item.id),
+                  "aria-label": item.label,
+                  disabled,
+                  children: [
+                    isActive && /* @__PURE__ */ jsxRuntimeExports.jsx(
+                      motion.div,
+                      {
+                        className: "left-rail__active-bar",
+                        layoutId: "left-rail-active",
+                        transition: { type: "spring", stiffness: 380, damping: 32 }
+                      }
+                    ),
+                    /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "left-rail__btn-icon", children: /* @__PURE__ */ jsxRuntimeExports.jsx(Icon, { icon: item.icon, size: 17 }) })
+                  ]
+                }
+              )
             },
-            activeModule
-          )
-        ] }),
-        /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "central-canvas__coord central-canvas__coord--tl", children: /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "central-canvas__coord-text", children: "0.000 ft" }) }),
-        /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "central-canvas__coord central-canvas__coord--tr", children: /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "central-canvas__coord-text", children: "0.000 ft" }) }),
-        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "central-canvas__status-bar", children: [
-          /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "central-canvas__status-item", children: [
-            /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "central-canvas__status-dot central-canvas__status-dot--online" }),
-            /* @__PURE__ */ jsxRuntimeExports.jsx("span", { children: "System Idle" })
-          ] }),
-          /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "central-canvas__status-separator" }),
-          /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "central-canvas__status-item", children: [
-            /* @__PURE__ */ jsxRuntimeExports.jsx(Icon, { icon: "layers", size: 11 }),
-            /* @__PURE__ */ jsxRuntimeExports.jsx("span", { children: "No Floor Plan" })
-          ] }),
-          /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "central-canvas__status-separator" }),
-          /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "central-canvas__status-item", children: [
-            /* @__PURE__ */ jsxRuntimeExports.jsx(Icon, { icon: "cell-tower", size: 11 }),
-            /* @__PURE__ */ jsxRuntimeExports.jsx("span", { children: "0 Anchors" })
-          ] }),
-          /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "central-canvas__status-separator" }),
-          /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "central-canvas__status-item", children: [
-            /* @__PURE__ */ jsxRuntimeExports.jsx(Icon, { icon: "locate", size: 11 }),
-            /* @__PURE__ */ jsxRuntimeExports.jsx("span", { children: "0 Tags" })
-          ] }),
-          /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "central-canvas__status-separator" }),
-          /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "central-canvas__status-item", children: [
-            /* @__PURE__ */ jsxRuntimeExports.jsx(Icon, { icon: "feed", size: 11 }),
-            /* @__PURE__ */ jsxRuntimeExports.jsx("span", { children: "No Serial" })
-          ] })
-        ] })
-      ]
-    }
-  );
-};
-const typeConfig = {
-  text: { icon: "align-left", defaultLabel: "Text Content" },
-  image: { icon: "media", defaultLabel: "Image" },
-  chart: { icon: "chart", defaultLabel: "Chart / Visualization" },
-  details: { icon: "properties", defaultLabel: "Details" },
-  observation: { icon: "eye-open", defaultLabel: "Observation" },
-  action: { icon: "play", defaultLabel: "Action" },
-  button: { icon: "widget-button", defaultLabel: "Button" },
-  data: { icon: "database", defaultLabel: "Data Feed" },
-  table: { icon: "th", defaultLabel: "Table View" }
-};
-const PlaceholderBlock = ({
-  type,
-  label,
-  height,
-  className = ""
-}) => {
-  const config2 = typeConfig[type];
-  return /* @__PURE__ */ jsxRuntimeExports.jsx(
-    "div",
-    {
-      className: `placeholder-block placeholder-block--${type} ${className}`,
-      style: height ? { height } : void 0,
-      children: /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "placeholder-block__inner", children: [
-        /* @__PURE__ */ jsxRuntimeExports.jsx(
-          Icon,
+            item.id
+          );
+        }) }),
+        /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "left-rail__bottom", children: /* @__PURE__ */ jsxRuntimeExports.jsx(
+          Tooltip,
           {
-            icon: config2.icon,
-            size: 16,
-            className: "placeholder-block__icon"
+            content: /* @__PURE__ */ jsxRuntimeExports.jsx("span", { style: { fontSize: 12 }, children: "Settings" }),
+            placement: "right",
+            minimal: true,
+            hoverOpenDelay: 400,
+            children: /* @__PURE__ */ jsxRuntimeExports.jsx("button", { className: "left-rail__btn left-rail__btn--bottom", "aria-label": "Settings", children: /* @__PURE__ */ jsxRuntimeExports.jsx(Icon, { icon: "cog", size: 16 }) })
           }
-        ),
-        /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { className: "placeholder-block__label", children: [
-          "[",
-          label || config2.defaultLabel,
-          "]"
-        ] })
-      ] })
-    }
-  );
-};
-const RTLSPanel = () => {
-  const [alertOpen, setAlertOpen] = reactExports.useState(true);
-  const [eventLogOpen, setEventLogOpen] = reactExports.useState(true);
-  return /* @__PURE__ */ jsxRuntimeExports.jsxs(jsxRuntimeExports.Fragment, { children: [
-    /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "right-panel__entity", children: [
-      /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "right-panel__entity-icon", children: /* @__PURE__ */ jsxRuntimeExports.jsx(Icon, { icon: "locate", size: 22 }) }),
-      /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "right-panel__entity-info", children: [
-        /* @__PURE__ */ jsxRuntimeExports.jsx("h3", { className: "right-panel__entity-title", children: "Live Tracking Status" }),
-        /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "right-panel__entity-type", children: "RTLS Dashboard Module" })
-      ] })
-    ] }),
-    /* @__PURE__ */ jsxRuntimeExports.jsx(PlaceholderBlock, { type: "data", label: "[POSITION MAP — LIVE TAG OVERLAY]" }),
-    /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "right-panel__detail-grid", children: [
-      /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "right-panel__detail-row", children: [
-        /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "right-panel__detail-key", children: "Active Tags" }),
-        /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "right-panel__detail-val", children: "[0]" })
-      ] }),
-      /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "right-panel__detail-row", children: [
-        /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "right-panel__detail-key", children: "Active Anchors" }),
-        /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "right-panel__detail-val", children: "[0]" })
-      ] }),
-      /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "right-panel__detail-row", children: [
-        /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "right-panel__detail-key", children: "Serial Port" }),
-        /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "right-panel__detail-val", children: "[none]" })
-      ] }),
-      /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "right-panel__detail-row", children: [
-        /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "right-panel__detail-key", children: "Update Rate" }),
-        /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "right-panel__detail-val", children: "[— Hz]" })
-      ] }),
-      /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "right-panel__detail-row", children: [
-        /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "right-panel__detail-key", children: "Tracked Distances" }),
-        /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "right-panel__detail-val", children: "[—]" })
-      ] })
-    ] }),
-    /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "right-panel__collapsible", children: [
-      /* @__PURE__ */ jsxRuntimeExports.jsxs("button", { className: "right-panel__collapse-header", onClick: () => setAlertOpen(!alertOpen), children: [
-        /* @__PURE__ */ jsxRuntimeExports.jsx(Icon, { icon: alertOpen ? "chevron-down" : "chevron-right", size: 14 }),
-        /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "right-panel__collapse-title", children: "SYSTEM ALERTS" })
-      ] }),
-      /* @__PURE__ */ jsxRuntimeExports.jsx(Collapse, { isOpen: alertOpen, children: /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "right-panel__collapse-body", children: /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "right-panel__alert-banner right-panel__alert-banner--info", children: [
-        /* @__PURE__ */ jsxRuntimeExports.jsx(Icon, { icon: "info-sign", size: 14 }),
-        /* @__PURE__ */ jsxRuntimeExports.jsx("span", { children: "No active connections — connect a serial module to begin tracking" })
-      ] }) }) })
-    ] }),
-    /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "right-panel__collapsible", children: [
-      /* @__PURE__ */ jsxRuntimeExports.jsxs("button", { className: "right-panel__collapse-header", onClick: () => setEventLogOpen(!eventLogOpen), children: [
-        /* @__PURE__ */ jsxRuntimeExports.jsx(Icon, { icon: eventLogOpen ? "chevron-down" : "chevron-right", size: 14 }),
-        /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "right-panel__collapse-title", children: "EVENT TIMELINE" })
-      ] }),
-      /* @__PURE__ */ jsxRuntimeExports.jsx(Collapse, { isOpen: eventLogOpen, children: /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "right-panel__collapse-body", children: /* @__PURE__ */ jsxRuntimeExports.jsx(PlaceholderBlock, { type: "chart", label: "[EVENT TIMELINE — CONTACT / PROXIMITY LOG]" }) }) })
-    ] })
-  ] });
-};
-const CADPanel = () => {
-  const [layersOpen, setLayersOpen] = reactExports.useState(true);
-  return /* @__PURE__ */ jsxRuntimeExports.jsxs(jsxRuntimeExports.Fragment, { children: [
-    /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "right-panel__entity", children: [
-      /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "right-panel__entity-icon", children: /* @__PURE__ */ jsxRuntimeExports.jsx(Icon, { icon: "draw", size: 22 }) }),
-      /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "right-panel__entity-info", children: [
-        /* @__PURE__ */ jsxRuntimeExports.jsx("h3", { className: "right-panel__entity-title", children: "Floor Plan Editor" }),
-        /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "right-panel__entity-type", children: "CAD Modeling Module" })
-      ] })
-    ] }),
-    /* @__PURE__ */ jsxRuntimeExports.jsx(PlaceholderBlock, { type: "image", label: "[ACTIVE FLOOR PLAN — SVG PREVIEW]" }),
-    /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "right-panel__detail-grid", children: [
-      /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "right-panel__detail-row", children: [
-        /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "right-panel__detail-key", children: "Drawing Status" }),
-        /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "right-panel__detail-val", children: "[no file loaded]" })
-      ] }),
-      /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "right-panel__detail-row", children: [
-        /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "right-panel__detail-key", children: "Scale" }),
-        /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "right-panel__detail-val", children: "[1:1]" })
-      ] }),
-      /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "right-panel__detail-row", children: [
-        /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "right-panel__detail-key", children: "Geometry Objects" }),
-        /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "right-panel__detail-val", children: "[0]" })
-      ] }),
-      /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "right-panel__detail-row", children: [
-        /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "right-panel__detail-key", children: "Selected Element" }),
-        /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "right-panel__detail-val", children: "[none]" })
-      ] }),
-      /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "right-panel__detail-row", children: [
-        /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "right-panel__detail-key", children: "Rooms Defined" }),
-        /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "right-panel__detail-val", children: "[0]" })
-      ] })
-    ] }),
-    /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "right-panel__collapsible", children: [
-      /* @__PURE__ */ jsxRuntimeExports.jsxs("button", { className: "right-panel__collapse-header", onClick: () => setLayersOpen(!layersOpen), children: [
-        /* @__PURE__ */ jsxRuntimeExports.jsx(Icon, { icon: layersOpen ? "chevron-down" : "chevron-right", size: 14 }),
-        /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "right-panel__collapse-title", children: "LAYERS" })
-      ] }),
-      /* @__PURE__ */ jsxRuntimeExports.jsx(Collapse, { isOpen: layersOpen, children: /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "right-panel__collapse-body", children: /* @__PURE__ */ jsxRuntimeExports.jsx(PlaceholderBlock, { type: "table", label: "[LAYER LIST — WALLS, ROOMS, GEOMETRY]" }) }) })
-    ] })
-  ] });
-};
-const AnchorPanel = () => {
-  const [listOpen, setListOpen] = reactExports.useState(true);
-  const [validityOpen, setValidityOpen] = reactExports.useState(true);
-  return /* @__PURE__ */ jsxRuntimeExports.jsxs(jsxRuntimeExports.Fragment, { children: [
-    /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "right-panel__entity", children: [
-      /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "right-panel__entity-icon", children: /* @__PURE__ */ jsxRuntimeExports.jsx(Icon, { icon: "cell-tower", size: 22 }) }),
-      /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "right-panel__entity-info", children: [
-        /* @__PURE__ */ jsxRuntimeExports.jsx("h3", { className: "right-panel__entity-title", children: "Anchor Configuration" }),
-        /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "right-panel__entity-type", children: "Anchor Placement Module" })
-      ] })
-    ] }),
-    /* @__PURE__ */ jsxRuntimeExports.jsx(PlaceholderBlock, { type: "image", label: "[ANCHOR LAYOUT MAP — PLACEMENT PREVIEW]" }),
-    /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "right-panel__detail-grid", children: [
-      /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "right-panel__detail-row", children: [
-        /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "right-panel__detail-key", children: "Total Anchors" }),
-        /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "right-panel__detail-val", children: "[0]" })
-      ] }),
-      /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "right-panel__detail-row", children: [
-        /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "right-panel__detail-key", children: "Selected Anchor" }),
-        /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "right-panel__detail-val", children: "[none]" })
-      ] }),
-      /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "right-panel__detail-row", children: [
-        /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "right-panel__detail-key", children: "Position (X, Y)" }),
-        /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "right-panel__detail-val", children: "[—, —]" })
-      ] }),
-      /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "right-panel__detail-row", children: [
-        /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "right-panel__detail-key", children: "Elevation (ft)" }),
-        /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "right-panel__detail-val", children: "[—]" })
-      ] }),
-      /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "right-panel__detail-row", children: [
-        /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "right-panel__detail-key", children: "Coverage Estimate" }),
-        /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "right-panel__detail-val", children: "[—]" })
-      ] })
-    ] }),
-    /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "right-panel__collapsible", children: [
-      /* @__PURE__ */ jsxRuntimeExports.jsxs("button", { className: "right-panel__collapse-header", onClick: () => setListOpen(!listOpen), children: [
-        /* @__PURE__ */ jsxRuntimeExports.jsx(Icon, { icon: listOpen ? "chevron-down" : "chevron-right", size: 14 }),
-        /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "right-panel__collapse-title", children: "ANCHOR LIST" })
-      ] }),
-      /* @__PURE__ */ jsxRuntimeExports.jsx(Collapse, { isOpen: listOpen, children: /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "right-panel__collapse-body", children: /* @__PURE__ */ jsxRuntimeExports.jsx(PlaceholderBlock, { type: "table", label: "[ANCHOR TABLE — ID, NAME, X, Y, STATUS]" }) }) })
-    ] }),
-    /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "right-panel__collapsible", children: [
-      /* @__PURE__ */ jsxRuntimeExports.jsxs("button", { className: "right-panel__collapse-header", onClick: () => setValidityOpen(!validityOpen), children: [
-        /* @__PURE__ */ jsxRuntimeExports.jsx(Icon, { icon: validityOpen ? "chevron-down" : "chevron-right", size: 14 }),
-        /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "right-panel__collapse-title", children: "PLACEMENT VALIDITY" })
-      ] }),
-      /* @__PURE__ */ jsxRuntimeExports.jsx(Collapse, { isOpen: validityOpen, children: /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "right-panel__collapse-body", children: /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "right-panel__alert-banner right-panel__alert-banner--info", children: [
-        /* @__PURE__ */ jsxRuntimeExports.jsx(Icon, { icon: "info-sign", size: 14 }),
-        /* @__PURE__ */ jsxRuntimeExports.jsx("span", { children: "Place at least 3 anchors to enable trilateration" })
-      ] }) }) })
-    ] })
-  ] });
-};
-const ProfilingPanel = () => {
-  const [calOpen, setCalOpen] = reactExports.useState(true);
-  const [sessionOpen, setSessionOpen] = reactExports.useState(true);
-  return /* @__PURE__ */ jsxRuntimeExports.jsxs(jsxRuntimeExports.Fragment, { children: [
-    /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "right-panel__entity", children: [
-      /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "right-panel__entity-icon", children: /* @__PURE__ */ jsxRuntimeExports.jsx(Icon, { icon: "regression-chart", size: 22 }) }),
-      /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "right-panel__entity-info", children: [
-        /* @__PURE__ */ jsxRuntimeExports.jsx("h3", { className: "right-panel__entity-title", children: "Tag Profiling" }),
-        /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "right-panel__entity-type", children: "Calibration & Profiling Module" })
-      ] })
-    ] }),
-    /* @__PURE__ */ jsxRuntimeExports.jsx(PlaceholderBlock, { type: "chart", label: "[RAW vs CORRECTED DISTANCE CHART]" }),
-    /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "right-panel__detail-grid", children: [
-      /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "right-panel__detail-row", children: [
-        /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "right-panel__detail-key", children: "Selected Tag" }),
-        /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "right-panel__detail-val", children: "[none]" })
-      ] }),
-      /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "right-panel__detail-row", children: [
-        /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "right-panel__detail-key", children: "Device Profile" }),
-        /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "right-panel__detail-val", children: "[—]" })
-      ] }),
-      /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "right-panel__detail-row", children: [
-        /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "right-panel__detail-key", children: "Correction Model" }),
-        /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "right-panel__detail-val", children: "[—]" })
-      ] }),
-      /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "right-panel__detail-row", children: [
-        /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "right-panel__detail-key", children: "Fit Equation" }),
-        /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "right-panel__detail-val", children: "[—]" })
-      ] }),
-      /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "right-panel__detail-row", children: [
-        /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "right-panel__detail-key", children: "Last Calibration" }),
-        /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "right-panel__detail-val", children: "[—]" })
-      ] })
-    ] }),
-    /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "right-panel__collapsible", children: [
-      /* @__PURE__ */ jsxRuntimeExports.jsxs("button", { className: "right-panel__collapse-header", onClick: () => calOpen ? setCalOpen(false) : setCalOpen(true), children: [
-        /* @__PURE__ */ jsxRuntimeExports.jsx(Icon, { icon: calOpen ? "chevron-down" : "chevron-right", size: 14 }),
-        /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "right-panel__collapse-title", children: "CALIBRATION EQUATIONS" })
-      ] }),
-      /* @__PURE__ */ jsxRuntimeExports.jsx(Collapse, { isOpen: calOpen, children: /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "right-panel__collapse-body", children: /* @__PURE__ */ jsxRuntimeExports.jsx(PlaceholderBlock, { type: "table", label: "[EQUATION TABLE — A0, A1, A2, A3 PER-ANCHOR CORRECTIONS]" }) }) })
-    ] }),
-    /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "right-panel__collapsible", children: [
-      /* @__PURE__ */ jsxRuntimeExports.jsxs("button", { className: "right-panel__collapse-header", onClick: () => setSessionOpen(!sessionOpen), children: [
-        /* @__PURE__ */ jsxRuntimeExports.jsx(Icon, { icon: sessionOpen ? "chevron-down" : "chevron-right", size: 14 }),
-        /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "right-panel__collapse-title", children: "TEST RUN SUMMARY" })
-      ] }),
-      /* @__PURE__ */ jsxRuntimeExports.jsx(Collapse, { isOpen: sessionOpen, children: /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "right-panel__collapse-body", children: /* @__PURE__ */ jsxRuntimeExports.jsx(PlaceholderBlock, { type: "data", label: "[CAPTURE SESSION LOG — SAMPLES, ACCURACY, RESIDUALS]" }) }) })
-    ] })
-  ] });
-};
-const RightPanel = ({ activeModule }) => {
-  return /* @__PURE__ */ jsxRuntimeExports.jsxs(
-    motion.aside,
-    {
-      className: "right-panel",
-      initial: { opacity: 0, x: 16 },
-      animate: { opacity: 1, x: 0 },
-      transition: { duration: 0.5, delay: 0.3, ease: [0.4, 0, 0.2, 1] },
-      children: [
-        /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "right-panel__scroll", children: /* @__PURE__ */ jsxRuntimeExports.jsxs(
-          motion.div,
-          {
-            initial: { opacity: 0, y: 8 },
-            animate: { opacity: 1, y: 0 },
-            transition: { duration: 0.35 },
-            className: "right-panel__content",
-            children: [
-              activeModule === "rtls" && /* @__PURE__ */ jsxRuntimeExports.jsx(RTLSPanel, {}),
-              activeModule === "cad" && /* @__PURE__ */ jsxRuntimeExports.jsx(CADPanel, {}),
-              activeModule === "anchors" && /* @__PURE__ */ jsxRuntimeExports.jsx(AnchorPanel, {}),
-              activeModule === "profiling" && /* @__PURE__ */ jsxRuntimeExports.jsx(ProfilingPanel, {})
-            ]
-          },
-          activeModule
-        ) }),
-        /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "right-panel__footer", children: "BRIGID RTLS Platform • v1.0.0" })
+        ) })
       ]
     }
   );
 };
-FocusStyleManager.onlyShowFocusOnTabs();
-const App = () => {
-  const [activeModule, setActiveModule] = reactExports.useState("rtls");
-  return /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "bp5-dark app-root", children: /* @__PURE__ */ jsxRuntimeExports.jsxs(
+const VIEW_CONTROLS = [
+  { cmd: "undo", icon: "undo", label: "", title: "Undo (Ctrl+Z)" },
+  { cmd: "redo", icon: "redo", label: "", title: "Redo (Ctrl+Y)" },
+  { cmd: "zoom_in", icon: "zoom-in", label: "", title: "Zoom In" },
+  { cmd: "zoom_out", icon: "zoom-out", label: "", title: "Zoom Out" },
+  { cmd: "zoom_reset", icon: "zoom-to-fit", label: "Reset View", title: "Reset View (0)" }
+];
+const TabStrip = ({
+  tabs,
+  activeTabId,
+  activeModule,
+  onTabSelect,
+  onTabClose,
+  onTabReorder,
+  onNewTab,
+  onViewCommand
+}) => {
+  const showViewControls = activeModule === "cad" || activeModule === "anchors";
+  const [searchVisible, setSearchVisible] = reactExports.useState(false);
+  const [searchQuery, setSearchQuery] = reactExports.useState("");
+  const [draggingId, setDraggingId] = reactExports.useState(null);
+  const searchRef = reactExports.useRef(null);
+  const filtered = searchQuery ? tabs.filter((tab) => tab.name.toLowerCase().includes(searchQuery.toLowerCase())) : [];
+  reactExports.useEffect(() => {
+    if (searchVisible) searchRef.current?.focus();
+  }, [searchVisible]);
+  const handleViewCmd = (cmd) => {
+    if (onViewCommand) {
+      onViewCommand(cmd);
+      return;
+    }
+    if (!activeTabId) return;
+    const eventName = activeModule === "anchors" ? "anchor-view-command" : "cad-view-command";
+    window.dispatchEvent(new CustomEvent(eventName, { detail: { cmd, workspaceId: activeTabId } }));
+  };
+  return /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "tab-strip electron-drag", children: [
+    /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "tab-strip__left electron-no-drag", children: [
+      /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "tab-strip__tabs", children: /* @__PURE__ */ jsxRuntimeExports.jsx(AnimatePresence, { initial: false, children: tabs.map((tab) => /* @__PURE__ */ jsxRuntimeExports.jsxs(
+        motion.button,
+        {
+          layout: true,
+          draggable: true,
+          className: [
+            "tab-strip__tab",
+            activeTabId === tab.id ? "tab-strip__tab--active" : "",
+            draggingId === tab.id ? "tab-strip__tab--dragging" : ""
+          ].filter(Boolean).join(" "),
+          initial: { opacity: 0, x: -12, scale: 0.96 },
+          animate: { opacity: 1, x: 0, scale: 1 },
+          exit: { opacity: 0, x: -8, scale: 0.96 },
+          transition: { duration: 0.18 },
+          onClick: () => onTabSelect(tab.id),
+          onDragStartCapture: (event) => {
+            setDraggingId(tab.id);
+            event.dataTransfer.effectAllowed = "move";
+            event.dataTransfer.setData("text/plain", tab.id);
+          },
+          onDragOverCapture: (event) => {
+            event.preventDefault();
+            if (draggingId && draggingId !== tab.id) onTabReorder(draggingId, tab.id);
+          },
+          onDragEndCapture: () => setDraggingId(null),
+          title: tab.name,
+          children: [
+            activeTabId === tab.id && /* @__PURE__ */ jsxRuntimeExports.jsx(
+              motion.div,
+              {
+                className: "tab-strip__tab-active-bg",
+                layoutId: "tab-active-bg",
+                transition: { type: "spring", stiffness: 500, damping: 42 }
+              }
+            ),
+            /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: `tab-strip__tab-dot ${tab.modified ? "tab-strip__tab-dot--modified" : ""}` }),
+            /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "tab-strip__tab-name", children: tab.name }),
+            /* @__PURE__ */ jsxRuntimeExports.jsx(
+              "button",
+              {
+                className: "tab-strip__tab-close",
+                onClick: (event) => {
+                  event.stopPropagation();
+                  onTabClose(tab.id);
+                },
+                title: "Close tab",
+                children: /* @__PURE__ */ jsxRuntimeExports.jsx(Icon, { icon: "cross", size: 9 })
+              }
+            )
+          ]
+        },
+        tab.id
+      )) }) }),
+      /* @__PURE__ */ jsxRuntimeExports.jsx("button", { className: "tab-strip__new-tab", onClick: onNewTab, title: "New workspace", children: /* @__PURE__ */ jsxRuntimeExports.jsx(Icon, { icon: "plus", size: 11 }) })
+    ] }),
+    /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "tab-strip__spacer" }),
+    showViewControls && /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "tab-strip__view-controls electron-no-drag", children: [
+      VIEW_CONTROLS.map((vc) => /* @__PURE__ */ jsxRuntimeExports.jsxs(
+        "button",
+        {
+          className: "tab-strip__view-btn",
+          title: vc.title,
+          onClick: () => handleViewCmd(vc.cmd),
+          disabled: !activeTabId,
+          children: [
+            /* @__PURE__ */ jsxRuntimeExports.jsx(Icon, { icon: vc.icon, size: 11 }),
+            vc.label && /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "tab-strip__view-label", children: vc.label })
+          ]
+        },
+        vc.cmd
+      )),
+      /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "tab-strip__view-sep" })
+    ] }),
+    /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "tab-strip__search electron-no-drag", children: searchVisible ? /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "tab-strip__search-input-wrap", children: [
+      /* @__PURE__ */ jsxRuntimeExports.jsx(Icon, { icon: "search", size: 11, className: "tab-strip__search-icon" }),
+      /* @__PURE__ */ jsxRuntimeExports.jsx(
+        "input",
+        {
+          ref: searchRef,
+          className: "tab-strip__search-input",
+          placeholder: "Search tabs...",
+          value: searchQuery,
+          onChange: (e) => setSearchQuery(e.target.value),
+          onBlur: () => {
+            setSearchVisible(false);
+            setSearchQuery("");
+          },
+          onKeyDown: (e) => e.key === "Escape" && searchRef.current?.blur()
+        }
+      ),
+      searchQuery && filtered.length > 0 && /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "tab-strip__search-results", children: filtered.map((tab) => /* @__PURE__ */ jsxRuntimeExports.jsxs(
+        "button",
+        {
+          className: "tab-strip__search-result",
+          onMouseDown: () => {
+            onTabSelect(tab.id);
+            setSearchVisible(false);
+            setSearchQuery("");
+          },
+          children: [
+            /* @__PURE__ */ jsxRuntimeExports.jsx(Icon, { icon: "document", size: 10 }),
+            /* @__PURE__ */ jsxRuntimeExports.jsx("span", { children: tab.name })
+          ]
+        },
+        tab.id
+      )) })
+    ] }) : /* @__PURE__ */ jsxRuntimeExports.jsx("button", { className: "tab-strip__search-btn", onClick: () => setSearchVisible(true), title: "Search tabs", children: /* @__PURE__ */ jsxRuntimeExports.jsx(Icon, { icon: "search", size: 11 }) }) })
+  ] });
+};
+const WS_BASE = "ws://localhost:8765/cad/ws";
+const RECONNECT_DELAY_MS = 2e3;
+const MAX_RECONNECT_ATTEMPTS = 10;
+function useCADWebSocket(workspaceId) {
+  const [state, setState] = reactExports.useState(null);
+  const [status, setStatus] = reactExports.useState("disconnected");
+  const wsRef = reactExports.useRef(null);
+  const reconnectCount = reactExports.useRef(0);
+  const reconnectTimer = reactExports.useRef(null);
+  const unmountedRef = reactExports.useRef(false);
+  const clearReconnectTimer = () => {
+    if (reconnectTimer.current !== null) {
+      clearTimeout(reconnectTimer.current);
+      reconnectTimer.current = null;
+    }
+  };
+  const connect = reactExports.useCallback(() => {
+    if (unmountedRef.current) return;
+    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) return;
+    setStatus("connecting");
+    const url = workspaceId ? `${WS_BASE}/${workspaceId}` : WS_BASE;
+    const ws = new WebSocket(url);
+    wsRef.current = ws;
+    ws.onopen = () => {
+      if (unmountedRef.current) {
+        ws.close();
+        return;
+      }
+      setStatus("connected");
+      reconnectCount.current = 0;
+    };
+    ws.onmessage = (ev) => {
+      if (unmountedRef.current) return;
+      try {
+        const data = JSON.parse(ev.data);
+        setState(data);
+      } catch {
+        console.error("[CAD WS] Failed to parse message:", ev.data);
+      }
+    };
+    ws.onerror = () => {
+      if (unmountedRef.current) return;
+      setStatus("error");
+    };
+    ws.onclose = () => {
+      if (unmountedRef.current) return;
+      setStatus("disconnected");
+      wsRef.current = null;
+      if (reconnectCount.current < MAX_RECONNECT_ATTEMPTS) {
+        reconnectCount.current += 1;
+        clearReconnectTimer();
+        reconnectTimer.current = setTimeout(() => {
+          if (!unmountedRef.current) connect();
+        }, RECONNECT_DELAY_MS);
+      }
+    };
+  }, [workspaceId]);
+  const reconnect = reactExports.useCallback(() => {
+    clearReconnectTimer();
+    reconnectCount.current = 0;
+    if (wsRef.current) {
+      wsRef.current.onclose = null;
+      wsRef.current.close();
+      wsRef.current = null;
+    }
+    connect();
+  }, [connect]);
+  const sendCommand = reactExports.useCallback((cmd) => {
+    if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
+      console.warn("[CAD WS] sendCommand called while not connected:", cmd.type);
+      return;
+    }
+    try {
+      wsRef.current.send(JSON.stringify(cmd));
+    } catch (err) {
+      console.error("[CAD WS] send error:", err);
+    }
+  }, []);
+  reactExports.useEffect(() => {
+    unmountedRef.current = false;
+    connect();
+    return () => {
+      unmountedRef.current = true;
+      clearReconnectTimer();
+      if (wsRef.current) {
+        wsRef.current.onclose = null;
+        wsRef.current.close();
+        wsRef.current = null;
+      }
+    };
+  }, [connect]);
+  return { state, status, sendCommand, reconnect };
+}
+function fontToCss(font) {
+  if (Array.isArray(font)) {
+    const [family = "sans-serif", size = 12, weight = "normal"] = font;
+    return `${weight} ${size}px "${family}", sans-serif`;
+  }
+  if (typeof font === "string") {
+    return font;
+  }
+  return '12px "JetBrains Mono", monospace';
+}
+function drawPrimitive(ctx, primitive) {
+  const { kind, points, options } = primitive;
+  const fill = options.fill ?? null;
+  const stroke = options.outline ?? options.stroke ?? options.fill ?? null;
+  const lineWidth = Number(options.width ?? 1);
+  const dash = Array.isArray(options.dash) ? options.dash.map(Number) : [];
+  ctx.setLineDash(dash);
+  ctx.lineWidth = lineWidth;
+  if (kind === "line") {
+    if (points.length < 4) return;
+    ctx.beginPath();
+    ctx.moveTo(points[0], points[1]);
+    for (let i = 2; i < points.length; i += 2) {
+      ctx.lineTo(points[i], points[i + 1]);
+    }
+    if (stroke) {
+      ctx.strokeStyle = String(stroke);
+      ctx.stroke();
+    }
+    return;
+  }
+  if (kind === "oval") {
+    if (points.length !== 4) return;
+    const [x1, y1, x2, y2] = points;
+    const cx = (x1 + x2) / 2;
+    const cy = (y1 + y2) / 2;
+    const rx = Math.abs(x2 - x1) / 2;
+    const ry = Math.abs(y2 - y1) / 2;
+    ctx.beginPath();
+    ctx.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2);
+    if (fill && fill !== "") {
+      ctx.fillStyle = String(fill);
+      ctx.fill();
+    }
+    if (stroke && stroke !== "") {
+      ctx.strokeStyle = String(stroke);
+      ctx.stroke();
+    }
+    return;
+  }
+  if (kind === "rect") {
+    if (points.length !== 4) return;
+    const [x1, y1, x2, y2] = points;
+    const width = x2 - x1;
+    const height = y2 - y1;
+    if (fill && fill !== "") {
+      ctx.fillStyle = String(fill);
+      ctx.fillRect(x1, y1, width, height);
+    }
+    if (stroke && stroke !== "") {
+      ctx.strokeStyle = String(stroke);
+      ctx.strokeRect(x1, y1, width, height);
+    }
+    return;
+  }
+  if (kind === "polygon") {
+    if (points.length < 4) return;
+    ctx.beginPath();
+    ctx.moveTo(points[0], points[1]);
+    for (let i = 2; i < points.length; i += 2) {
+      ctx.lineTo(points[i], points[i + 1]);
+    }
+    ctx.closePath();
+    if (fill && fill !== "") {
+      ctx.fillStyle = String(fill);
+      ctx.fill();
+    }
+    if (stroke && stroke !== "") {
+      ctx.strokeStyle = String(stroke);
+      ctx.stroke();
+    }
+    return;
+  }
+  if (kind === "text") {
+    if (points.length < 2) return;
+    const [x, y] = points;
+    ctx.save();
+    ctx.font = fontToCss(options.font);
+    ctx.fillStyle = String(fill ?? "#cbd5e1");
+    ctx.textAlign = options.anchor === "w" ? "left" : "center";
+    ctx.textBaseline = "middle";
+    const angle = Number(options.angle ?? 0);
+    ctx.translate(x, y);
+    if (angle) {
+      ctx.rotate(angle * Math.PI / 180);
+    }
+    ctx.fillText(String(options.text ?? ""), 0, 0);
+    ctx.restore();
+  }
+}
+const CADCanvas = ({ state, onCommand }) => {
+  const canvasRef = reactExports.useRef(null);
+  const containerRef = reactExports.useRef(null);
+  reactExports.useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+    const dpr = window.devicePixelRatio || 1;
+    const w = canvas.width / dpr;
+    const h = canvas.height / dpr;
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.scale(dpr, dpr);
+    ctx.fillStyle = "#090d15";
+    ctx.fillRect(0, 0, w, h);
+    if (!state) return;
+    for (const primitive of state.render_primitives ?? []) {
+      drawPrimitive(ctx, primitive);
+      ctx.setLineDash([]);
+    }
+  }, [state]);
+  reactExports.useEffect(() => {
+    const container = containerRef.current;
+    const canvas = canvasRef.current;
+    if (!container || !canvas) return;
+    const ro = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        const { width, height } = entry.contentRect;
+        const dpr = window.devicePixelRatio || 1;
+        canvas.width = Math.round(width * dpr);
+        canvas.height = Math.round(height * dpr);
+        canvas.style.width = `${width}px`;
+        canvas.style.height = `${height}px`;
+        onCommand({ type: "viewport_resize", width: Math.round(width), height: Math.round(height) });
+      }
+    });
+    ro.observe(container);
+    return () => ro.disconnect();
+  }, [onCommand]);
+  const getXY = (e) => {
+    const rect = canvasRef.current.getBoundingClientRect();
+    return { x: e.clientX - rect.left, y: e.clientY - rect.top };
+  };
+  const onMouseDown = reactExports.useCallback((e) => {
+    canvasRef.current?.focus();
+    const { x, y } = getXY(e);
+    if (e.button === 2 && !e.shiftKey) {
+      onCommand({ type: "right_click", x, y });
+      return;
+    }
+    onCommand({
+      type: "mouse_down",
+      x,
+      y,
+      button: e.button,
+      ctrl: e.ctrlKey,
+      shift: e.shiftKey,
+      buttons: e.buttons
+    });
+  }, [onCommand]);
+  const onMouseMove = reactExports.useCallback((e) => {
+    const { x, y } = getXY(e);
+    onCommand({
+      type: "mouse_move",
+      x,
+      y,
+      ctrl: e.ctrlKey,
+      shift: e.shiftKey,
+      buttons: e.buttons
+    });
+  }, [onCommand]);
+  const onMouseUp = reactExports.useCallback((e) => {
+    const { x, y } = getXY(e);
+    onCommand({
+      type: "mouse_up",
+      x,
+      y,
+      button: e.button,
+      ctrl: e.ctrlKey,
+      shift: e.shiftKey,
+      buttons: e.buttons
+    });
+  }, [onCommand]);
+  const onDoubleClick = reactExports.useCallback((e) => {
+    const { x, y } = getXY(e);
+    onCommand({ type: "double_click", x, y });
+  }, [onCommand]);
+  const onWheel = reactExports.useCallback((e) => {
+    e.preventDefault();
+    const rect = canvasRef.current.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+    onCommand({ type: "wheel", x, y, delta: e.deltaY });
+  }, [onCommand]);
+  const onKeyDown = reactExports.useCallback((e) => {
+    const key = e.key;
+    const lower = key.toLowerCase();
+    if (e.ctrlKey && e.shiftKey && lower === "z") {
+      e.preventDefault();
+      onCommand({ type: "redo" });
+      return;
+    }
+    if (e.ctrlKey && lower === "z") {
+      e.preventDefault();
+      onCommand({ type: "undo" });
+      return;
+    }
+    if (e.ctrlKey && lower === "y") {
+      e.preventDefault();
+      onCommand({ type: "redo" });
+      return;
+    }
+    if (e.ctrlKey && lower === "c") {
+      e.preventDefault();
+      onCommand({ type: "copy" });
+      return;
+    }
+    if (e.ctrlKey && lower === "v") {
+      e.preventDefault();
+      onCommand({ type: "paste" });
+      return;
+    }
+    if (key === "Delete" || key === "Backspace") {
+      e.preventDefault();
+      onCommand({ type: "delete" });
+      return;
+    }
+    if (key === "Escape") {
+      e.preventDefault();
+      onCommand({ type: "escape" });
+      return;
+    }
+    onCommand({ type: "key_press", key, ctrl: e.ctrlKey, shift: e.shiftKey });
+  }, [onCommand]);
+  const onMouseLeave = reactExports.useCallback(() => {
+    onCommand({ type: "mouse_leave" });
+  }, [onCommand]);
+  const onContextMenu = reactExports.useCallback((e) => {
+    e.preventDefault();
+  }, []);
+  return /* @__PURE__ */ jsxRuntimeExports.jsx("div", { ref: containerRef, className: "cad-canvas-container", children: /* @__PURE__ */ jsxRuntimeExports.jsx(
+    "canvas",
+    {
+      ref: canvasRef,
+      className: "cad-canvas",
+      tabIndex: 0,
+      onMouseDown,
+      onMouseMove,
+      onMouseUp,
+      onMouseLeave,
+      onDoubleClick,
+      onWheel,
+      onKeyDown,
+      onContextMenu
+    }
+  ) });
+};
+const TOOLS = [
+  { mode: "cursor", icon: "↖", label: "Select / Move", shortcut: "V" },
+  { mode: "line", icon: "╱", label: "Draw Line", shortcut: "L" },
+  { mode: "vertex", icon: "◦", label: "Vertex Mode", shortcut: "N" },
+  { mode: "dim", icon: "↔", label: "Dimension Tool", shortcut: "D" }
+];
+const CADRightPanel = ({ state, onCommand, status }) => {
+  const [iobusy, setIoBusy] = reactExports.useState(false);
+  const [paths, setPaths] = reactExports.useState(null);
+  const tool = state?.tool_mode ?? "cursor";
+  const getPaths = window.api?.getPaths;
+  const openFile = window.api?.openFile;
+  const saveFile = window.api?.saveFile;
+  reactExports.useEffect(() => {
+    let cancelled = false;
+    if (!getPaths) return;
+    getPaths().then((nextPaths) => {
+      if (!cancelled) setPaths(nextPaths);
+    }).catch(() => {
+      if (!cancelled) setPaths(null);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [getPaths]);
+  const handleOpen = async () => {
+    if (!openFile || iobusy) return;
+    setIoBusy(true);
+    try {
+      const result = await openFile(
+        [{ name: "CAD Designs", extensions: ["svg"] }],
+        paths?.svg
+      );
+      if (!result.canceled && result.filePaths.length > 0) {
+        onCommand({ type: "open_cad", filepath: result.filePaths[0] });
+      }
+    } finally {
+      setIoBusy(false);
+    }
+  };
+  const handleImport = async () => {
+    if (!openFile || iobusy) return;
+    setIoBusy(true);
+    try {
+      const result = await openFile([
+        { name: "Floor Plans", extensions: ["pdf", "svg", "png", "jpg", "jpeg"] },
+        { name: "PDF Files", extensions: ["pdf"] },
+        { name: "SVG Files", extensions: ["svg"] },
+        { name: "Images", extensions: ["png", "jpg", "jpeg"] }
+      ]);
+      if (!result.canceled && result.filePaths.length > 0) {
+        onCommand({ type: "import_file", filepath: result.filePaths[0] });
+      }
+    } finally {
+      setIoBusy(false);
+    }
+  };
+  const handleSaveSVG = async () => {
+    if (!saveFile || iobusy) return;
+    setIoBusy(true);
+    try {
+      const defaultPath = paths?.svg ? `${paths.svg}\\floor-plan.svg` : "floor-plan.svg";
+      const result = await saveFile(
+        [{ name: "SVG Files", extensions: ["svg"] }],
+        defaultPath
+      );
+      if (!result.canceled && result.filePath) {
+        onCommand({ type: "export_svg", filepath: result.filePath });
+      }
+    } finally {
+      setIoBusy(false);
+    }
+  };
+  const handleSavePDF = async () => {
+    if (!saveFile || iobusy) return;
+    setIoBusy(true);
+    try {
+      const defaultPath = paths?.pdf ? `${paths.pdf}\\floor-plan.pdf` : "floor-plan.pdf";
+      const result = await saveFile(
+        [{ name: "PDF Files", extensions: ["pdf"] }],
+        defaultPath
+      );
+      if (!result.canceled && result.filePath) {
+        onCommand({ type: "export_pdf", filepath: result.filePath });
+      }
+    } finally {
+      setIoBusy(false);
+    }
+  };
+  const flags = {
+    manipulate_line: state?.manipulate_line ?? false,
+    snap_axis: state?.snap_axis ?? false,
+    line_match: state?.line_match ?? false,
+    disable_vpoint: state?.disable_vpoint ?? false
+  };
+  const setTool = (nextTool) => onCommand({ type: "tool_change", tool: nextTool });
+  const toggle = (flag) => onCommand({ type: "toggle_flag", flag, value: !flags[flag] });
+  return /* @__PURE__ */ jsxRuntimeExports.jsxs("aside", { className: "cad-right-panel", children: [
+    /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: `crp-status crp-status--${status}`, children: [
+      /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "crp-status-dot", title: status }),
+      /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "crp-status-label", children: status === "connected" ? "Connected" : status === "connecting" ? "Connecting..." : status === "error" ? "Error" : "Offline" })
+    ] }),
+    /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "crp-section", children: [
+      /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "crp-section-label", children: "Tools" }),
+      /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "crp-tool-grid", children: TOOLS.map((entry) => /* @__PURE__ */ jsxRuntimeExports.jsx(Tooltip, { content: `${entry.label} · ${entry.shortcut}`, placement: "left", children: /* @__PURE__ */ jsxRuntimeExports.jsxs(
+        "button",
+        {
+          className: `crp-tool-btn${tool === entry.mode ? " crp-tool-btn--active" : ""}`,
+          onClick: () => setTool(entry.mode),
+          children: [
+            /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "crp-tool-icon", children: entry.icon }),
+            /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "crp-tool-label", children: entry.label })
+          ]
+        }
+      ) }, entry.mode)) })
+    ] }),
+    /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "crp-section", children: [
+      /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "crp-section-label", children: "Edit" }),
+      /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "crp-icon-row", children: [
+        /* @__PURE__ */ jsxRuntimeExports.jsx(Tooltip, { content: "Copy · Ctrl+C", placement: "left", children: /* @__PURE__ */ jsxRuntimeExports.jsx("button", { className: "crp-icon-btn", onClick: () => onCommand({ type: "copy" }), children: "⎘" }) }),
+        /* @__PURE__ */ jsxRuntimeExports.jsx(Tooltip, { content: "Paste · Ctrl+V", placement: "left", children: /* @__PURE__ */ jsxRuntimeExports.jsx("button", { className: "crp-icon-btn", onClick: () => onCommand({ type: "paste" }), children: "⎗" }) }),
+        /* @__PURE__ */ jsxRuntimeExports.jsx(Tooltip, { content: "Delete · Del", placement: "left", children: /* @__PURE__ */ jsxRuntimeExports.jsx("button", { className: "crp-icon-btn crp-icon-btn--danger", onClick: () => onCommand({ type: "delete" }), children: "⌫" }) }),
+        /* @__PURE__ */ jsxRuntimeExports.jsx(Tooltip, { content: "Escape · Esc", placement: "left", children: /* @__PURE__ */ jsxRuntimeExports.jsx("button", { className: "crp-icon-btn", onClick: () => onCommand({ type: "escape" }), children: /* @__PURE__ */ jsxRuntimeExports.jsx("span", { style: { fontSize: 9, letterSpacing: "0.02em" }, children: "Esc" }) }) })
+      ] })
+    ] }),
+    /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "crp-section", children: [
+      /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "crp-section-label", children: "Advanced" }),
+      /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "crp-icon-row", children: [
+        /* @__PURE__ */ jsxRuntimeExports.jsx(Tooltip, { content: "Rotate selection", placement: "left", children: /* @__PURE__ */ jsxRuntimeExports.jsx("button", { className: "crp-icon-btn", onClick: () => onCommand({ type: "context_action", action: "rotate" }), children: "↻" }) }),
+        /* @__PURE__ */ jsxRuntimeExports.jsx(Tooltip, { content: "Trim line", placement: "left", children: /* @__PURE__ */ jsxRuntimeExports.jsx("button", { className: "crp-icon-btn crp-icon-btn--trim", onClick: () => onCommand({ type: "context_action", action: "trim" }), children: "✂" }) })
+      ] })
+    ] }),
+    /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "crp-section", children: [
+      /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "crp-section-label", children: "Behaviour" }),
+      /* @__PURE__ */ jsxRuntimeExports.jsx(ToggleRow, { label: "Manipulate Line", active: flags.manipulate_line, onToggle: () => toggle("manipulate_line") }),
+      /* @__PURE__ */ jsxRuntimeExports.jsx(ToggleRow, { label: "Axis Snap", active: flags.snap_axis, onToggle: () => toggle("snap_axis") }),
+      /* @__PURE__ */ jsxRuntimeExports.jsx(ToggleRow, { label: "Line Match", active: flags.line_match, onToggle: () => toggle("line_match") }),
+      /* @__PURE__ */ jsxRuntimeExports.jsx(ToggleRow, { label: "Hide V-Points", active: flags.disable_vpoint, onToggle: () => toggle("disable_vpoint") })
+    ] }),
+    /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "crp-section", children: [
+      /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "crp-section-label", children: "Angle Snap" }),
+      /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "crp-angle-grid", children: (state?.angle_snap_values ?? ["", "", "", ""]).map((value, index) => /* @__PURE__ */ jsxRuntimeExports.jsx(
+        "input",
+        {
+          className: "crp-angle-input",
+          value,
+          onChange: (e) => onCommand({ type: "angle_snap_set", index, value: e.target.value }),
+          placeholder: `∠${index + 1}`
+        },
+        index
+      )) })
+    ] }),
+    /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "crp-section crp-section--io", children: [
+      /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "crp-section-label", children: "File" }),
+      /* @__PURE__ */ jsxRuntimeExports.jsx(Tooltip, { content: "Open a previously saved CAD design (SVG)", placement: "left", children: /* @__PURE__ */ jsxRuntimeExports.jsx("button", { className: "crp-io-btn", onClick: handleOpen, disabled: iobusy || !openFile, children: "↗ Open" }) }),
+      /* @__PURE__ */ jsxRuntimeExports.jsx(Tooltip, { content: "Import an external floor plan (PDF, SVG, PNG)", placement: "left", children: /* @__PURE__ */ jsxRuntimeExports.jsx("button", { className: "crp-io-btn", onClick: handleImport, disabled: iobusy || !openFile, children: "↥ Import" }) }),
+      /* @__PURE__ */ jsxRuntimeExports.jsx(Tooltip, { content: "Save design to BRIGID/svg/", placement: "left", children: /* @__PURE__ */ jsxRuntimeExports.jsx("button", { className: "crp-io-btn", onClick: handleSaveSVG, disabled: iobusy || !state?.lines.length || !saveFile, children: "⬡ Save SVG" }) }),
+      /* @__PURE__ */ jsxRuntimeExports.jsx(Tooltip, { content: "Export print-ready PDF to BRIGID/pdf/", placement: "left", children: /* @__PURE__ */ jsxRuntimeExports.jsx("button", { className: "crp-io-btn", onClick: handleSavePDF, disabled: iobusy || !state?.lines.length || !saveFile, children: "▣ Save PDF" }) })
+    ] })
+  ] });
+};
+const ToggleRow = ({ label, active, onToggle }) => /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: `crp-toggle-row${active ? " crp-toggle-row--active" : ""}`, onClick: onToggle, children: [
+  /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "crp-toggle-label", children: label }),
+  /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: `crp-toggle-pill${active ? " crp-toggle-pill--on" : ""}`, children: /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "crp-toggle-thumb" }) })
+] });
+const FeatureNodeRow = ({ node, depth, activeDimKeys }) => {
+  const [open, setOpen] = reactExports.useState(node.open);
+  const hasChildren = node.children.length > 0;
+  const active = node.values.some((value) => activeDimKeys.has(value));
+  return /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "fm-node", children: [
+    /* @__PURE__ */ jsxRuntimeExports.jsxs(
+      "button",
+      {
+        className: `fm-node-row${active ? " fm-node-row--active" : ""}`,
+        style: { paddingLeft: 12 + depth * 14 },
+        onClick: () => hasChildren && setOpen((v) => !v),
+        children: [
+          /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "fm-node-chevron", children: hasChildren ? /* @__PURE__ */ jsxRuntimeExports.jsx(Icon, { icon: open ? "chevron-down" : "chevron-right", size: 10 }) : null }),
+          /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "fm-node-text", children: node.text })
+        ]
+      }
+    ),
+    /* @__PURE__ */ jsxRuntimeExports.jsx(AnimatePresence, { initial: false, children: hasChildren && open && /* @__PURE__ */ jsxRuntimeExports.jsx(
+      motion.div,
+      {
+        className: "fm-node-children",
+        initial: { height: 0, opacity: 0 },
+        animate: { height: "auto", opacity: 1 },
+        exit: { height: 0, opacity: 0 },
+        transition: { duration: 0.15 },
+        children: node.children.map((child) => /* @__PURE__ */ jsxRuntimeExports.jsx(FeatureNodeRow, { node: child, depth: depth + 1, activeDimKeys }, child.id))
+      }
+    ) })
+  ] });
+};
+const FeatureManager = ({ state }) => {
+  const [collapsed, setCollapsed] = reactExports.useState(false);
+  const nodes = state?.feature_tree ?? [];
+  const activeDimKeys = new Set(state?.selected_dim_kinds ?? []);
+  return /* @__PURE__ */ jsxRuntimeExports.jsxs(
     motion.div,
     {
-      className: "app-shell",
-      initial: { opacity: 0 },
-      animate: { opacity: 1 },
-      transition: { duration: 0.5 },
+      className: "feature-manager",
+      initial: { opacity: 0, x: -12, y: -8 },
+      animate: { opacity: 1, x: 0, y: 0 },
+      transition: { duration: 0.3, ease: "easeOut" },
       children: [
-        /* @__PURE__ */ jsxRuntimeExports.jsx(TopBar, { activeModule, onModuleChange: setActiveModule }),
-        /* @__PURE__ */ jsxRuntimeExports.jsx(LeftRail, {}),
-        /* @__PURE__ */ jsxRuntimeExports.jsx(CentralCanvas, { activeModule }),
-        /* @__PURE__ */ jsxRuntimeExports.jsx(RightPanel, { activeModule })
+        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "fm-header", onClick: () => setCollapsed((v) => !v), children: [
+          /* @__PURE__ */ jsxRuntimeExports.jsx(Icon, { icon: "diagram-tree", size: 11, color: "#3d4d60" }),
+          /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "fm-title", children: "Features" }),
+          /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "fm-summary", children: nodes.length ? `${nodes.length}` : "—" }),
+          /* @__PURE__ */ jsxRuntimeExports.jsx(Icon, { icon: collapsed ? "chevron-right" : "chevron-down", size: 10, color: "#2d3d50", className: "fm-chevron" })
+        ] }),
+        /* @__PURE__ */ jsxRuntimeExports.jsx(AnimatePresence, { initial: false, children: !collapsed && /* @__PURE__ */ jsxRuntimeExports.jsx(
+          motion.div,
+          {
+            className: "fm-body",
+            initial: { height: 0, opacity: 0 },
+            animate: { height: "auto", opacity: 1 },
+            exit: { height: 0, opacity: 0 },
+            transition: { duration: 0.18 },
+            children: nodes.length === 0 ? /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "fm-empty", children: "No geometry yet" }) : nodes.map((node) => /* @__PURE__ */ jsxRuntimeExports.jsx(FeatureNodeRow, { node, depth: 0, activeDimKeys }, node.id))
+          }
+        ) })
+      ]
+    }
+  );
+};
+const FloatDialog = ({ title, label, initial, onConfirm, onCancel }) => {
+  const [value, setValue] = reactExports.useState(String(initial));
+  const inputRef = reactExports.useRef(null);
+  reactExports.useEffect(() => {
+    inputRef.current?.focus();
+    inputRef.current?.select();
+  }, []);
+  const confirm = () => {
+    const n = parseFloat(value);
+    if (!Number.isNaN(n)) onConfirm(n);
+  };
+  return /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "cad-dialog-overlay", onClick: onCancel, children: /* @__PURE__ */ jsxRuntimeExports.jsxs(
+    motion.div,
+    {
+      className: "cad-dialog",
+      initial: { opacity: 0, scale: 0.94, y: -8 },
+      animate: { opacity: 1, scale: 1, y: 0 },
+      exit: { opacity: 0, scale: 0.94, y: -8 },
+      transition: { duration: 0.18 },
+      onClick: (e) => e.stopPropagation(),
+      children: [
+        /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "cad-dialog-title", children: title }),
+        /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "cad-dialog-label", children: label }),
+        /* @__PURE__ */ jsxRuntimeExports.jsx(
+          "input",
+          {
+            ref: inputRef,
+            className: "cad-dialog-input",
+            value,
+            onChange: (e) => setValue(e.target.value),
+            onKeyDown: (e) => {
+              if (e.key === "Enter") confirm();
+              if (e.key === "Escape") onCancel();
+            }
+          }
+        ),
+        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "cad-dialog-btns", children: [
+          /* @__PURE__ */ jsxRuntimeExports.jsx("button", { className: "cad-dialog-btn cad-dialog-btn--cancel", onClick: onCancel, children: "Cancel" }),
+          /* @__PURE__ */ jsxRuntimeExports.jsx("button", { className: "cad-dialog-btn cad-dialog-btn--ok", onClick: confirm, children: "OK" })
+        ] })
       ]
     }
   ) });
+};
+const ContextMenuItemRow = ({ item, onClick }) => /* @__PURE__ */ jsxRuntimeExports.jsxs("button", { className: "cad-context-item", disabled: item.disabled, onClick, children: [
+  /* @__PURE__ */ jsxRuntimeExports.jsx("span", { children: item.label }),
+  item.kind === "toggle" && /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: `cad-context-check${item.checked ? " cad-context-check--on" : ""}`, children: item.checked ? "●" : "○" })
+] });
+let noticeSeq = 0;
+const FloatingNotice = ({ notice, onDismiss }) => {
+  reactExports.useEffect(() => {
+    const t = setTimeout(() => onDismiss(notice.id), 7e3);
+    return () => clearTimeout(t);
+  }, [notice.id, onDismiss]);
+  return /* @__PURE__ */ jsxRuntimeExports.jsxs(
+    motion.div,
+    {
+      className: `cad-notice cad-notice--${notice.kind}`,
+      initial: { opacity: 0, y: -8, scale: 0.97 },
+      animate: { opacity: 1, y: 0, scale: 1 },
+      exit: { opacity: 0, y: -6, scale: 0.96 },
+      transition: { duration: 0.18 },
+      layout: true,
+      children: [
+        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "cad-notice-body", children: [
+          /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "cad-notice-title", children: notice.title }),
+          /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "cad-notice-message", children: notice.message })
+        ] }),
+        /* @__PURE__ */ jsxRuntimeExports.jsx("button", { className: "cad-notice-close", onClick: () => onDismiss(notice.id), title: "Dismiss", children: "×" })
+      ]
+    }
+  );
+};
+const CADModule = ({ workspaceId }) => {
+  const { state, status, sendCommand, reconnect } = useCADWebSocket(workspaceId);
+  const dialog = state?.pending_dialog ?? null;
+  const contextMenu = state?.context_menu ?? null;
+  const contextRef = reactExports.useRef(null);
+  const canvasAreaRef = reactExports.useRef(null);
+  const [notices, setNotices] = reactExports.useState([]);
+  const prevNoticeRef = reactExports.useRef("");
+  const dismissNotice = reactExports.useCallback((id2) => {
+    setNotices((prev) => prev.filter((n) => n.id !== id2));
+  }, []);
+  reactExports.useEffect(() => {
+    if (!state?.last_notice) return;
+    const key = `${state.last_notice.title}::${state.last_notice.message}`;
+    if (key === prevNoticeRef.current) return;
+    prevNoticeRef.current = key;
+    const newNotice = {
+      id: ++noticeSeq,
+      kind: state.last_notice.kind,
+      title: state.last_notice.title,
+      message: state.last_notice.message
+    };
+    setNotices((prev) => [...prev.slice(-4), newNotice]);
+  }, [state?.last_notice]);
+  const handleCommand = reactExports.useCallback((cmd) => {
+    sendCommand(cmd);
+  }, [sendCommand]);
+  reactExports.useEffect(() => {
+    const handler = (e) => {
+      const detail = e.detail;
+      if (detail.workspaceId !== workspaceId) return;
+      const cmdMap = {
+        undo: { type: "undo" },
+        redo: { type: "redo" },
+        zoom_in: { type: "zoom_in" },
+        zoom_out: { type: "zoom_out" },
+        zoom_reset: { type: "zoom_reset" }
+      };
+      const cadCmd = cmdMap[detail.cmd];
+      if (cadCmd) sendCommand(cadCmd);
+    };
+    window.addEventListener("cad-view-command", handler);
+    return () => window.removeEventListener("cad-view-command", handler);
+  }, [workspaceId, sendCommand]);
+  reactExports.useEffect(() => {
+    if (!contextMenu) return;
+    const onPointerDown = (event) => {
+      if (contextRef.current?.contains(event.target)) return;
+      sendCommand({ type: "context_close" });
+    };
+    window.addEventListener("mousedown", onPointerDown);
+    return () => window.removeEventListener("mousedown", onPointerDown);
+  }, [contextMenu, sendCommand]);
+  const clampedMenuPos = reactExports.useCallback(() => {
+    if (!contextMenu) return { left: 0, top: 0 };
+    const MENU_W = 240;
+    const MENU_H = 320;
+    const area = canvasAreaRef.current;
+    const rect = area ? area.getBoundingClientRect() : { width: window.innerWidth, height: window.innerHeight };
+    const left2 = Math.min(contextMenu.x, rect.width - MENU_W - 4);
+    const top2 = Math.min(contextMenu.y, rect.height - MENU_H - 4);
+    return { left: Math.max(0, left2), top: Math.max(0, top2) };
+  }, [contextMenu]);
+  const handleDialogConfirm = reactExports.useCallback((value) => {
+    if (!dialog) return;
+    sendCommand({ type: "dialog_response", request_id: dialog.request_id, value });
+  }, [dialog, sendCommand]);
+  const handleDialogCancel = reactExports.useCallback(() => {
+    if (!dialog) return;
+    sendCommand({ type: "dialog_response", request_id: dialog.request_id, value: null });
+  }, [dialog, sendCommand]);
+  const menuPos = clampedMenuPos();
+  return /* @__PURE__ */ jsxRuntimeExports.jsxs(jsxRuntimeExports.Fragment, { children: [
+    /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { ref: canvasAreaRef, className: "cad-canvas-area", children: [
+      status !== "connected" && !state && /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "cad-offline-overlay", children: [
+        /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "cad-offline-icon", children: "□" }),
+        /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "cad-offline-title", children: "CAD Engine Offline" }),
+        /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "cad-offline-sub", children: status === "connecting" ? "Connecting to the Python CAD backend..." : "Could not reach the CAD server on localhost:8765" }),
+        status !== "connecting" && /* @__PURE__ */ jsxRuntimeExports.jsx("button", { className: "cad-offline-retry", onClick: reconnect, children: "Reconnect" })
+      ] }),
+      /* @__PURE__ */ jsxRuntimeExports.jsx(CADCanvas, { state, onCommand: handleCommand }),
+      /* @__PURE__ */ jsxRuntimeExports.jsx(FeatureManager, { state }),
+      /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "cad-notice-stack", children: /* @__PURE__ */ jsxRuntimeExports.jsx(AnimatePresence, { mode: "popLayout", children: notices.map((n) => /* @__PURE__ */ jsxRuntimeExports.jsx(FloatingNotice, { notice: n, onDismiss: dismissNotice }, n.id)) }) }),
+      /* @__PURE__ */ jsxRuntimeExports.jsx(AnimatePresence, { children: state?.trim_state.active && /* @__PURE__ */ jsxRuntimeExports.jsxs(
+        motion.div,
+        {
+          className: "cad-tool-panel cad-tool-panel--trim",
+          initial: { opacity: 0, y: 8 },
+          animate: { opacity: 1, y: 0 },
+          exit: { opacity: 0, y: 8 },
+          transition: { duration: 0.18 },
+          children: [
+            /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "cad-tool-panel-title", children: [
+              /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "cad-tool-panel-icon", children: "✂" }),
+              "Trim"
+            ] }),
+            /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "cad-tool-panel-row", children: [
+              /* @__PURE__ */ jsxRuntimeExports.jsx(
+                "input",
+                {
+                  className: "cad-tool-input",
+                  value: state.trim_state.trim1_text,
+                  placeholder: "Point 1",
+                  onChange: (e) => handleCommand({ type: "trim_value_set", point: 1, value: e.target.value })
+                }
+              ),
+              /* @__PURE__ */ jsxRuntimeExports.jsx(
+                "input",
+                {
+                  className: "cad-tool-input",
+                  value: state.trim_state.trim2_text,
+                  placeholder: "Point 2",
+                  onChange: (e) => handleCommand({ type: "trim_value_set", point: 2, value: e.target.value })
+                }
+              )
+            ] }),
+            state.trim_state.distance_text && /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "cad-tool-panel-hint", children: state.trim_state.distance_text }),
+            /* @__PURE__ */ jsxRuntimeExports.jsx(
+              "button",
+              {
+                className: "cad-tool-panel-apply",
+                onClick: () => handleCommand({ type: "trim_apply" }),
+                children: "Apply Trim"
+              }
+            )
+          ]
+        }
+      ) }),
+      /* @__PURE__ */ jsxRuntimeExports.jsx(AnimatePresence, { children: state?.rotate_state.active && /* @__PURE__ */ jsxRuntimeExports.jsxs(
+        motion.div,
+        {
+          className: "cad-tool-panel cad-tool-panel--rotate",
+          initial: { opacity: 0, y: 8 },
+          animate: { opacity: 1, y: 0 },
+          exit: { opacity: 0, y: 8 },
+          transition: { duration: 0.18 },
+          children: [
+            /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "cad-tool-panel-title", children: [
+              /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "cad-tool-panel-icon", children: "↻" }),
+              "Rotate"
+            ] }),
+            /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "cad-tool-panel-hint", children: [
+              state.rotate_state.state === "select_pivot" && "Pick the pivot vertex.",
+              state.rotate_state.state === "select_axis" && "Pick a second vertex to define the axis.",
+              state.rotate_state.state === "rotating" && `Preview: ${state.rotate_state.current_angle_deg.toFixed(1)}°`
+            ] })
+          ]
+        }
+      ) }),
+      state && /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "cad-coord-readout", children: [
+        "X ",
+        state.cursor_world_snapped[0].toFixed(2),
+        "   Y ",
+        state.cursor_world_snapped[1].toFixed(2)
+      ] }),
+      contextMenu && /* @__PURE__ */ jsxRuntimeExports.jsx(
+        "div",
+        {
+          ref: contextRef,
+          className: "cad-context-menu",
+          style: { left: menuPos.left, top: menuPos.top },
+          children: contextMenu.sections.map((section) => /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "cad-context-section", children: [
+            /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "cad-context-title", children: section.title }),
+            section.items.map((item) => /* @__PURE__ */ jsxRuntimeExports.jsx(
+              ContextMenuItemRow,
+              {
+                item,
+                onClick: () => sendCommand({ type: "context_action", action: item.id })
+              },
+              item.id
+            ))
+          ] }, section.title))
+        }
+      ),
+      /* @__PURE__ */ jsxRuntimeExports.jsx(CADRightPanel, { state, onCommand: handleCommand, status })
+    ] }),
+    /* @__PURE__ */ jsxRuntimeExports.jsx(AnimatePresence, { children: dialog?.kind === "prompt_float" && /* @__PURE__ */ jsxRuntimeExports.jsx(
+      FloatDialog,
+      {
+        title: dialog.title,
+        label: dialog.label,
+        initial: dialog.initial,
+        onConfirm: handleDialogConfirm,
+        onCancel: handleDialogCancel
+      },
+      dialog.request_id
+    ) })
+  ] });
+};
+const SectionCard = ({ title, subtitle, children, className = "" }) => /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: `tp-card ${className}`, children: [
+  /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "tp-card-header", children: [
+    /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "tp-card-title", children: title }),
+    subtitle && /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "tp-card-subtitle", children: subtitle })
+  ] }),
+  /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "tp-card-body", children })
+] });
+const FieldInput = ({
+  label,
+  value,
+  onChange,
+  help,
+  type = "text",
+  options = [],
+  placeholder = "",
+  readOnly = false,
+  monospace = false,
+  className = ""
+}) => /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: `tp-field${className ? " " + className : ""}`, children: [
+  /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "tp-field-label-row", children: [
+    /* @__PURE__ */ jsxRuntimeExports.jsx("label", { className: "tp-field-label", children: label }),
+    help && /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "tp-field-help", title: help, children: "?" })
+  ] }),
+  type === "select" ? /* @__PURE__ */ jsxRuntimeExports.jsx(
+    "select",
+    {
+      className: "tp-field-select",
+      value: String(value),
+      onChange: (e) => onChange(e.target.value),
+      disabled: readOnly,
+      children: options.map((opt) => /* @__PURE__ */ jsxRuntimeExports.jsx("option", { value: opt, children: opt }, opt))
+    }
+  ) : type === "textarea" ? /* @__PURE__ */ jsxRuntimeExports.jsx(
+    "textarea",
+    {
+      className: `tp-field-textarea${monospace ? " tp-field-mono" : ""}`,
+      value: String(value),
+      onChange: (e) => onChange(e.target.value),
+      placeholder,
+      readOnly,
+      rows: 3
+    }
+  ) : /* @__PURE__ */ jsxRuntimeExports.jsx(
+    "input",
+    {
+      className: `tp-field-input${monospace ? " tp-field-mono" : ""}`,
+      type,
+      value: String(value),
+      onChange: (e) => onChange(e.target.value),
+      placeholder,
+      readOnly,
+      step: type === "number" ? "0.01" : void 0,
+      min: type === "number" ? "0" : void 0
+    }
+  )
+] });
+const ANCHOR_IDS$1 = ["A0", "A1", "A2", "A3"];
+const DEVICE_TYPES = ["Wrist Band", "Arm Band", "Belt Clip-on", "Breast Pocket"];
+const HEIGHT_FIELDS = {
+  "Wrist Band": "wrist_to_floor_ft",
+  "Arm Band": "arm_to_floor_ft",
+  "Belt Clip-on": "hip_to_floor_ft",
+  "Breast Pocket": "breast_to_floor_ft"
+};
+const ProfileFormSection = ({ profile, onChange }) => {
+  const set = (path, val) => {
+    const next = JSON.parse(JSON.stringify(profile));
+    let obj = next;
+    for (let i = 0; i < path.length - 1; i++) obj = obj[path[i]];
+    obj[path[path.length - 1]] = val;
+    onChange(next);
+  };
+  const activeHeightField = HEIGHT_FIELDS[profile.device.device_type] ?? "wrist_to_floor_ft";
+  return /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "tp-form-grid", children: [
+    /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "tp-form-col", children: [
+      /* @__PURE__ */ jsxRuntimeExports.jsxs(SectionCard, { title: "Identity", subtitle: "Profile identification", children: [
+        /* @__PURE__ */ jsxRuntimeExports.jsx(
+          FieldInput,
+          {
+            label: "Tag ID *",
+            value: profile.tag_id,
+            onChange: (v) => set(["tag_id"], v),
+            help: "Unique identifier for this tag (used as filename). Required."
+          }
+        ),
+        /* @__PURE__ */ jsxRuntimeExports.jsx(
+          FieldInput,
+          {
+            label: "Profile ID",
+            value: profile.identity.profile_id,
+            onChange: (v) => set(["identity", "profile_id"], v),
+            placeholder: "e.g. TAG-001",
+            help: "Human-readable profile code."
+          }
+        ),
+        /* @__PURE__ */ jsxRuntimeExports.jsx(
+          FieldInput,
+          {
+            label: "Name",
+            value: profile.identity.name,
+            onChange: (v) => set(["identity", "name"], v),
+            help: "Display name for this tag profile."
+          }
+        ),
+        /* @__PURE__ */ jsxRuntimeExports.jsx(
+          FieldInput,
+          {
+            label: "Description",
+            value: profile.identity.description,
+            onChange: (v) => set(["identity", "description"], v),
+            type: "textarea",
+            help: "Optional notes about the tag or wearer."
+          }
+        )
+      ] }),
+      /* @__PURE__ */ jsxRuntimeExports.jsxs(SectionCard, { title: "Calibration Equations", subtitle: "Distance correction per anchor", children: [
+        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "tp-cal-toggle-row", children: [
+          /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "tp-field-label", children: "Enable editing" }),
+          /* @__PURE__ */ jsxRuntimeExports.jsx(
+            "button",
+            {
+              className: `tp-toggle${profile.calibration.equations_enabled ? " tp-toggle--on" : ""}`,
+              onClick: () => {
+                const next = JSON.parse(JSON.stringify(profile));
+                next.calibration.equations_enabled = !next.calibration.equations_enabled;
+                onChange(next);
+              },
+              title: profile.calibration.equations_enabled ? "Disable equation editing" : "Enable equation editing",
+              children: /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "tp-toggle-knob" })
+            }
+          )
+        ] }),
+        ANCHOR_IDS$1.map((aid) => /* @__PURE__ */ jsxRuntimeExports.jsx(
+          FieldInput,
+          {
+            label: aid,
+            value: profile.calibration.equations[aid] ?? "",
+            onChange: (v) => {
+              const next = JSON.parse(JSON.stringify(profile));
+              next.calibration.equations[aid] = v;
+              onChange(next);
+            },
+            placeholder: profile.calibration.equations_enabled ? "e.g. (0.95*Raw)+0.5 or leave blank" : "—",
+            monospace: true,
+            readOnly: !profile.calibration.equations_enabled,
+            help: `Calibration correction equation for anchor ${aid}. Leave blank for raw distance.`
+          },
+          aid
+        )),
+        /* @__PURE__ */ jsxRuntimeExports.jsx(
+          FieldInput,
+          {
+            label: "Last Calibration Date",
+            value: profile.calibration.last_calibration_date,
+            onChange: (v) => set(["calibration", "last_calibration_date"], v),
+            placeholder: "ISO date e.g. 2026-04-13",
+            readOnly: true
+          }
+        )
+      ] })
+    ] }),
+    /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "tp-form-col", children: [
+      /* @__PURE__ */ jsxRuntimeExports.jsxs(SectionCard, { title: "Device", subtitle: "Physical device configuration", children: [
+        /* @__PURE__ */ jsxRuntimeExports.jsx(
+          FieldInput,
+          {
+            label: "MAC Address",
+            value: profile.device.mac_address,
+            onChange: (v) => set(["device", "mac_address"], v),
+            placeholder: "AA:BB:CC:DD:EE:FF",
+            help: "BLE MAC address of the physical device."
+          }
+        ),
+        /* @__PURE__ */ jsxRuntimeExports.jsx(
+          FieldInput,
+          {
+            label: "Device Type",
+            value: profile.device.device_type,
+            onChange: (v) => set(["device", "device_type"], v),
+            type: "select",
+            options: DEVICE_TYPES,
+            help: "Form factor of the wearable. Determines which height field is active."
+          }
+        ),
+        /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "tp-height-fields", children: ["wrist_to_floor_ft", "arm_to_floor_ft", "hip_to_floor_ft", "breast_to_floor_ft"].map((hf) => /* @__PURE__ */ jsxRuntimeExports.jsx(
+          FieldInput,
+          {
+            label: hf.replace(/_ft$/, " (ft)").replace(/_/g, " "),
+            value: profile.device[hf],
+            onChange: (v) => set(["device", hf], parseFloat(v) || 0),
+            type: "number",
+            className: hf !== activeHeightField ? "tp-field--inactive" : "",
+            help: `Distance in feet. Active for ${Object.entries(HEIGHT_FIELDS).find(([, f]) => f === hf)?.[0]}.`
+          },
+          hf
+        )) }),
+        /* @__PURE__ */ jsxRuntimeExports.jsx(
+          FieldInput,
+          {
+            label: "Device Description",
+            value: profile.device.description,
+            onChange: (v) => set(["device", "description"], v),
+            type: "textarea"
+          }
+        )
+      ] }),
+      /* @__PURE__ */ jsxRuntimeExports.jsx(SectionCard, { title: "Notes", subtitle: "Operational notes", children: /* @__PURE__ */ jsxRuntimeExports.jsx(
+        FieldInput,
+        {
+          label: "Notes",
+          value: profile.notes,
+          onChange: (v) => set(["notes"], v),
+          type: "textarea",
+          placeholder: "Deployment notes, observations, maintenance history...",
+          help: "Free-form operational notes."
+        }
+      ) })
+    ] })
+  ] });
+};
+const API$2 = "http://localhost:8765";
+const createEmptyProfile = () => ({
+  tag_id: "",
+  identity: { profile_id: "", name: "", description: "" },
+  device: {
+    mac_address: "",
+    device_type: "Wrist Band",
+    wrist_to_floor_ft: 0,
+    arm_to_floor_ft: 0,
+    hip_to_floor_ft: 0,
+    breast_to_floor_ft: 0,
+    description: ""
+  },
+  calibration: { equations: { A0: "", A1: "", A2: "", A3: "" }, last_calibration_date: "", equations_enabled: false },
+  notes: ""
+});
+const TagProfiler = ({ workspaceId: _workspaceId }) => {
+  const [profile, setProfile] = reactExports.useState(createEmptyProfile);
+  const [savedProfiles, setSavedProfiles] = reactExports.useState([]);
+  const [dirty, setDirty] = reactExports.useState(false);
+  const [status, setStatus] = reactExports.useState("");
+  const [statusKind, setStatusKind] = reactExports.useState("");
+  const fileInputRef = reactExports.useRef(null);
+  const showStatus = (msg, kind) => {
+    setStatus(msg);
+    setStatusKind(kind);
+    window.setTimeout(() => {
+      setStatus("");
+      setStatusKind("");
+    }, 4e3);
+  };
+  const loadProfileList = reactExports.useCallback(async () => {
+    try {
+      const res = await fetch(`${API$2}/api/profile/list`);
+      const data = await res.json();
+      if (data.success) setSavedProfiles(data.profiles);
+    } catch {
+    }
+  }, []);
+  reactExports.useEffect(() => {
+    loadProfileList();
+  }, [loadProfileList]);
+  const handleNew = reactExports.useCallback(async () => {
+    if (dirty && !window.confirm("Discard unsaved changes?")) return;
+    try {
+      const res = await fetch(`${API$2}/api/profile/new`, { method: "POST" });
+      const data = await res.json();
+      if (data.success) {
+        setProfile(data.profile);
+        setDirty(false);
+        return;
+      }
+    } catch {
+    }
+    setProfile(createEmptyProfile());
+    setDirty(false);
+  }, [dirty]);
+  const handleSave = reactExports.useCallback(async () => {
+    if (!profile.tag_id.trim()) {
+      showStatus("Tag ID is required before saving.", "error");
+      return;
+    }
+    try {
+      const res = await fetch(`${API$2}/api/profile/save`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ profile })
+      });
+      const data = await res.json();
+      if (data.success) {
+        showStatus(`Saved: ${data.tag_id}`, "ok");
+        setDirty(false);
+        loadProfileList();
+      } else {
+        showStatus(data.error, "error");
+      }
+    } catch {
+      showStatus("Could not reach backend.", "error");
+    }
+  }, [profile, loadProfileList]);
+  const handleLoadById = reactExports.useCallback(async (tagId) => {
+    if (dirty && !window.confirm("Discard unsaved changes?")) return;
+    try {
+      const res = await fetch(`${API$2}/api/profile/${encodeURIComponent(tagId)}`);
+      const data = await res.json();
+      if (data.success) {
+        setProfile(data.profile);
+        setDirty(false);
+      } else {
+        showStatus(data.error, "error");
+      }
+    } catch {
+      showStatus("Could not reach backend.", "error");
+    }
+  }, [dirty]);
+  const handleDelete = reactExports.useCallback(async (tagId) => {
+    if (!window.confirm(`Delete profile "${tagId}"?`)) return;
+    try {
+      const res = await fetch(`${API$2}/api/profile/${encodeURIComponent(tagId)}`, { method: "DELETE" });
+      const data = await res.json();
+      if (data.success) {
+        showStatus("Profile deleted.", "ok");
+        loadProfileList();
+        if (profile.tag_id === tagId) {
+          setProfile(createEmptyProfile());
+          setDirty(false);
+        }
+      } else {
+        showStatus(data.error, "error");
+      }
+    } catch {
+      showStatus("Could not reach backend.", "error");
+    }
+  }, [profile.tag_id, loadProfileList]);
+  const handleExport = reactExports.useCallback(() => {
+    const blob = new Blob([JSON.stringify(profile, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${profile.tag_id || "profile"}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }, [profile]);
+  const handleImportFile = reactExports.useCallback((e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      try {
+        const data = JSON.parse(ev.target?.result);
+        setProfile(data);
+        setDirty(true);
+        showStatus(`Loaded: ${data.tag_id || file.name}`, "ok");
+      } catch {
+        showStatus("Invalid profile JSON.", "error");
+      }
+    };
+    reader.readAsText(file);
+    e.target.value = "";
+  }, []);
+  const handleProfileChange = reactExports.useCallback((updated) => {
+    setProfile(updated);
+    setDirty(true);
+  }, []);
+  return /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "tp-root", children: [
+    /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "tp-header", children: [
+      /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "tp-header-left", children: [
+        /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "tp-header-title", children: "Tag Profiler" }),
+        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "tp-header-sub", children: [
+          profile.tag_id ? profile.tag_id : "No profile loaded",
+          dirty && /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "tp-dirty-badge", children: "*" })
+        ] })
+      ] }),
+      /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "tp-header-actions", children: [
+        /* @__PURE__ */ jsxRuntimeExports.jsx("button", { className: "tp-btn tp-btn--ghost", onClick: handleNew, children: "New" }),
+        /* @__PURE__ */ jsxRuntimeExports.jsx("button", { className: "tp-btn tp-btn--ghost", onClick: () => fileInputRef.current?.click(), children: "Open" }),
+        /* @__PURE__ */ jsxRuntimeExports.jsx("button", { className: "tp-btn tp-btn--secondary", onClick: handleSave, children: "Save" }),
+        /* @__PURE__ */ jsxRuntimeExports.jsx("button", { className: "tp-btn tp-btn--ghost", onClick: handleExport, children: "Export" }),
+        /* @__PURE__ */ jsxRuntimeExports.jsx("input", { ref: fileInputRef, type: "file", accept: ".json", style: { display: "none" }, onChange: handleImportFile })
+      ] })
+    ] }),
+    status && /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: `tp-status tp-status--${statusKind}`, children: status }),
+    /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "tp-workspace", children: [
+      /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "tp-profiles-sidebar", children: [
+        /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "tp-sidebar-title", children: "Saved Profiles" }),
+        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "tp-sidebar-count", children: [
+          savedProfiles.length,
+          " loaded"
+        ] }),
+        savedProfiles.length === 0 ? /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "tp-sidebar-empty", children: "No saved profiles" }) : savedProfiles.map((pid) => /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: `tp-profile-item${profile.tag_id === pid ? " active" : ""}`, children: [
+          /* @__PURE__ */ jsxRuntimeExports.jsx("button", { className: "tp-profile-name", onClick: () => handleLoadById(pid), children: pid }),
+          /* @__PURE__ */ jsxRuntimeExports.jsx("button", { className: "tp-profile-del", onClick: () => handleDelete(pid), title: "Delete", children: "x" })
+        ] }, pid))
+      ] }),
+      /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "tp-main", children: /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "tp-scroll", children: /* @__PURE__ */ jsxRuntimeExports.jsx(ProfileFormSection, { profile, onChange: handleProfileChange }) }) })
+    ] })
+  ] });
+};
+const pointsClose = (a, b, eps = 1e-4) => Math.abs(a[0] - b[0]) <= eps && Math.abs(a[1] - b[1]) <= eps;
+const getAnchorWorldPosition = (room, anchor) => [room.room_bounds_ft.min_x + anchor.x_ft, room.room_bounds_ft.min_y + anchor.y_ft];
+const pointToSegmentDistance = (px2, py, x1, y1, x2, y2) => {
+  const dx = x2 - x1;
+  const dy = y2 - y1;
+  const lenSq = dx * dx + dy * dy;
+  if (lenSq < 1e-12) return Math.hypot(px2 - x1, py - y1);
+  const t = Math.max(0, Math.min(1, ((px2 - x1) * dx + (py - y1) * dy) / lenSq));
+  return Math.hypot(px2 - (x1 + t * dx), py - (y1 + t * dy));
+};
+const projectPointOnSegment = (px2, py, segment) => {
+  const dx = segment.x2 - segment.x1;
+  const dy = segment.y2 - segment.y1;
+  const lenSq = dx * dx + dy * dy;
+  if (lenSq < 1e-12) return [segment.x1, segment.y1];
+  const t = Math.max(0, Math.min(1, ((px2 - segment.x1) * dx + (py - segment.y1) * dy) / lenSq));
+  return [segment.x1 + t * dx, segment.y1 + t * dy];
+};
+const chainSegmentsToPolygon = (segments) => {
+  if (segments.length === 0) return [];
+  const localSegments = segments.map((seg) => [[seg.x1, seg.y1], [seg.x2, seg.y2]]);
+  const unvisited = localSegments.slice(1);
+  const chain = [...localSegments[0]];
+  while (unvisited.length > 0) {
+    const lastPoint = chain[chain.length - 1];
+    const firstPoint = chain[0];
+    const matchIndex = unvisited.findIndex(([a2, b2]) => pointsClose(a2, lastPoint) || pointsClose(b2, lastPoint) || pointsClose(a2, firstPoint) || pointsClose(b2, firstPoint));
+    if (matchIndex === -1) {
+      const [a2, b2] = unvisited.shift();
+      chain.push(a2, b2);
+      continue;
+    }
+    const [a, b] = unvisited.splice(matchIndex, 1)[0];
+    if (pointsClose(a, lastPoint)) chain.push(b);
+    else if (pointsClose(b, lastPoint)) chain.push(a);
+    else if (pointsClose(a, firstPoint)) chain.unshift(b);
+    else chain.unshift(a);
+  }
+  return chain;
+};
+const pointInPolygon = (px2, py, polygon) => {
+  if (polygon.length < 3) return false;
+  let inside = false;
+  let j = polygon.length - 1;
+  for (let i = 0; i < polygon.length; i++) {
+    const [xi, yi] = polygon[i];
+    const [xj, yj] = polygon[j];
+    const crosses = yi > py !== yj > py && px2 < (xj - xi) * (py - yi) / (yj - yi || 1e-12) + xi;
+    if (crosses) inside = !inside;
+    j = i;
+  }
+  return inside;
+};
+const roomContainsWorldPoint = (room, wx, wy, tolerance = 0) => {
+  const polygon = chainSegmentsToPolygon(room.segments_ft);
+  if (pointInPolygon(wx, wy, polygon)) return true;
+  if (tolerance <= 0) return false;
+  return room.segments_ft.some((seg) => pointToSegmentDistance(wx, wy, seg.x1, seg.y1, seg.x2, seg.y2) <= tolerance);
+};
+const findSnapTarget = (x, y, segments, tolerance = 0.3) => {
+  let best = null;
+  const maybeSetBest = (candidate) => {
+    if (candidate.distance > tolerance) return;
+    if (!best || candidate.distance < best.distance) best = candidate;
+  };
+  for (const seg of segments) {
+    maybeSetBest({
+      x: seg.x1,
+      y: seg.y1,
+      distance: Math.hypot(x - seg.x1, y - seg.y1),
+      kind: "endpoint"
+    });
+    maybeSetBest({
+      x: seg.x2,
+      y: seg.y2,
+      distance: Math.hypot(x - seg.x2, y - seg.y2),
+      kind: "endpoint"
+    });
+    const [projX, projY] = projectPointOnSegment(x, y, seg);
+    maybeSetBest({
+      x: projX,
+      y: projY,
+      distance: Math.hypot(x - projX, y - projY),
+      kind: "segment"
+    });
+  }
+  return best;
+};
+const getRoomReferenceAnchor = (room) => room.anchors.find((anchor) => anchor.id === room.reference_anchor_id) ?? room.anchors[0] ?? null;
+const getAnchorRelativeBounds = (room) => {
+  const reference2 = getRoomReferenceAnchor(room);
+  if (!reference2) {
+    return {
+      width: 0,
+      height: 0,
+      anchors: []
+    };
+  }
+  const anchors = room.anchors.map((anchor) => ({
+    ...anchor,
+    relX: anchor.x_ft - reference2.x_ft,
+    relY: anchor.y_ft - reference2.y_ft
+  }));
+  const xs = anchors.map((anchor) => anchor.relX);
+  const ys = anchors.map((anchor) => anchor.relY);
+  const minX = Math.min(...xs, 0);
+  const maxX = Math.max(...xs, 0);
+  const minY = Math.min(...ys, 0);
+  const maxY = Math.max(...ys, 0);
+  return {
+    width: maxX - minX,
+    height: maxY - minY,
+    minX,
+    maxX,
+    minY,
+    maxY,
+    anchors
+  };
+};
+const AnchorEditPanel = ({
+  rooms,
+  selectedRoomName,
+  selectedAnchorId,
+  canUndo,
+  canRedo,
+  onRoomSelect,
+  onAnchorUpdate,
+  onAnchorDelete,
+  onAnchorSelect,
+  onReferenceAnchorChange,
+  onUndo,
+  onRedo,
+  onEscapeCanvas
+}) => {
+  const [editFields, setEditFields] = reactExports.useState({});
+  const selectedRoom = rooms.find((room) => room.room_name === selectedRoomName) ?? null;
+  const selectedAnchor = selectedRoom?.anchors.find((anchor) => anchor.id === selectedAnchorId) ?? null;
+  reactExports.useEffect(() => {
+    if (!selectedAnchor) {
+      setEditFields({});
+      return;
+    }
+    setEditFields({
+      hw_id: selectedAnchor.hw_id,
+      x_ft: selectedAnchor.x_ft,
+      y_ft: selectedAnchor.y_ft,
+      z_ft: selectedAnchor.z_ft
+    });
+  }, [selectedAnchor]);
+  const coordinatePreview = reactExports.useMemo(() => {
+    if (!selectedRoom || selectedRoom.anchors.length === 0) return null;
+    const relative = getAnchorRelativeBounds(selectedRoom);
+    const extentX = Math.max(relative.width, 1);
+    const extentY = Math.max(relative.height, 1);
+    return {
+      ...relative,
+      anchors: relative.anchors.map((anchor) => ({
+        ...anchor,
+        previewLeft: (anchor.relX - relative.minX) / extentX * 100,
+        previewTop: 100 - (anchor.relY - relative.minY) / extentY * 100
+      }))
+    };
+  }, [selectedRoom]);
+  const handleApply = () => {
+    if (!selectedRoom || !selectedAnchor) return;
+    onAnchorUpdate(selectedRoom.room_name, selectedAnchor.id, editFields);
+  };
+  return /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "am-floating-panel", children: [
+    /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "am-floating-header", children: [
+      /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { children: [
+        /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "am-floating-title", children: "Anchor Workspace" }),
+        /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "am-floating-subtitle", children: "Rooms, anchors, reference frame" })
+      ] }),
+      /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "am-floating-actions", children: [
+        /* @__PURE__ */ jsxRuntimeExports.jsx("button", { className: "am-mini-btn", onClick: onEscapeCanvas, children: "Esc" }),
+        /* @__PURE__ */ jsxRuntimeExports.jsx("button", { className: "am-mini-btn", onClick: onUndo, disabled: !canUndo, children: "Undo" }),
+        /* @__PURE__ */ jsxRuntimeExports.jsx("button", { className: "am-mini-btn", onClick: onRedo, disabled: !canRedo, children: "Redo" })
+      ] })
+    ] }),
+    /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "am-panel-section", children: [
+      /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "am-section-label", children: "Rooms" }),
+      /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "am-room-chip-list", children: [
+        rooms.length === 0 && /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "am-panel-empty", children: "Load an SVG and create a room to begin." }),
+        rooms.map((room) => /* @__PURE__ */ jsxRuntimeExports.jsxs(
+          "button",
+          {
+            className: `am-room-chip${room.room_name === selectedRoomName ? " active" : ""}`,
+            onClick: () => {
+              onRoomSelect(room.room_name === selectedRoomName ? null : room.room_name);
+              onAnchorSelect(null);
+            },
+            children: [
+              /* @__PURE__ */ jsxRuntimeExports.jsx("span", { children: room.room_name }),
+              /* @__PURE__ */ jsxRuntimeExports.jsx("span", { children: room.anchors.length })
+            ]
+          },
+          room.room_name
+        ))
+      ] })
+    ] }),
+    !selectedRoom && /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "am-panel-section", children: /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "am-panel-empty", children: "Select a room to edit anchors, reference coordinates, and history." }) }),
+    selectedRoom && /* @__PURE__ */ jsxRuntimeExports.jsxs(jsxRuntimeExports.Fragment, { children: [
+      /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "am-panel-section", children: [
+        /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "am-panel-title", children: selectedRoom.room_name }),
+        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "am-panel-meta", children: [
+          selectedRoom.room_bounds_ft.width.toFixed(1),
+          " x ",
+          selectedRoom.room_bounds_ft.height.toFixed(1),
+          " ft"
+        ] }),
+        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "am-panel-meta", children: [
+          "Segments: ",
+          selectedRoom.segments_ft.length
+        ] }),
+        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "am-panel-meta", children: [
+          "Anchors: ",
+          selectedRoom.anchors.length
+        ] })
+      ] }),
+      /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "am-panel-section", children: [
+        /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "am-section-label", children: "Reference Anchor" }),
+        /* @__PURE__ */ jsxRuntimeExports.jsxs(
+          "select",
+          {
+            className: "am-input",
+            value: selectedRoom.reference_anchor_id ?? "",
+            onChange: (event) => onReferenceAnchorChange(selectedRoom.room_name, event.target.value || null),
+            children: [
+              selectedRoom.anchors.length === 0 && /* @__PURE__ */ jsxRuntimeExports.jsx("option", { value: "", children: "No anchors yet" }),
+              selectedRoom.anchors.map((anchor) => /* @__PURE__ */ jsxRuntimeExports.jsx("option", { value: anchor.id, children: anchor.hw_id || anchor.id }, anchor.id))
+            ]
+          }
+        )
+      ] }),
+      /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "am-panel-section am-anchor-list-section", children: [
+        /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "am-section-label", children: "Anchors" }),
+        selectedRoom.anchors.length === 0 ? /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "am-panel-empty", children: "Ctrl+Click inside the room to place anchors." }) : /* @__PURE__ */ jsxRuntimeExports.jsxs("table", { className: "am-anchor-table", children: [
+          /* @__PURE__ */ jsxRuntimeExports.jsx("thead", { children: /* @__PURE__ */ jsxRuntimeExports.jsxs("tr", { children: [
+            /* @__PURE__ */ jsxRuntimeExports.jsx("th", { children: "ID" }),
+            /* @__PURE__ */ jsxRuntimeExports.jsx("th", { children: "HW" }),
+            /* @__PURE__ */ jsxRuntimeExports.jsx("th", { children: "X" }),
+            /* @__PURE__ */ jsxRuntimeExports.jsx("th", { children: "Y" }),
+            /* @__PURE__ */ jsxRuntimeExports.jsx("th", { children: "Z" }),
+            /* @__PURE__ */ jsxRuntimeExports.jsx("th", {})
+          ] }) }),
+          /* @__PURE__ */ jsxRuntimeExports.jsx("tbody", { children: selectedRoom.anchors.map((anchor) => /* @__PURE__ */ jsxRuntimeExports.jsxs(
+            "tr",
+            {
+              className: anchor.id === selectedAnchorId ? "am-anchor-row active" : "am-anchor-row",
+              onClick: () => onAnchorSelect(anchor.id === selectedAnchorId ? null : anchor.id),
+              children: [
+                /* @__PURE__ */ jsxRuntimeExports.jsx("td", { className: "am-mono", children: anchor.id }),
+                /* @__PURE__ */ jsxRuntimeExports.jsx("td", { className: "am-mono", children: anchor.hw_id || "-" }),
+                /* @__PURE__ */ jsxRuntimeExports.jsx("td", { children: anchor.x_ft.toFixed(2) }),
+                /* @__PURE__ */ jsxRuntimeExports.jsx("td", { children: anchor.y_ft.toFixed(2) }),
+                /* @__PURE__ */ jsxRuntimeExports.jsx("td", { children: anchor.z_ft.toFixed(2) }),
+                /* @__PURE__ */ jsxRuntimeExports.jsx("td", { children: /* @__PURE__ */ jsxRuntimeExports.jsx(
+                  "button",
+                  {
+                    className: "am-del-btn",
+                    onClick: (event) => {
+                      event.stopPropagation();
+                      onAnchorDelete(selectedRoom.room_name, anchor.id);
+                    },
+                    title: "Delete anchor",
+                    children: "x"
+                  }
+                ) })
+              ]
+            },
+            anchor.id
+          )) })
+        ] })
+      ] }),
+      coordinatePreview && /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "am-panel-section", children: [
+        /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "am-section-label", children: "Anchor Coordinates" }),
+        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "am-coord-meta", children: [
+          coordinatePreview.width.toFixed(2),
+          " x ",
+          coordinatePreview.height.toFixed(2),
+          " ft relative span"
+        ] }),
+        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "am-coord-preview", children: [
+          /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "am-coord-highlight" }),
+          coordinatePreview.anchors.map((anchor) => /* @__PURE__ */ jsxRuntimeExports.jsx(
+            "div",
+            {
+              className: `am-coord-point${anchor.id === selectedAnchorId ? " active" : ""}`,
+              style: { left: `${anchor.previewLeft}%`, top: `${anchor.previewTop}%` },
+              children: /* @__PURE__ */ jsxRuntimeExports.jsx("span", { children: anchor.hw_id || anchor.id })
+            },
+            anchor.id
+          ))
+        ] })
+      ] }),
+      selectedAnchor && /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "am-panel-section", children: [
+        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "am-section-label", children: [
+          "Edit ",
+          selectedAnchor.hw_id || selectedAnchor.id
+        ] }),
+        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "am-edit-field", children: [
+          /* @__PURE__ */ jsxRuntimeExports.jsx("label", { children: "HW ID" }),
+          /* @__PURE__ */ jsxRuntimeExports.jsx(
+            "input",
+            {
+              className: "am-input am-mono",
+              value: editFields.hw_id ?? "",
+              onChange: (event) => setEditFields((prev) => ({ ...prev, hw_id: event.target.value })),
+              placeholder: "A0, A1, ..."
+            }
+          )
+        ] }),
+        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "am-edit-grid", children: [
+          /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "am-edit-field", children: [
+            /* @__PURE__ */ jsxRuntimeExports.jsx("label", { children: "Local X (ft)" }),
+            /* @__PURE__ */ jsxRuntimeExports.jsx(
+              "input",
+              {
+                className: "am-input",
+                type: "number",
+                step: "0.01",
+                value: editFields.x_ft ?? 0,
+                onChange: (event) => setEditFields((prev) => ({ ...prev, x_ft: parseFloat(event.target.value) || 0 }))
+              }
+            )
+          ] }),
+          /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "am-edit-field", children: [
+            /* @__PURE__ */ jsxRuntimeExports.jsx("label", { children: "Local Y (ft)" }),
+            /* @__PURE__ */ jsxRuntimeExports.jsx(
+              "input",
+              {
+                className: "am-input",
+                type: "number",
+                step: "0.01",
+                value: editFields.y_ft ?? 0,
+                onChange: (event) => setEditFields((prev) => ({ ...prev, y_ft: parseFloat(event.target.value) || 0 }))
+              }
+            )
+          ] })
+        ] }),
+        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "am-edit-field", children: [
+          /* @__PURE__ */ jsxRuntimeExports.jsx("label", { children: "Height Z (ft)" }),
+          /* @__PURE__ */ jsxRuntimeExports.jsx(
+            "input",
+            {
+              className: "am-input",
+              type: "number",
+              step: "0.01",
+              min: "0",
+              value: editFields.z_ft ?? 0,
+              onChange: (event) => setEditFields((prev) => ({ ...prev, z_ft: parseFloat(event.target.value) || 0 }))
+            }
+          )
+        ] }),
+        /* @__PURE__ */ jsxRuntimeExports.jsx("button", { className: "am-apply-btn", onClick: handleApply, children: "Apply Changes" })
+      ] })
+    ] })
+  ] });
+};
+const COLORS = {
+  bg: "#0b0e14",
+  segment: "#314052",
+  segmentHover: "#5a90c8",
+  segmentSelected: "#4a9eff",
+  roomBoundary: "#2060b0",
+  roomBoundaryActive: "#4a9eff",
+  roomFill: "rgba(74, 158, 255, 0.035)",
+  roomFillActive: "rgba(74, 158, 255, 0.08)",
+  anchorPin: "#ff8c00",
+  anchorPinActive: "#ffd700",
+  anchorLabel: "#ffffff",
+  previewFill: "rgba(110, 195, 255, 0.22)",
+  previewStroke: "rgba(110, 195, 255, 0.55)",
+  snap: "#7dd3fc"
+};
+const worldToScreen$1 = (viewport2, wx, wy) => [wx * viewport2.scale + viewport2.offsetX, wy * viewport2.scale + viewport2.offsetY];
+const screenToWorld$1 = (viewport2, sx, sy) => [(sx - viewport2.offsetX) / viewport2.scale, (sy - viewport2.offsetY) / viewport2.scale];
+const distPointToSegScreen = (px2, py, x1, y1, x2, y2) => {
+  const dx = x2 - x1;
+  const dy = y2 - y1;
+  const lenSq = dx * dx + dy * dy;
+  if (lenSq < 1e-8) return Math.hypot(px2 - x1, py - y1);
+  const t = Math.max(0, Math.min(1, ((px2 - x1) * dx + (py - y1) * dy) / lenSq));
+  return Math.hypot(px2 - (x1 + t * dx), py - (y1 + t * dy));
+};
+const AnchorManagerCanvas = reactExports.forwardRef(({
+  allSegments,
+  rooms,
+  selectedRoomName,
+  selectedAnchorId,
+  selectedSegments,
+  viewport: viewport2,
+  onViewportChange,
+  onSegmentClick,
+  onCanvasCtrlClick,
+  onAnchorClick,
+  onAnchorMoveStart,
+  onAnchorMove,
+  onAnchorMoveEnd,
+  onNudgeAnchor
+}, ref) => {
+  const canvasRef = reactExports.useRef(null);
+  const [hoverSeg, setHoverSeg] = reactExports.useState(null);
+  const [hoverWorld, setHoverWorld] = reactExports.useState(null);
+  const [hoverSnap, setHoverSnap] = reactExports.useState(null);
+  const panRef = reactExports.useRef({
+    active: false,
+    lastX: 0,
+    lastY: 0
+  });
+  const dragRef = reactExports.useRef(null);
+  const spacePressedRef = reactExports.useRef(false);
+  const cancelInteraction = reactExports.useCallback(() => {
+    panRef.current.active = false;
+    if (dragRef.current?.active) {
+      dragRef.current = null;
+      onAnchorMoveEnd();
+    }
+    spacePressedRef.current = false;
+    setHoverSnap(null);
+  }, [onAnchorMoveEnd]);
+  const fitView = reactExports.useCallback(() => {
+    const canvas = canvasRef.current;
+    if (!canvas || allSegments.length === 0) return;
+    let minX = Infinity;
+    let minY = Infinity;
+    let maxX = -Infinity;
+    let maxY = -Infinity;
+    for (const seg of allSegments) {
+      minX = Math.min(minX, seg.x1, seg.x2);
+      minY = Math.min(minY, seg.y1, seg.y2);
+      maxX = Math.max(maxX, seg.x1, seg.x2);
+      maxY = Math.max(maxY, seg.y1, seg.y2);
+    }
+    const gw = Math.max(maxX - minX, 1);
+    const gh = Math.max(maxY - minY, 1);
+    const scale2 = Math.min(canvas.width / gw, canvas.height / gh) * 0.95;
+    onViewportChange({
+      scale: scale2,
+      offsetX: (canvas.width - gw * scale2) / 2 - minX * scale2,
+      offsetY: (canvas.height - gh * scale2) / 2 - minY * scale2
+    });
+  }, [allSegments, onViewportChange]);
+  const zoomAroundPoint = reactExports.useCallback((factor, sx, sy) => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const pivotX = sx ?? canvas.width / 2;
+    const pivotY = sy ?? canvas.height / 2;
+    const nextScale = Math.max(2, Math.min(240, viewport2.scale * factor));
+    onViewportChange({
+      scale: nextScale,
+      offsetX: pivotX - (pivotX - viewport2.offsetX) * (nextScale / viewport2.scale),
+      offsetY: pivotY - (pivotY - viewport2.offsetY) * (nextScale / viewport2.scale)
+    });
+  }, [viewport2, onViewportChange]);
+  reactExports.useImperativeHandle(ref, () => ({
+    fitView,
+    zoomIn: () => zoomAroundPoint(1.15),
+    zoomOut: () => zoomAroundPoint(1 / 1.15),
+    focusCanvas: () => canvasRef.current?.focus(),
+    cancelInteraction
+  }), [cancelInteraction, fitView, zoomAroundPoint]);
+  reactExports.useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const resize2 = () => {
+      const width = canvas.offsetWidth;
+      const height = canvas.offsetHeight;
+      if (width > 0 && height > 0) {
+        canvas.width = width;
+        canvas.height = height;
+      }
+    };
+    const observer2 = new ResizeObserver(resize2);
+    observer2.observe(canvas);
+    requestAnimationFrame(resize2);
+    return () => observer2.disconnect();
+  }, []);
+  reactExports.useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.fillStyle = COLORS.bg;
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    const selectedSet = new Set(selectedSegments.map((seg) => `${seg.x1},${seg.y1},${seg.x2},${seg.y2}`));
+    for (const room of rooms) {
+      if (room.segments_ft.length === 0) continue;
+      const isActive = room.room_name === selectedRoomName;
+      const points = room.segments_ft.map((seg) => worldToScreen$1(viewport2, seg.x1, seg.y1));
+      if (points.length > 2) {
+        ctx.fillStyle = isActive ? COLORS.roomFillActive : COLORS.roomFill;
+        ctx.beginPath();
+        ctx.moveTo(points[0][0], points[0][1]);
+        for (let i = 1; i < points.length; i++) ctx.lineTo(points[i][0], points[i][1]);
+        ctx.closePath();
+        ctx.fill();
+      }
+    }
+    for (const seg of allSegments) {
+      const key = `${seg.x1},${seg.y1},${seg.x2},${seg.y2}`;
+      const isSelected = selectedSet.has(key);
+      const isHover = hoverSeg === seg;
+      const [x1, y1] = worldToScreen$1(viewport2, seg.x1, seg.y1);
+      const [x2, y2] = worldToScreen$1(viewport2, seg.x2, seg.y2);
+      ctx.strokeStyle = isSelected ? COLORS.segmentSelected : isHover ? COLORS.segmentHover : COLORS.segment;
+      ctx.lineWidth = isSelected ? 2.2 : isHover ? 1.6 : 1;
+      ctx.beginPath();
+      ctx.moveTo(x1, y1);
+      ctx.lineTo(x2, y2);
+      ctx.stroke();
+    }
+    for (const room of rooms) {
+      const isActive = room.room_name === selectedRoomName;
+      ctx.strokeStyle = isActive ? COLORS.roomBoundaryActive : COLORS.roomBoundary;
+      ctx.lineWidth = isActive ? 2.4 : 1.4;
+      for (const seg of room.segments_ft) {
+        const [x1, y1] = worldToScreen$1(viewport2, seg.x1, seg.y1);
+        const [x2, y2] = worldToScreen$1(viewport2, seg.x2, seg.y2);
+        ctx.beginPath();
+        ctx.moveTo(x1, y1);
+        ctx.lineTo(x2, y2);
+        ctx.stroke();
+      }
+      for (const anchor of room.anchors) {
+        const [wx, wy] = getAnchorWorldPosition(room, anchor);
+        const [sx, sy] = worldToScreen$1(viewport2, wx, wy);
+        const isSelected = anchor.id === selectedAnchorId;
+        const radius = isSelected ? 8 : 6;
+        ctx.fillStyle = isSelected ? COLORS.anchorPinActive : COLORS.anchorPin;
+        ctx.beginPath();
+        ctx.arc(sx, sy, radius, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = "#ffffff";
+        ctx.lineWidth = 1.4;
+        ctx.stroke();
+        ctx.fillStyle = COLORS.anchorLabel;
+        ctx.font = `bold ${Math.max(9, Math.min(11, viewport2.scale * 0.45))}px var(--font-mono, monospace)`;
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillText(anchor.hw_id || anchor.id, sx, sy);
+      }
+    }
+    if (selectedRoomName && hoverWorld) {
+      const previewPoint = hoverSnap ?? { x: hoverWorld[0], y: hoverWorld[1] };
+      const [sx, sy] = worldToScreen$1(viewport2, previewPoint.x, previewPoint.y);
+      const previewRadius = Math.max(5, Math.min(14, viewport2.scale * 0.5));
+      ctx.fillStyle = COLORS.previewFill;
+      ctx.strokeStyle = COLORS.previewStroke;
+      ctx.lineWidth = 1.4;
+      ctx.beginPath();
+      ctx.arc(sx, sy, previewRadius, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+    }
+    if (hoverSnap) {
+      const [sx, sy] = worldToScreen$1(viewport2, hoverSnap.x, hoverSnap.y);
+      ctx.strokeStyle = COLORS.snap;
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.arc(sx, sy, 8, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+  }, [
+    allSegments,
+    hoverSeg,
+    hoverSnap,
+    hoverWorld,
+    rooms,
+    selectedAnchorId,
+    selectedRoomName,
+    selectedSegments,
+    viewport2
+  ]);
+  const getSegmentAt = reactExports.useCallback((mx, my) => {
+    let best = null;
+    let bestDistance = 6;
+    for (const seg of allSegments) {
+      const [x1, y1] = worldToScreen$1(viewport2, seg.x1, seg.y1);
+      const [x2, y2] = worldToScreen$1(viewport2, seg.x2, seg.y2);
+      const distance2 = distPointToSegScreen(mx, my, x1, y1, x2, y2);
+      if (distance2 < bestDistance) {
+        best = seg;
+        bestDistance = distance2;
+      }
+    }
+    return best;
+  }, [allSegments, viewport2]);
+  const getAnchorAt = reactExports.useCallback((mx, my) => {
+    for (const room of rooms) {
+      for (const anchor of room.anchors) {
+        const [wx, wy] = getAnchorWorldPosition(room, anchor);
+        const [sx, sy] = worldToScreen$1(viewport2, wx, wy);
+        if (Math.hypot(mx - sx, my - sy) <= 10) {
+          return { anchorId: anchor.id, roomName: room.room_name };
+        }
+      }
+    }
+    return null;
+  }, [rooms, viewport2]);
+  const updateHoverState = reactExports.useCallback((clientX, clientY) => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const rect = canvas.getBoundingClientRect();
+    const mx = clientX - rect.left;
+    const my = clientY - rect.top;
+    const [worldX, worldY] = screenToWorld$1(viewport2, mx, my);
+    setHoverSeg(getSegmentAt(mx, my));
+    setHoverWorld([worldX, worldY]);
+    setHoverSnap(selectedRoomName ? findSnapTarget(worldX, worldY, allSegments) : null);
+  }, [allSegments, getSegmentAt, selectedRoomName, viewport2]);
+  const handleMouseDown = reactExports.useCallback((e) => {
+    e.currentTarget.focus();
+    if (e.button === 1 || e.button === 0 && spacePressedRef.current) {
+      panRef.current = { active: true, lastX: e.clientX, lastY: e.clientY };
+      e.preventDefault();
+      return;
+    }
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const rect = canvas.getBoundingClientRect();
+    const mx = e.clientX - rect.left;
+    const my = e.clientY - rect.top;
+    if (e.button !== 0) return;
+    const anchorHit = getAnchorAt(mx, my);
+    if (anchorHit) {
+      const room = rooms.find((item) => item.room_name === anchorHit.roomName);
+      const anchor = room?.anchors.find((item) => item.id === anchorHit.anchorId);
+      if (!room || !anchor) return;
+      const [wx, wy] = getAnchorWorldPosition(room, anchor);
+      dragRef.current = {
+        active: true,
+        roomName: anchorHit.roomName,
+        anchorId: anchorHit.anchorId,
+        originalX: wx,
+        originalY: wy
+      };
+      onAnchorClick(anchorHit.anchorId, anchorHit.roomName);
+      onAnchorMoveStart(anchorHit.roomName, anchorHit.anchorId);
+      return;
+    }
+    if (e.ctrlKey && selectedRoomName) {
+      const [worldX, worldY] = screenToWorld$1(viewport2, mx, my);
+      const snap = findSnapTarget(worldX, worldY, allSegments);
+      const nextPoint = snap ? [snap.x, snap.y] : [worldX, worldY];
+      onCanvasCtrlClick(nextPoint[0], nextPoint[1]);
+      return;
+    }
+    const segment = getSegmentAt(mx, my);
+    if (segment) {
+      onSegmentClick(segment, e.shiftKey);
+      return;
+    }
+    panRef.current = { active: true, lastX: e.clientX, lastY: e.clientY };
+  }, [
+    allSegments,
+    getAnchorAt,
+    getSegmentAt,
+    onAnchorClick,
+    onAnchorMoveStart,
+    onCanvasCtrlClick,
+    onSegmentClick,
+    rooms,
+    selectedRoomName,
+    viewport2
+  ]);
+  const handleMouseMove = reactExports.useCallback((e) => {
+    if (panRef.current.active) {
+      const dx = e.clientX - panRef.current.lastX;
+      const dy = e.clientY - panRef.current.lastY;
+      panRef.current.lastX = e.clientX;
+      panRef.current.lastY = e.clientY;
+      onViewportChange({
+        ...viewport2,
+        offsetX: viewport2.offsetX + dx,
+        offsetY: viewport2.offsetY + dy
+      });
+      return;
+    }
+    if (dragRef.current?.active) {
+      const canvas = canvasRef.current;
+      if (!canvas) return;
+      const rect = canvas.getBoundingClientRect();
+      const [pointerWorldX, pointerWorldY] = screenToWorld$1(viewport2, e.clientX - rect.left, e.clientY - rect.top);
+      let nextX = pointerWorldX;
+      let nextY = pointerWorldY;
+      if (e.ctrlKey) {
+        const dx = pointerWorldX - dragRef.current.originalX;
+        const dy = pointerWorldY - dragRef.current.originalY;
+        nextX = dragRef.current.originalX + dx * 0.2;
+        nextY = dragRef.current.originalY + dy * 0.2;
+      }
+      if (!e.shiftKey) {
+        const snap = findSnapTarget(nextX, nextY, allSegments);
+        if (snap) {
+          nextX = snap.x;
+          nextY = snap.y;
+        }
+      }
+      const room = rooms.find((item) => item.room_name === dragRef.current?.roomName);
+      if (room && roomContainsWorldPoint(room, nextX, nextY, 0.05)) {
+        onAnchorMove(room.room_name, dragRef.current.anchorId, nextX, nextY);
+        setHoverSnap(findSnapTarget(nextX, nextY, allSegments));
+      }
+      return;
+    }
+    updateHoverState(e.clientX, e.clientY);
+  }, [allSegments, onAnchorMove, onViewportChange, rooms, updateHoverState, viewport2]);
+  const handleMouseUp = reactExports.useCallback(() => {
+    panRef.current.active = false;
+    if (dragRef.current?.active) {
+      dragRef.current = null;
+      onAnchorMoveEnd();
+    }
+  }, [onAnchorMoveEnd]);
+  const handleWheel = reactExports.useCallback((e) => {
+    e.preventDefault();
+    const rect = e.currentTarget.getBoundingClientRect();
+    zoomAroundPoint(e.deltaY < 0 ? 1.12 : 1 / 1.12, e.clientX - rect.left, e.clientY - rect.top);
+  }, [zoomAroundPoint]);
+  const handleKeyDown = reactExports.useCallback((e) => {
+    if (e.key === " ") {
+      spacePressedRef.current = true;
+      e.preventDefault();
+      return;
+    }
+    if (e.key === "Escape") {
+      cancelInteraction();
+      e.preventDefault();
+      return;
+    }
+    if (e.key === "f" || e.key === "F") {
+      fitView();
+      e.preventDefault();
+      return;
+    }
+    if (selectedAnchorId) {
+      const step = 0.1;
+      if (e.key === "ArrowLeft") {
+        onNudgeAnchor(-step, 0);
+        e.preventDefault();
+      }
+      if (e.key === "ArrowRight") {
+        onNudgeAnchor(step, 0);
+        e.preventDefault();
+      }
+      if (e.key === "ArrowUp") {
+        onNudgeAnchor(0, -step);
+        e.preventDefault();
+      }
+      if (e.key === "ArrowDown") {
+        onNudgeAnchor(0, step);
+        e.preventDefault();
+      }
+    }
+  }, [cancelInteraction, fitView, onNudgeAnchor, selectedAnchorId]);
+  const handleKeyUp = reactExports.useCallback((e) => {
+    if (e.key === " ") spacePressedRef.current = false;
+  }, []);
+  return /* @__PURE__ */ jsxRuntimeExports.jsx(
+    "canvas",
+    {
+      ref: canvasRef,
+      className: "am-canvas",
+      tabIndex: 0,
+      onMouseDown: handleMouseDown,
+      onMouseMove: handleMouseMove,
+      onMouseUp: handleMouseUp,
+      onMouseLeave: handleMouseUp,
+      onWheel: handleWheel,
+      onKeyDown: handleKeyDown,
+      onKeyUp: handleKeyUp,
+      style: {
+        cursor: dragRef.current?.active ? "grabbing" : panRef.current.active ? "grabbing" : hoverSeg ? "pointer" : "grab"
+      }
+    }
+  );
+});
+AnchorManagerCanvas.displayName = "AnchorManagerCanvas";
+const API$1 = "http://localhost:8765";
+const DEFAULT_VIEWPORT = { offsetX: 0, offsetY: 0, scale: 20 };
+const createDefaultState = () => ({
+  allSegments: [],
+  rooms: [],
+  selectedRoomName: null,
+  selectedAnchorId: null,
+  selectedSegments: [],
+  svgPath: "",
+  projectName: "Untitled",
+  viewport: DEFAULT_VIEWPORT
+});
+const cloneState = (state) => JSON.parse(JSON.stringify(state));
+const normalizeRoom = (room) => ({
+  ...room,
+  reference_anchor_id: room.reference_anchor_id ?? room.anchors[0]?.id ?? null
+});
+const normalizeState = (state) => {
+  const fallback = createDefaultState();
+  if (!state) return fallback;
+  return {
+    ...fallback,
+    ...state,
+    rooms: Array.isArray(state.rooms) ? state.rooms.map(normalizeRoom) : fallback.rooms,
+    allSegments: Array.isArray(state.allSegments) ? state.allSegments : fallback.allSegments,
+    selectedSegments: Array.isArray(state.selectedSegments) ? state.selectedSegments : fallback.selectedSegments,
+    viewport: state.viewport ?? fallback.viewport
+  };
+};
+const roomStateSignature = (state) => JSON.stringify({
+  rooms: state.rooms,
+  selectedRoomName: state.selectedRoomName,
+  selectedAnchorId: state.selectedAnchorId,
+  selectedSegments: state.selectedSegments
+});
+const buildAnchorCounters = (rooms) => {
+  const counters = {};
+  for (const room of rooms) {
+    let nextIndex = room.anchors.length;
+    for (const anchor of room.anchors) {
+      const match = anchor.id.match(/A(\d+)$/);
+      if (match) nextIndex = Math.max(nextIndex, parseInt(match[1], 10) + 1);
+    }
+    counters[room.room_name] = nextIndex;
+  }
+  return counters;
+};
+const deriveSegmentsFromRooms = (rooms) => {
+  const seen2 = /* @__PURE__ */ new Set();
+  const segments = [];
+  for (const room of rooms) {
+    for (const seg of [...room.segments_ft, ...room.interior_segments_ft]) {
+      const key = `${Math.min(seg.x1, seg.x2)},${Math.min(seg.y1, seg.y2)},${Math.max(seg.x1, seg.x2)},${Math.max(seg.y1, seg.y2)}`;
+      if (seen2.has(key)) continue;
+      seen2.add(key);
+      segments.push(seg);
+    }
+  }
+  return segments;
+};
+const AnchorManager = ({ workspaceId }) => {
+  const canvasRef = reactExports.useRef(null);
+  const fileInputRef = reactExports.useRef(null);
+  const manifestInputRef = reactExports.useRef(null);
+  const roomCounter = reactExports.useRef(1);
+  const anchorCounter = reactExports.useRef({});
+  const fitAfterLoadRef = reactExports.useRef(false);
+  const dragSnapshotRef = reactExports.useRef(null);
+  const workspaceStateRef = reactExports.useRef(createDefaultState());
+  const [workspaceState, setWorkspaceState] = reactExports.useState(createDefaultState);
+  const [undoStack, setUndoStack] = reactExports.useState([]);
+  const [redoStack, setRedoStack] = reactExports.useState([]);
+  const [status, setStatus] = reactExports.useState("");
+  const [statusKind, setStatusKind] = reactExports.useState("");
+  const [createDialog, setCreateDialog] = reactExports.useState({ open: false, name: "", segments: [] });
+  reactExports.useEffect(() => {
+    workspaceStateRef.current = workspaceState;
+    roomCounter.current = workspaceState.rooms.length + 1;
+    anchorCounter.current = buildAnchorCounters(workspaceState.rooms);
+  }, [workspaceState]);
+  reactExports.useEffect(() => {
+    if (!fitAfterLoadRef.current || workspaceState.allSegments.length === 0) return;
+    fitAfterLoadRef.current = false;
+    requestAnimationFrame(() => canvasRef.current?.fitView());
+  }, [workspaceState.allSegments.length]);
+  const showStatus = (message, kind) => {
+    setStatus(message);
+    setStatusKind(kind);
+    window.setTimeout(() => {
+      setStatus("");
+      setStatusKind("");
+    }, 4e3);
+  };
+  const replaceWorkspaceState = reactExports.useCallback((next) => {
+    setWorkspaceState(normalizeState(next));
+    setUndoStack([]);
+    setRedoStack([]);
+  }, []);
+  const commitWorkspaceState = reactExports.useCallback((updater) => {
+    setWorkspaceState((current) => {
+      const next = normalizeState(updater(current));
+      if (roomStateSignature(current) === roomStateSignature(next)) return current;
+      setUndoStack((stack) => [...stack.slice(-49), cloneState(current)]);
+      setRedoStack([]);
+      return next;
+    });
+  }, []);
+  const updateWorkspaceState = reactExports.useCallback((updater) => {
+    setWorkspaceState((current) => normalizeState(updater(current)));
+  }, []);
+  const handleUndo = reactExports.useCallback(() => {
+    setUndoStack((stack) => {
+      const snapshot = stack[stack.length - 1];
+      if (!snapshot) return stack;
+      setWorkspaceState((current) => {
+        setRedoStack((redo) => [...redo.slice(-49), cloneState(current)]);
+        return snapshot;
+      });
+      return stack.slice(0, -1);
+    });
+  }, []);
+  const handleRedo = reactExports.useCallback(() => {
+    setRedoStack((stack) => {
+      const snapshot = stack[stack.length - 1];
+      if (!snapshot) return stack;
+      setWorkspaceState((current) => {
+        setUndoStack((undo) => [...undo.slice(-49), cloneState(current)]);
+        return snapshot;
+      });
+      return stack.slice(0, -1);
+    });
+  }, []);
+  const handleLoadSVGFile = reactExports.useCallback((event) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    showStatus("Loading SVG...", "ok");
+    const reader = new FileReader();
+    reader.onload = (loadEvent) => {
+      try {
+        const text = loadEvent.target?.result;
+        const parser = new DOMParser();
+        const doc = parser.parseFromString(text, "image/svg+xml");
+        const root = doc.documentElement;
+        const cadMinX = parseFloat(root.getAttribute("data-cad-min-x") ?? "NaN");
+        const cadMinY = parseFloat(root.getAttribute("data-cad-min-y") ?? "NaN");
+        const cadScale = parseFloat(root.getAttribute("data-cad-scale") ?? "NaN");
+        const cadOffX = parseFloat(root.getAttribute("data-cad-offset-x") ?? "NaN");
+        const cadOffY = parseFloat(root.getAttribute("data-cad-offset-y") ?? "NaN");
+        const docSize = 1e3;
+        const hasCadMetadata = !Number.isNaN(cadMinX) && !Number.isNaN(cadMinY) && !Number.isNaN(cadScale) && cadScale > 0;
+        const toWorldX = hasCadMetadata ? (screenX) => (screenX - cadOffX) / cadScale + cadMinX : (screenX) => screenX;
+        const toWorldY = hasCadMetadata ? (screenY) => (docSize - screenY - cadOffY) / cadScale + cadMinY : (screenY) => screenY;
+        const segments = Array.from(doc.querySelectorAll("line")).map((line) => ({
+          x1: toWorldX(parseFloat(line.getAttribute("x1") ?? "0")),
+          y1: toWorldY(parseFloat(line.getAttribute("y1") ?? "0")),
+          x2: toWorldX(parseFloat(line.getAttribute("x2") ?? "0")),
+          y2: toWorldY(parseFloat(line.getAttribute("y2") ?? "0")),
+          color: line.getAttribute("stroke") ?? void 0
+        }));
+        if (segments.length === 0) {
+          showStatus("No line segments found in SVG.", "error");
+          return;
+        }
+        fitAfterLoadRef.current = true;
+        replaceWorkspaceState({
+          ...workspaceStateRef.current,
+          allSegments: segments,
+          rooms: [],
+          selectedRoomName: null,
+          selectedAnchorId: null,
+          selectedSegments: [],
+          svgPath: file.name,
+          projectName: file.name.replace(/\.svg$/i, ""),
+          viewport: DEFAULT_VIEWPORT
+        });
+        showStatus(`Loaded ${segments.length} segment${segments.length === 1 ? "" : "s"} from ${file.name}`, "ok");
+      } catch (error) {
+        showStatus(`Failed to parse SVG: ${String(error)}`, "error");
+      }
+    };
+    reader.onerror = () => showStatus("Could not read file.", "error");
+    reader.readAsText(file);
+    event.target.value = "";
+  }, [replaceWorkspaceState]);
+  const handleLoadManifestFile = reactExports.useCallback((event) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (loadEvent) => {
+      try {
+        const manifest = JSON.parse(loadEvent.target?.result);
+        const rooms = (manifest.rooms ?? []).map(normalizeRoom);
+        fitAfterLoadRef.current = true;
+        replaceWorkspaceState({
+          ...workspaceStateRef.current,
+          rooms,
+          allSegments: workspaceStateRef.current.allSegments.length > 0 ? workspaceStateRef.current.allSegments : deriveSegmentsFromRooms(rooms),
+          projectName: manifest.project_name ?? "Project",
+          selectedRoomName: rooms[0]?.room_name ?? null,
+          selectedAnchorId: null,
+          selectedSegments: [],
+          viewport: DEFAULT_VIEWPORT
+        });
+        showStatus(`Loaded ${rooms.length} room${rooms.length === 1 ? "" : "s"} from ${file.name}`, "ok");
+      } catch {
+        showStatus("Invalid manifest JSON.", "error");
+      }
+    };
+    reader.readAsText(file);
+    event.target.value = "";
+  }, [replaceWorkspaceState]);
+  const handleSaveManifest = reactExports.useCallback(async () => {
+    try {
+      const res = await fetch(`${API$1}/api/rooms/manifest/save`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          project_name: workspaceState.projectName,
+          svg_path: workspaceState.svgPath,
+          rooms: workspaceState.rooms
+        })
+      });
+      const data = await res.json();
+      if (data.success) showStatus(`Saved to ${data.path}`, "ok");
+      else showStatus(data.error, "error");
+    } catch {
+      showStatus("Backend unreachable.", "error");
+    }
+  }, [workspaceState.projectName, workspaceState.rooms, workspaceState.svgPath]);
+  const handleSegmentClick = reactExports.useCallback((segment, shiftHeld) => {
+    updateWorkspaceState((current) => {
+      const key = `${segment.x1},${segment.y1},${segment.x2},${segment.y2}`;
+      const exists = current.selectedSegments.some((item) => `${item.x1},${item.y1},${item.x2},${item.y2}` === key);
+      const nextSegments = shiftHeld ? exists ? current.selectedSegments.filter((item) => `${item.x1},${item.y1},${item.x2},${item.y2}` !== key) : [...current.selectedSegments, segment] : exists && current.selectedSegments.length === 1 ? [] : [segment];
+      return { ...current, selectedSegments: nextSegments };
+    });
+  }, [updateWorkspaceState]);
+  const handleCreateRoom = reactExports.useCallback(() => {
+    if (workspaceState.selectedSegments.length === 0) {
+      showStatus("Select segments on the canvas first.", "error");
+      return;
+    }
+    setCreateDialog({
+      open: true,
+      name: `Room_${roomCounter.current}`,
+      segments: workspaceState.selectedSegments
+    });
+  }, [workspaceState.selectedSegments]);
+  const handleConfirmCreateRoom = reactExports.useCallback(async () => {
+    if (!createDialog.name.trim()) return;
+    try {
+      const res = await fetch(`${API$1}/api/rooms/create`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: createDialog.name.trim(),
+          segments: createDialog.segments.map((seg) => [seg.x1, seg.y1, seg.x2, seg.y2])
+        })
+      });
+      const data = await res.json();
+      if (!data.success) {
+        showStatus(data.error, "error");
+        return;
+      }
+      const nextRoom = normalizeRoom(data.room);
+      commitWorkspaceState((current) => ({
+        ...current,
+        rooms: [...current.rooms, nextRoom],
+        selectedRoomName: nextRoom.room_name,
+        selectedAnchorId: null,
+        selectedSegments: []
+      }));
+      roomCounter.current += 1;
+      setCreateDialog({ open: false, name: "", segments: [] });
+      showStatus(`Room "${nextRoom.room_name}" created.`, "ok");
+    } catch {
+      showStatus("Backend unreachable.", "error");
+    }
+  }, [commitWorkspaceState, createDialog]);
+  const handleCanvasCtrlClick = reactExports.useCallback((worldX, worldY) => {
+    const current = workspaceStateRef.current;
+    if (!current.selectedRoomName) {
+      showStatus("Select a room first.", "error");
+      return;
+    }
+    const room = current.rooms.find((item) => item.room_name === current.selectedRoomName);
+    if (!room) return;
+    if (!roomContainsWorldPoint(room, worldX, worldY, 0.05)) {
+      showStatus("Anchor must be placed inside room bounds.", "error");
+      return;
+    }
+    const roomIndex = current.rooms.findIndex((item) => item.room_name === room.room_name) + 1;
+    const nextAnchorIndex = anchorCounter.current[room.room_name] ?? room.anchors.length;
+    anchorCounter.current[room.room_name] = nextAnchorIndex + 1;
+    const anchorId = `R${roomIndex}A${nextAnchorIndex}`;
+    const localX = worldX - room.room_bounds_ft.min_x;
+    const localY = worldY - room.room_bounds_ft.min_y;
+    commitWorkspaceState((state) => ({
+      ...state,
+      rooms: state.rooms.map((item) => {
+        if (item.room_name !== room.room_name) return item;
+        const newAnchor = {
+          id: anchorId,
+          hw_id: "",
+          x_ft: localX,
+          y_ft: localY,
+          z_ft: 0
+        };
+        return {
+          ...item,
+          anchors: [...item.anchors, newAnchor],
+          reference_anchor_id: item.reference_anchor_id ?? anchorId
+        };
+      }),
+      selectedRoomName: room.room_name,
+      selectedAnchorId: anchorId
+    }));
+  }, [commitWorkspaceState]);
+  const handleAnchorClick = reactExports.useCallback((anchorId, roomName) => {
+    updateWorkspaceState((current) => ({
+      ...current,
+      selectedRoomName: roomName,
+      selectedAnchorId: current.selectedAnchorId === anchorId ? null : anchorId
+    }));
+  }, [updateWorkspaceState]);
+  const handleAnchorUpdate = reactExports.useCallback((roomName, anchorId, patch) => {
+    commitWorkspaceState((current) => ({
+      ...current,
+      rooms: current.rooms.map((room) => {
+        if (room.room_name !== roomName) return room;
+        return {
+          ...room,
+          anchors: room.anchors.map((anchor) => anchor.id === anchorId ? { ...anchor, ...patch } : anchor)
+        };
+      })
+    }));
+  }, [commitWorkspaceState]);
+  const handleAnchorDelete = reactExports.useCallback((roomName, anchorId) => {
+    commitWorkspaceState((current) => ({
+      ...current,
+      rooms: current.rooms.map((room) => {
+        if (room.room_name !== roomName) return room;
+        const anchors = room.anchors.filter((anchor) => anchor.id !== anchorId);
+        return {
+          ...room,
+          anchors,
+          reference_anchor_id: room.reference_anchor_id === anchorId ? anchors[0]?.id ?? null : room.reference_anchor_id
+        };
+      }),
+      selectedAnchorId: current.selectedAnchorId === anchorId ? null : current.selectedAnchorId
+    }));
+  }, [commitWorkspaceState]);
+  const handleReferenceAnchorChange = reactExports.useCallback((roomName, referenceAnchorId) => {
+    commitWorkspaceState((current) => ({
+      ...current,
+      rooms: current.rooms.map((room) => room.room_name === roomName ? { ...room, reference_anchor_id: referenceAnchorId } : room)
+    }));
+  }, [commitWorkspaceState]);
+  const handleAnchorMoveStart = reactExports.useCallback((_roomName, _anchorId) => {
+    dragSnapshotRef.current = cloneState(workspaceStateRef.current);
+  }, []);
+  const handleAnchorMove = reactExports.useCallback((roomName, anchorId, worldX, worldY) => {
+    updateWorkspaceState((current) => ({
+      ...current,
+      rooms: current.rooms.map((room) => {
+        if (room.room_name !== roomName) return room;
+        return {
+          ...room,
+          anchors: room.anchors.map((anchor) => anchor.id !== anchorId ? anchor : {
+            ...anchor,
+            x_ft: worldX - room.room_bounds_ft.min_x,
+            y_ft: worldY - room.room_bounds_ft.min_y
+          })
+        };
+      }),
+      selectedRoomName: roomName,
+      selectedAnchorId: anchorId
+    }));
+  }, [updateWorkspaceState]);
+  const handleAnchorMoveEnd = reactExports.useCallback(() => {
+    const before = dragSnapshotRef.current;
+    dragSnapshotRef.current = null;
+    if (!before) return;
+    if (roomStateSignature(before) === roomStateSignature(workspaceStateRef.current)) return;
+    setUndoStack((stack) => [...stack.slice(-49), before]);
+    setRedoStack([]);
+  }, []);
+  const handleNudgeAnchor = reactExports.useCallback((dx, dy) => {
+    const current = workspaceStateRef.current;
+    if (!current.selectedRoomName || !current.selectedAnchorId) return;
+    const room = current.rooms.find((item) => item.room_name === current.selectedRoomName);
+    const anchor = room?.anchors.find((item) => item.id === current.selectedAnchorId);
+    if (!room || !anchor) return;
+    const nextWorldX = room.room_bounds_ft.min_x + anchor.x_ft + dx;
+    const nextWorldY = room.room_bounds_ft.min_y + anchor.y_ft + dy;
+    if (!roomContainsWorldPoint(room, nextWorldX, nextWorldY, 0.05)) return;
+    commitWorkspaceState((state) => ({
+      ...state,
+      rooms: state.rooms.map((item) => {
+        if (item.room_name !== room.room_name) return item;
+        return {
+          ...item,
+          anchors: item.anchors.map((existing) => existing.id === anchor.id ? { ...existing, x_ft: existing.x_ft + dx, y_ft: existing.y_ft + dy } : existing)
+        };
+      })
+    }));
+  }, [commitWorkspaceState]);
+  const handleEscapeCanvas = reactExports.useCallback(() => {
+    canvasRef.current?.cancelInteraction();
+    canvasRef.current?.focusCanvas();
+  }, []);
+  reactExports.useEffect(() => {
+    const handleViewCommand = (event) => {
+      const detail = event.detail;
+      if (detail.workspaceId !== workspaceId) return;
+      switch (detail.cmd) {
+        case "undo":
+          handleUndo();
+          break;
+        case "redo":
+          handleRedo();
+          break;
+        case "zoom_in":
+          canvasRef.current?.zoomIn();
+          break;
+        case "zoom_out":
+          canvasRef.current?.zoomOut();
+          break;
+        case "zoom_reset":
+          canvasRef.current?.fitView();
+          break;
+      }
+    };
+    window.addEventListener("anchor-view-command", handleViewCommand);
+    return () => window.removeEventListener("anchor-view-command", handleViewCommand);
+  }, [handleRedo, handleUndo, workspaceId]);
+  return /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "am-root", children: [
+    /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "am-toolbar", children: [
+      /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "am-project-name", children: workspaceState.projectName }),
+      /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "am-toolbar-actions", children: [
+        /* @__PURE__ */ jsxRuntimeExports.jsx("button", { className: "am-btn am-btn--ghost", onClick: () => fileInputRef.current?.click(), children: "Load SVG" }),
+        /* @__PURE__ */ jsxRuntimeExports.jsx("button", { className: "am-btn am-btn--ghost", onClick: () => manifestInputRef.current?.click(), children: "Load Rooms" }),
+        /* @__PURE__ */ jsxRuntimeExports.jsx("button", { className: "am-btn am-btn--secondary", onClick: handleSaveManifest, children: "Save Rooms" }),
+        workspaceState.allSegments.length > 0 && /* @__PURE__ */ jsxRuntimeExports.jsxs(jsxRuntimeExports.Fragment, { children: [
+          /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "am-toolbar-sep" }),
+          /* @__PURE__ */ jsxRuntimeExports.jsx("button", { className: "am-btn am-btn--ghost", onClick: handleEscapeCanvas, children: "Esc" })
+        ] }),
+        /* @__PURE__ */ jsxRuntimeExports.jsx("input", { ref: fileInputRef, type: "file", accept: ".svg", style: { display: "none" }, onChange: handleLoadSVGFile }),
+        /* @__PURE__ */ jsxRuntimeExports.jsx("input", { ref: manifestInputRef, type: "file", accept: ".json,.rooms.json", style: { display: "none" }, onChange: handleLoadManifestFile })
+      ] }),
+      status && /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: `am-status am-status--${statusKind}`, children: status })
+    ] }),
+    /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "am-workspace", children: /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "am-canvas-wrap", children: workspaceState.allSegments.length === 0 ? /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "am-empty-canvas", children: [
+      /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "am-empty-icon", children: "O" }),
+      /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "am-empty-title", children: "No Floor Plan Loaded" }),
+      /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "am-empty-sub", children: [
+        "Click ",
+        /* @__PURE__ */ jsxRuntimeExports.jsx("strong", { children: "Load SVG" }),
+        " to import a CAD export or floor plan."
+      ] })
+    ] }) : /* @__PURE__ */ jsxRuntimeExports.jsxs(jsxRuntimeExports.Fragment, { children: [
+      /* @__PURE__ */ jsxRuntimeExports.jsx(
+        AnchorManagerCanvas,
+        {
+          ref: canvasRef,
+          allSegments: workspaceState.allSegments,
+          rooms: workspaceState.rooms,
+          selectedRoomName: workspaceState.selectedRoomName,
+          selectedAnchorId: workspaceState.selectedAnchorId,
+          selectedSegments: workspaceState.selectedSegments,
+          viewport: workspaceState.viewport,
+          onViewportChange: (viewport2) => updateWorkspaceState((current) => ({ ...current, viewport: viewport2 })),
+          onSegmentClick: handleSegmentClick,
+          onCanvasCtrlClick: handleCanvasCtrlClick,
+          onAnchorClick: handleAnchorClick,
+          onAnchorMoveStart: handleAnchorMoveStart,
+          onAnchorMove: handleAnchorMove,
+          onAnchorMoveEnd: handleAnchorMoveEnd,
+          onNudgeAnchor: handleNudgeAnchor
+        }
+      ),
+      /* @__PURE__ */ jsxRuntimeExports.jsx(
+        AnchorEditPanel,
+        {
+          rooms: workspaceState.rooms,
+          selectedRoomName: workspaceState.selectedRoomName,
+          selectedAnchorId: workspaceState.selectedAnchorId,
+          canUndo: undoStack.length > 0,
+          canRedo: redoStack.length > 0,
+          onRoomSelect: (roomName) => updateWorkspaceState((current) => ({ ...current, selectedRoomName: roomName })),
+          onAnchorUpdate: handleAnchorUpdate,
+          onAnchorDelete: handleAnchorDelete,
+          onAnchorSelect: (anchorId) => updateWorkspaceState((current) => ({ ...current, selectedAnchorId: anchorId })),
+          onReferenceAnchorChange: handleReferenceAnchorChange,
+          onUndo: handleUndo,
+          onRedo: handleRedo,
+          onEscapeCanvas: handleEscapeCanvas
+        }
+      ),
+      workspaceState.selectedSegments.length > 0 && /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "am-selection-banner", children: [
+        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "am-selection-copy", children: [
+          workspaceState.selectedSegments.length,
+          " segment",
+          workspaceState.selectedSegments.length === 1 ? "" : "s",
+          " selected"
+        ] }),
+        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "am-selection-actions", children: [
+          /* @__PURE__ */ jsxRuntimeExports.jsx("button", { className: "am-btn am-btn--primary", onClick: handleCreateRoom, children: "Create Room" }),
+          /* @__PURE__ */ jsxRuntimeExports.jsx(
+            "button",
+            {
+              className: "am-btn am-btn--ghost",
+              onClick: () => updateWorkspaceState((current) => ({ ...current, selectedSegments: [] })),
+              children: "Clear"
+            }
+          )
+        ] })
+      ] })
+    ] }) }) }),
+    createDialog.open && /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "am-dialog-overlay", onClick: () => setCreateDialog((dialog) => ({ ...dialog, open: false })), children: /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "am-dialog", onClick: (event) => event.stopPropagation(), children: [
+      /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "am-dialog-title", children: "Create Room" }),
+      /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "am-dialog-sub", children: [
+        createDialog.segments.length,
+        " segments selected"
+      ] }),
+      /* @__PURE__ */ jsxRuntimeExports.jsx("label", { className: "am-dialog-label", children: "Room Name" }),
+      /* @__PURE__ */ jsxRuntimeExports.jsx(
+        "input",
+        {
+          className: "am-input",
+          value: createDialog.name,
+          onChange: (event) => setCreateDialog((dialog) => ({ ...dialog, name: event.target.value })),
+          onKeyDown: (event) => {
+            if (event.key === "Enter") handleConfirmCreateRoom();
+          },
+          autoFocus: true
+        }
+      ),
+      /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "am-dialog-btns", children: [
+        /* @__PURE__ */ jsxRuntimeExports.jsx("button", { className: "am-btn am-btn--ghost", onClick: () => setCreateDialog((dialog) => ({ ...dialog, open: false })), children: "Cancel" }),
+        /* @__PURE__ */ jsxRuntimeExports.jsx("button", { className: "am-btn am-btn--primary", onClick: handleConfirmCreateRoom, children: "Create" })
+      ] })
+    ] }) })
+  ] });
+};
+const ANCHOR_IDS = ["A0", "A1", "A2", "A3"];
+const ANCHOR_COLORS$1 = {
+  A0: "#ff5b4d",
+  A1: "#42d17e",
+  A2: "#ae62ff",
+  A3: "#ffb11f"
+};
+const TAG_COLORS = ["#00f0d0", "#ffc44d", "#d16cff", "#78d0ff", "#8ee36b"];
+const BACKGROUND = "#151515";
+const GRID = "rgba(255,255,255,0.085)";
+const AXIS = "rgba(255,255,255,0.16)";
+const LINE = "#f3f3f3";
+const worldToScreen = (viewport2, x, y) => [viewport2.offsetX + x * viewport2.scale, viewport2.offsetY - y * viewport2.scale];
+const screenToWorld = (viewport2, x, y) => [(x - viewport2.offsetX) / viewport2.scale, (viewport2.offsetY - y) / viewport2.scale];
+const CalibrationMapCanvas = reactExports.forwardRef(({
+  map,
+  tags,
+  selectedTagId,
+  referenceDot,
+  placingReference,
+  onReferencePlaced,
+  onCancelReferencePlacement,
+  onMapChange,
+  onMapCommit
+}, ref) => {
+  const canvasRef = reactExports.useRef(null);
+  const [viewport2, setViewport] = reactExports.useState({ offsetX: 0, offsetY: 0, scale: 30 });
+  const [canvasSize, setCanvasSize] = reactExports.useState({ width: 0, height: 0 });
+  const didInitViewRef = reactExports.useRef(false);
+  const dragRef = reactExports.useRef(null);
+  const panRef = reactExports.useRef(null);
+  const latestMapRef = reactExports.useRef(map);
+  latestMapRef.current = map;
+  const anchorList = reactExports.useMemo(
+    () => ANCHOR_IDS.map((anchorId) => ({
+      anchorId,
+      coords: map.anchors[anchorId] ?? [0, 0]
+    })),
+    [map.anchors]
+  );
+  const resetView = reactExports.useCallback(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const xs = anchorList.map((anchor) => anchor.coords[0]);
+    const ys = anchorList.map((anchor) => anchor.coords[1]);
+    const minX = Math.min(...xs);
+    const maxX = Math.max(...xs);
+    const minY = Math.min(...ys);
+    const maxY = Math.max(...ys);
+    const span = Math.max(maxX - minX, maxY - minY, 1);
+    const scale2 = Math.min(canvas.width, canvas.height) * 0.45 / span;
+    const centerX = (minX + maxX) / 2;
+    const centerY = (minY + maxY) / 2;
+    setViewport({
+      scale: scale2,
+      offsetX: canvas.width / 2 - centerX * scale2,
+      offsetY: canvas.height / 2 + centerY * scale2
+    });
+  }, [anchorList]);
+  reactExports.useImperativeHandle(ref, () => ({ resetView }), [resetView]);
+  reactExports.useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const resize2 = () => {
+      const nextWidth = canvas.offsetWidth;
+      const nextHeight = canvas.offsetHeight;
+      if (nextWidth > 0 && nextHeight > 0) {
+        if (canvas.width !== nextWidth) canvas.width = nextWidth;
+        if (canvas.height !== nextHeight) canvas.height = nextHeight;
+        setCanvasSize((current) => current.width === nextWidth && current.height === nextHeight ? current : { width: nextWidth, height: nextHeight });
+        if (!didInitViewRef.current) {
+          didInitViewRef.current = true;
+          requestAnimationFrame(resetView);
+        }
+      }
+    };
+    const observer2 = new ResizeObserver(resize2);
+    observer2.observe(canvas);
+    requestAnimationFrame(resize2);
+    return () => observer2.disconnect();
+  }, [resetView]);
+  reactExports.useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+    if (canvasSize.width <= 0 || canvasSize.height <= 0) return;
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.fillStyle = BACKGROUND;
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    const worldLeft = screenToWorld(viewport2, 0, canvas.height)[0];
+    const worldRight = screenToWorld(viewport2, canvas.width, 0)[0];
+    const worldBottom = screenToWorld(viewport2, 0, canvas.height)[1];
+    const worldTop = screenToWorld(viewport2, 0, 0)[1];
+    const baseGrid = viewport2.scale > 50 ? 2.5 : viewport2.scale > 22 ? 5 : 10;
+    ctx.strokeStyle = GRID;
+    ctx.lineWidth = 1;
+    for (let x = Math.floor(worldLeft / baseGrid) * baseGrid; x <= worldRight + baseGrid; x += baseGrid) {
+      const [screenX] = worldToScreen(viewport2, x, 0);
+      ctx.beginPath();
+      ctx.moveTo(screenX, 0);
+      ctx.lineTo(screenX, canvas.height);
+      ctx.stroke();
+    }
+    for (let y = Math.floor(worldBottom / baseGrid) * baseGrid; y <= worldTop + baseGrid; y += baseGrid) {
+      const [, screenY] = worldToScreen(viewport2, 0, y);
+      ctx.beginPath();
+      ctx.moveTo(0, screenY);
+      ctx.lineTo(canvas.width, screenY);
+      ctx.stroke();
+    }
+    ctx.strokeStyle = AXIS;
+    const [axisX] = worldToScreen(viewport2, 0, 0);
+    const [, axisY] = worldToScreen(viewport2, 0, 0);
+    ctx.beginPath();
+    ctx.moveTo(axisX, 0);
+    ctx.lineTo(axisX, canvas.height);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(0, axisY);
+    ctx.lineTo(canvas.width, axisY);
+    ctx.stroke();
+    ctx.strokeStyle = LINE;
+    ctx.lineWidth = 2;
+    ctx.fillStyle = "#8ea4c8";
+    ctx.font = "12px var(--font-primary)";
+    for (const [anchorA, anchorB] of map.lines) {
+      const pointA = map.anchors[anchorA];
+      const pointB = map.anchors[anchorB];
+      if (!pointA || !pointB) continue;
+      const [x1, y1] = worldToScreen(viewport2, pointA[0], pointA[1]);
+      const [x2, y2] = worldToScreen(viewport2, pointB[0], pointB[1]);
+      ctx.beginPath();
+      ctx.moveTo(x1, y1);
+      ctx.lineTo(x2, y2);
+      ctx.stroke();
+      const distance2 = Math.hypot(pointB[0] - pointA[0], pointB[1] - pointA[1]);
+      ctx.fillText(`${distance2.toFixed(1)} ft`, (x1 + x2) / 2 + 8, (y1 + y2) / 2 - 8);
+    }
+    for (const { anchorId, coords } of anchorList) {
+      const [screenX, screenY] = worldToScreen(viewport2, coords[0], coords[1]);
+      ctx.fillStyle = ANCHOR_COLORS$1[anchorId];
+      ctx.strokeStyle = "#f0f4ff";
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(screenX, screenY, 8, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+      ctx.fillStyle = ANCHOR_COLORS$1[anchorId];
+      ctx.font = "bold 12px var(--font-primary)";
+      ctx.fillText(anchorId, screenX + 10, screenY - 4);
+      ctx.fillStyle = "#9ab2d8";
+      ctx.font = "11px var(--font-mono)";
+      ctx.fillText(`(${coords[0].toFixed(1)}, ${coords[1].toFixed(1)})`, screenX + 10, screenY + 12);
+    }
+    if (referenceDot) {
+      const [screenX, screenY] = worldToScreen(viewport2, referenceDot.x, referenceDot.y);
+      ctx.strokeStyle = "#7de9ff";
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(screenX, screenY, 10, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(screenX - 14, screenY);
+      ctx.lineTo(screenX + 14, screenY);
+      ctx.moveTo(screenX, screenY - 14);
+      ctx.lineTo(screenX, screenY + 14);
+      ctx.stroke();
+    }
+    tags.forEach((tag, index) => {
+      const tagColor = TAG_COLORS[index % TAG_COLORS.length];
+      if (tag.raw_xy) {
+        const [screenX, screenY] = worldToScreen(viewport2, tag.raw_xy[0], tag.raw_xy[1]);
+        ctx.save();
+        ctx.translate(screenX, screenY);
+        ctx.rotate(Math.PI / 4);
+        ctx.fillStyle = "rgba(255,255,255,0.15)";
+        ctx.strokeStyle = tagColor;
+        ctx.lineWidth = 1.5;
+        ctx.fillRect(-6, -6, 12, 12);
+        ctx.strokeRect(-6, -6, 12, 12);
+        ctx.restore();
+      }
+      if (tag.calibrated_xy) {
+        const [screenX, screenY] = worldToScreen(viewport2, tag.calibrated_xy[0], tag.calibrated_xy[1]);
+        ctx.fillStyle = tagColor;
+        ctx.strokeStyle = selectedTagId === tag.tag_id ? "#ffffff" : tagColor;
+        ctx.lineWidth = selectedTagId === tag.tag_id ? 2 : 1.4;
+        ctx.beginPath();
+        ctx.arc(screenX, screenY, selectedTagId === tag.tag_id ? 8 : 6, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+        ctx.fillStyle = tagColor;
+        ctx.font = "bold 12px var(--font-primary)";
+        ctx.fillText(tag.tag_id, screenX + 10, screenY - 4);
+      }
+    });
+  }, [anchorList, canvasSize, map.anchors, map.lines, referenceDot, selectedTagId, tags, viewport2]);
+  const hitAnchor = reactExports.useCallback((clientX, clientY) => {
+    const canvas = canvasRef.current;
+    if (!canvas) return null;
+    const rect = canvas.getBoundingClientRect();
+    const x = clientX - rect.left;
+    const y = clientY - rect.top;
+    for (const { anchorId, coords } of anchorList) {
+      const [screenX, screenY] = worldToScreen(viewport2, coords[0], coords[1]);
+      if (Math.hypot(x - screenX, y - screenY) <= 12) return anchorId;
+    }
+    return null;
+  }, [anchorList, viewport2]);
+  const handleMouseDown = reactExports.useCallback((event) => {
+    const canvas = canvasRef.current;
+    if (!canvas || event.button !== 0) return;
+    canvas.focus();
+    const rect = canvas.getBoundingClientRect();
+    const x = event.clientX - rect.left;
+    const y = event.clientY - rect.top;
+    const [worldX, worldY] = screenToWorld(viewport2, x, y);
+    if (placingReference) {
+      onReferencePlaced(Number(worldX.toFixed(3)), Number(worldY.toFixed(3)));
+      return;
+    }
+    const anchorId = hitAnchor(event.clientX, event.clientY);
+    if (anchorId) {
+      dragRef.current = { anchorId };
+      return;
+    }
+    panRef.current = { active: true, x: event.clientX, y: event.clientY };
+  }, [hitAnchor, onReferencePlaced, placingReference, viewport2]);
+  const handleMouseMove = reactExports.useCallback((event) => {
+    if (dragRef.current) {
+      const canvas = canvasRef.current;
+      if (!canvas) return;
+      const rect = canvas.getBoundingClientRect();
+      const [worldX, worldY] = screenToWorld(viewport2, event.clientX - rect.left, event.clientY - rect.top);
+      const nextMap = {
+        ...latestMapRef.current,
+        anchors: {
+          ...latestMapRef.current.anchors,
+          [dragRef.current.anchorId]: [Number(worldX.toFixed(3)), Number(worldY.toFixed(3))]
+        }
+      };
+      latestMapRef.current = nextMap;
+      onMapChange(nextMap);
+      return;
+    }
+    if (panRef.current?.active) {
+      const dx = event.clientX - panRef.current.x;
+      const dy = event.clientY - panRef.current.y;
+      panRef.current = { ...panRef.current, x: event.clientX, y: event.clientY };
+      setViewport((current) => ({
+        ...current,
+        offsetX: current.offsetX + dx,
+        offsetY: current.offsetY + dy
+      }));
+    }
+  }, [onMapChange, viewport2]);
+  const handleMouseUp = reactExports.useCallback(() => {
+    if (dragRef.current) {
+      dragRef.current = null;
+      onMapCommit(latestMapRef.current);
+    }
+    panRef.current = null;
+  }, [onMapCommit]);
+  const handleWheel = reactExports.useCallback((event) => {
+    event.preventDefault();
+    const rect = event.currentTarget.getBoundingClientRect();
+    const pointerX = event.clientX - rect.left;
+    const pointerY = event.clientY - rect.top;
+    setViewport((current) => {
+      const nextScale = Math.max(6, Math.min(120, current.scale * (event.deltaY < 0 ? 1.12 : 1 / 1.12)));
+      return {
+        scale: nextScale,
+        offsetX: pointerX - (pointerX - current.offsetX) * (nextScale / current.scale),
+        offsetY: pointerY - (pointerY - current.offsetY) * (nextScale / current.scale)
+      };
+    });
+  }, []);
+  const handleKeyDown = reactExports.useCallback((event) => {
+    if (event.key === "Escape") {
+      dragRef.current = null;
+      panRef.current = null;
+      if (placingReference) onCancelReferencePlacement();
+      event.preventDefault();
+    }
+    if (event.key === "f" || event.key === "F") {
+      resetView();
+      event.preventDefault();
+    }
+  }, [onCancelReferencePlacement, placingReference, resetView]);
+  return /* @__PURE__ */ jsxRuntimeExports.jsx(
+    "canvas",
+    {
+      ref: canvasRef,
+      className: "ct-map-canvas",
+      tabIndex: 0,
+      onContextMenu: (event) => event.preventDefault(),
+      onMouseDown: handleMouseDown,
+      onMouseMove: handleMouseMove,
+      onMouseUp: handleMouseUp,
+      onMouseLeave: handleMouseUp,
+      onWheel: handleWheel,
+      onKeyDown: handleKeyDown,
+      style: { cursor: placingReference ? "crosshair" : dragRef.current || panRef.current ? "grabbing" : "grab" }
+    }
+  );
+});
+CalibrationMapCanvas.displayName = "CalibrationMapCanvas";
+const ANCHOR_COLORS = {
+  A0: "#ff5b4d",
+  A1: "#42d17e",
+  A2: "#ae62ff",
+  A3: "#ffb11f"
+};
+const WIDTH = 980;
+const HEIGHT = 240;
+const PADDING = { left: 52, right: 20, top: 16, bottom: 34 };
+const CalibrationGraphPanel = ({ tag, collapsed, onToggle }) => {
+  const bounds = reactExports.useMemo(() => {
+    const xs = [];
+    const ys = [];
+    if (tag) {
+      ANCHOR_IDS.forEach((anchorId) => {
+        const series = tag.graph[anchorId];
+        series?.points.forEach((point) => {
+          xs.push(point.x);
+          ys.push(point.y);
+        });
+        series?.fit_line.forEach((point) => {
+          xs.push(point.x);
+          ys.push(point.y);
+        });
+        series?.capture.forEach((point) => {
+          xs.push(point.x);
+          ys.push(point.y);
+        });
+        if (series?.live_raw) {
+          xs.push(series.live_raw.x);
+          ys.push(series.live_raw.y);
+        }
+        if (series?.live_cal) {
+          xs.push(series.live_cal.x);
+          ys.push(series.live_cal.y);
+        }
+      });
+    }
+    const minX = 0;
+    const minY = 0;
+    const maxX = Math.max(30, ...xs, 1);
+    const maxY = Math.max(30, ...ys, 1);
+    return { minX, minY, maxX, maxY };
+  }, [tag]);
+  const toSvgX = (x) => PADDING.left + (x - bounds.minX) / Math.max(bounds.maxX - bounds.minX, 1) * (WIDTH - PADDING.left - PADDING.right);
+  const toSvgY = (y) => HEIGHT - PADDING.bottom - (y - bounds.minY) / Math.max(bounds.maxY - bounds.minY, 1) * (HEIGHT - PADDING.top - PADDING.bottom);
+  return /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: `ct-graph-panel${collapsed ? " ct-graph-panel--collapsed" : ""}`, children: [
+    /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "ct-graph-header", children: [
+      /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "ct-graph-title", children: "Calibration Graph" }),
+      /* @__PURE__ */ jsxRuntimeExports.jsx("button", { className: "ct-mini-btn", onClick: onToggle, children: collapsed ? "Show" : "Hide" })
+    ] }),
+    !collapsed && /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "ct-graph-body", children: [
+      /* @__PURE__ */ jsxRuntimeExports.jsxs("svg", { viewBox: `0 0 ${WIDTH} ${HEIGHT}`, className: "ct-graph-svg", role: "img", "aria-label": "Calibration graph", children: [
+        /* @__PURE__ */ jsxRuntimeExports.jsx("rect", { x: "0", y: "0", width: WIDTH, height: HEIGHT, fill: "#151515" }),
+        [0, 0.25, 0.5, 0.75, 1].map((step) => {
+          const x = PADDING.left + step * (WIDTH - PADDING.left - PADDING.right);
+          const y = PADDING.top + step * (HEIGHT - PADDING.top - PADDING.bottom);
+          return /* @__PURE__ */ jsxRuntimeExports.jsxs("g", { children: [
+            /* @__PURE__ */ jsxRuntimeExports.jsx("line", { x1: x, y1: PADDING.top, x2: x, y2: HEIGHT - PADDING.bottom, stroke: "rgba(255,255,255,0.1)" }),
+            /* @__PURE__ */ jsxRuntimeExports.jsx("line", { x1: PADDING.left, y1: y, x2: WIDTH - PADDING.right, y2: y, stroke: "rgba(255,255,255,0.1)" })
+          ] }, step);
+        }),
+        /* @__PURE__ */ jsxRuntimeExports.jsx("line", { x1: PADDING.left, y1: HEIGHT - PADDING.bottom, x2: WIDTH - PADDING.right, y2: HEIGHT - PADDING.bottom, stroke: "#4b5563" }),
+        /* @__PURE__ */ jsxRuntimeExports.jsx("line", { x1: PADDING.left, y1: PADDING.top, x2: PADDING.left, y2: HEIGHT - PADDING.bottom, stroke: "#4b5563" }),
+        tag && ANCHOR_IDS.map((anchorId) => {
+          const series = tag.graph[anchorId];
+          if (!series) return null;
+          const color2 = ANCHOR_COLORS[anchorId];
+          const fitPath = series.fit_line.map((point, index) => `${index === 0 ? "M" : "L"} ${toSvgX(point.x)} ${toSvgY(point.y)}`).join(" ");
+          return /* @__PURE__ */ jsxRuntimeExports.jsxs("g", { children: [
+            fitPath && /* @__PURE__ */ jsxRuntimeExports.jsx("path", { d: fitPath, fill: "none", stroke: color2, strokeWidth: "2", opacity: "0.85" }),
+            series.capture.map((point, index) => /* @__PURE__ */ jsxRuntimeExports.jsx("circle", { cx: toSvgX(point.x), cy: toSvgY(point.y), r: "2.4", fill: color2, opacity: "0.35" }, `capture-${index}`)),
+            series.points.map((point, index) => /* @__PURE__ */ jsxRuntimeExports.jsx("circle", { cx: toSvgX(point.x), cy: toSvgY(point.y), r: "4", fill: color2 }, `point-${index}`)),
+            series.live_raw && /* @__PURE__ */ jsxRuntimeExports.jsx(
+              "rect",
+              {
+                x: toSvgX(series.live_raw.x) - 4,
+                y: toSvgY(series.live_raw.y) - 4,
+                width: "8",
+                height: "8",
+                transform: `rotate(45 ${toSvgX(series.live_raw.x)} ${toSvgY(series.live_raw.y)})`,
+                fill: "rgba(255,255,255,0.12)",
+                stroke: color2
+              }
+            ),
+            series.live_cal && /* @__PURE__ */ jsxRuntimeExports.jsx("circle", { cx: toSvgX(series.live_cal.x), cy: toSvgY(series.live_cal.y), r: "5", fill: "none", stroke: color2, strokeWidth: "1.8" })
+          ] }, anchorId);
+        }),
+        /* @__PURE__ */ jsxRuntimeExports.jsx("text", { x: WIDTH / 2, y: HEIGHT - 8, fill: "#8ea4c8", fontSize: "12", textAnchor: "middle", children: "Raw UWB (ft)" }),
+        /* @__PURE__ */ jsxRuntimeExports.jsx("text", { x: "14", y: HEIGHT / 2, fill: "#8ea4c8", fontSize: "12", textAnchor: "middle", transform: `rotate(-90 14 ${HEIGHT / 2})`, children: "Reference (ft)" })
+      ] }),
+      /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "ct-graph-legend", children: ANCHOR_IDS.map((anchorId) => /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "ct-graph-legend-item", children: [
+        /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "ct-graph-dot", style: { background: ANCHOR_COLORS[anchorId] } }),
+        /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { children: [
+          anchorId,
+          " pts"
+        ] })
+      ] }, anchorId)) })
+    ] })
+  ] });
+};
+const API = "http://localhost:8765";
+const FIT_MODES = ["Linear", "Polynomial", "Logarithmic", "Power Series", "Exponential", "Moving Average"];
+const emptySnapshot = () => ({
+  success: true,
+  mode: null,
+  transport_status: "idle",
+  transport_detail: "Disconnected.",
+  selected_port: "",
+  ble_available: false,
+  serial_available: false,
+  ports: [],
+  auto_detect_port: "",
+  capture: { active: false, phase: "idle", tag_id: null, target: 0, counts: {} },
+  map: {
+    anchors: { A0: [0, 0], A1: [0, 10], A2: [10, 10], A3: [10, 0] },
+    lines: [["A0", "A1"], ["A1", "A2"], ["A2", "A3"], ["A3", "A0"]],
+    height_offset: 0
+  },
+  filter: { mode: "EMA", ema_alpha: 0.2, roll_n: 8, kal_q: 0.1, kal_r: 2 },
+  tags: []
+});
+const toMapState = (map) => ({
+  anchors: {
+    A0: map.anchors.A0 ?? [0, 0],
+    A1: map.anchors.A1 ?? [0, 10],
+    A2: map.anchors.A2 ?? [10, 10],
+    A3: map.anchors.A3 ?? [10, 0]
+  },
+  lines: map.lines.map((line) => [line[0], line[1]]),
+  height_offset: map.height_offset
+});
+const CalibrationTool = ({ workspaceId: _workspaceId }) => {
+  const mapCanvasRef = reactExports.useRef(null);
+  const mapSyncBlockedRef = reactExports.useRef(false);
+  const statusTimerRef = reactExports.useRef(null);
+  const [runtime, setRuntime] = reactExports.useState(emptySnapshot);
+  const [transportMode, setTransportMode] = reactExports.useState("ble");
+  const [serialPort, setSerialPort] = reactExports.useState("");
+  const [selectedTagId, setSelectedTagId] = reactExports.useState(null);
+  const [activeAnchorId, setActiveAnchorId] = reactExports.useState("A0");
+  const [mapState, setMapState] = reactExports.useState(toMapState(emptySnapshot().map));
+  const [placingReference, setPlacingReference] = reactExports.useState(false);
+  const [referenceDot, setReferenceDot] = reactExports.useState(null);
+  const [linePicker, setLinePicker] = reactExports.useState([]);
+  const [graphCollapsed, setGraphCollapsed] = reactExports.useState(false);
+  const [sampleCount, setSampleCount] = reactExports.useState("20");
+  const [referenceDistances, setReferenceDistances] = reactExports.useState({ A0: "", A1: "", A2: "", A3: "" });
+  const [referenceHeight, setReferenceHeight] = reactExports.useState("0");
+  const [equationDrafts, setEquationDrafts] = reactExports.useState({ A0: "", A1: "", A2: "", A3: "" });
+  const [status, setStatus] = reactExports.useState(null);
+  const [busy, setBusy] = reactExports.useState({
+    transport: false,
+    save: false,
+    capture: false
+  });
+  const selectedTag = reactExports.useMemo(
+    () => runtime.tags.find((tag) => tag.tag_id === selectedTagId) ?? null,
+    [runtime.tags, selectedTagId]
+  );
+  const mapSignature = JSON.stringify(runtime.map);
+  const referenceSignature = JSON.stringify(selectedTag ? {
+    distances: selectedTag.reference_floor,
+    height: selectedTag.reference_height
+  } : null);
+  const equationSignature = JSON.stringify(selectedTag?.equations ?? null);
+  const activeFit = selectedTag?.fit_options[activeAnchorId] ?? null;
+  const transportSummary = runtime.mode === "serial" ? runtime.selected_port || serialPort || "Serial Port" : runtime.mode === "ble" ? "Bluetooth (BLE)" : "Disconnected";
+  const captureSummary = runtime.capture.active ? `${runtime.capture.phase}${runtime.capture.tag_id ? ` · ${runtime.capture.tag_id}` : ""}` : "Idle";
+  const showStatus = (text, kind) => {
+    setStatus({ text, kind });
+    if (statusTimerRef.current) window.clearTimeout(statusTimerRef.current);
+    statusTimerRef.current = window.setTimeout(() => setStatus(null), 3600);
+  };
+  const applySnapshot = (snapshot) => {
+    setRuntime(snapshot);
+    if (snapshot.mode === "ble" || snapshot.mode === "serial") setTransportMode(snapshot.mode);
+    if (snapshot.selected_port) setSerialPort(snapshot.selected_port);
+    else if (!serialPort && snapshot.auto_detect_port) setSerialPort(snapshot.auto_detect_port);
+    setSelectedTagId((current) => current && snapshot.tags.some((tag) => tag.tag_id === current) ? current : snapshot.tags[0]?.tag_id ?? null);
+    if (!mapSyncBlockedRef.current) setMapState(toMapState(snapshot.map));
+  };
+  const loadRuntime = async () => {
+    try {
+      const response = await fetch(`${API}/api/calibration/runtime`);
+      const data = await response.json();
+      if (data.success) applySnapshot(data);
+    } catch {
+    }
+  };
+  reactExports.useEffect(() => {
+    void loadRuntime();
+    const intervalId = window.setInterval(loadRuntime, 450);
+    return () => {
+      window.clearInterval(intervalId);
+      if (statusTimerRef.current) window.clearTimeout(statusTimerRef.current);
+    };
+  }, []);
+  reactExports.useEffect(() => {
+    if (!mapSyncBlockedRef.current) setMapState(toMapState(runtime.map));
+  }, [mapSignature, runtime.map]);
+  reactExports.useEffect(() => {
+    if (!selectedTag) return;
+    setReferenceDistances({
+      A0: selectedTag.reference_floor.A0 != null ? String(selectedTag.reference_floor.A0) : "",
+      A1: selectedTag.reference_floor.A1 != null ? String(selectedTag.reference_floor.A1) : "",
+      A2: selectedTag.reference_floor.A2 != null ? String(selectedTag.reference_floor.A2) : "",
+      A3: selectedTag.reference_floor.A3 != null ? String(selectedTag.reference_floor.A3) : ""
+    });
+    setReferenceHeight(String(selectedTag.reference_height ?? 0));
+  }, [selectedTagId, referenceSignature]);
+  reactExports.useEffect(() => {
+    if (!selectedTag) return;
+    setEquationDrafts({
+      A0: selectedTag.equations.A0 ?? "",
+      A1: selectedTag.equations.A1 ?? "",
+      A2: selectedTag.equations.A2 ?? "",
+      A3: selectedTag.equations.A3 ?? ""
+    });
+  }, [selectedTagId, equationSignature]);
+  const postJson = async (path, body) => {
+    const response = await fetch(`${API}${path}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: body == null ? void 0 : JSON.stringify(body)
+    });
+    return response.json();
+  };
+  const persistMap = async (nextMap) => {
+    mapSyncBlockedRef.current = true;
+    setMapState(nextMap);
+    try {
+      const data = await postJson("/api/calibration/map", {
+        anchors: nextMap.anchors,
+        lines: nextMap.lines,
+        height_offset: nextMap.height_offset
+      });
+      if (!data.success) {
+        showStatus(data.error ?? "Could not update calibration map.", "error");
+        return;
+      }
+      applySnapshot(data);
+    } catch {
+      showStatus("Could not reach backend.", "error");
+    } finally {
+      mapSyncBlockedRef.current = false;
+    }
+  };
+  const saveReferenceDrafts = async () => {
+    if (!selectedTagId) return;
+    const distances = Object.fromEntries(ANCHOR_IDS.map((anchorId) => {
+      const raw = referenceDistances[anchorId].trim();
+      if (raw === "") return [anchorId, null];
+      const parsed = Number.parseFloat(raw);
+      return [anchorId, Number.isFinite(parsed) ? parsed : null];
+    }));
+    try {
+      const data = await postJson("/api/calibration/reference", {
+        tag_id: selectedTagId,
+        distances,
+        height: Number.parseFloat(referenceHeight || "0") || 0
+      });
+      if (!data.success) {
+        showStatus(data.error ?? "Could not update reference distances.", "error");
+        return;
+      }
+      applySnapshot(data);
+    } catch {
+      showStatus("Could not reach backend.", "error");
+    }
+  };
+  const saveEquation = async (anchorId) => {
+    if (!selectedTagId) return;
+    try {
+      const data = await postJson("/api/calibration/equation", {
+        tag_id: selectedTagId,
+        anchor_id: anchorId,
+        equation: equationDrafts[anchorId]
+      });
+      if (!data.success) {
+        showStatus(data.error ?? "Equation is invalid.", "error");
+        return;
+      }
+      applySnapshot(data);
+    } catch {
+      showStatus("Could not reach backend.", "error");
+    }
+  };
+  const updateFitOption = async (anchorId, patch) => {
+    if (!selectedTagId) return;
+    try {
+      const data = await postJson("/api/calibration/fit", {
+        tag_id: selectedTagId,
+        anchor_id: anchorId,
+        ...patch
+      });
+      if (!data.success) {
+        showStatus(data.error ?? "Could not update fit settings.", "error");
+        return;
+      }
+      applySnapshot(data);
+    } catch {
+      showStatus("Could not reach backend.", "error");
+    }
+  };
+  const handleTransportConnect = async () => {
+    setBusy((current) => ({ ...current, transport: true }));
+    try {
+      const data = await postJson("/api/calibration/transport/connect", {
+        mode: transportMode,
+        port: transportMode === "serial" ? serialPort : ""
+      });
+      if (!data.success) {
+        showStatus(data.error ?? "Could not connect transport.", "error");
+        return;
+      }
+      applySnapshot(data);
+    } catch {
+      showStatus("Could not reach backend.", "error");
+    } finally {
+      setBusy((current) => ({ ...current, transport: false }));
+    }
+  };
+  const handleTransportDisconnect = async () => {
+    setBusy((current) => ({ ...current, transport: true }));
+    try {
+      const data = await postJson("/api/calibration/transport/disconnect");
+      applySnapshot(data);
+    } catch {
+      showStatus("Could not reach backend.", "error");
+    } finally {
+      setBusy((current) => ({ ...current, transport: false }));
+    }
+  };
+  const handleReferencePlacement = async (x, y) => {
+    if (!selectedTagId) return;
+    setReferenceDot({ x, y });
+    setPlacingReference(false);
+    try {
+      const data = await postJson("/api/calibration/reference/place", {
+        tag_id: selectedTagId,
+        x,
+        y
+      });
+      if (!data.success) {
+        showStatus(data.error ?? "Could not place reference point.", "error");
+        return;
+      }
+      applySnapshot(data);
+    } catch {
+      showStatus("Could not reach backend.", "error");
+    }
+  };
+  const handleCaptureStart = async () => {
+    if (!selectedTagId) return;
+    setBusy((current) => ({ ...current, capture: true }));
+    try {
+      const data = await postJson("/api/calibration/capture/start", {
+        tag_id: selectedTagId,
+        sample_count: Number.parseInt(sampleCount, 10) || 20
+      });
+      if (!data.success) {
+        showStatus(data.error ?? "Could not start capture.", "error");
+        return;
+      }
+      applySnapshot(data);
+    } catch {
+      showStatus("Could not reach backend.", "error");
+    } finally {
+      setBusy((current) => ({ ...current, capture: false }));
+    }
+  };
+  const handleSaveTag = async () => {
+    if (!selectedTagId) return;
+    setBusy((current) => ({ ...current, save: true }));
+    try {
+      const data = await postJson(`/api/calibration/tag/save/${encodeURIComponent(selectedTagId)}`);
+      if (!data.success) {
+        showStatus(data.error ?? "Could not save tag equations.", "error");
+        return;
+      }
+      applySnapshot(data);
+      showStatus(`Saved calibration for ${selectedTagId}.`, "ok");
+    } catch {
+      showStatus("Could not reach backend.", "error");
+    } finally {
+      setBusy((current) => ({ ...current, save: false }));
+    }
+  };
+  return /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "ct-root", children: /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "ct-stage", children: [
+    /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "ct-main-panel", children: [
+      /* @__PURE__ */ jsxRuntimeExports.jsx(
+        CalibrationMapCanvas,
+        {
+          ref: mapCanvasRef,
+          map: mapState,
+          tags: runtime.tags,
+          selectedTagId,
+          referenceDot,
+          placingReference,
+          onReferencePlaced: handleReferencePlacement,
+          onCancelReferencePlacement: () => setPlacingReference(false),
+          onMapChange: setMapState,
+          onMapCommit: persistMap
+        }
+      ),
+      /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "ct-overview-card", children: [
+        /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "ct-overview-kicker", children: "Calibration Workspace" }),
+        /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "ct-overview-title", children: "RTLS Calibration Software" }),
+        /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "ct-overview-subtitle", children: selectedTagId ? `Editing ${selectedTagId}` : "No profiled tags available yet" }),
+        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "ct-overview-grid", children: [
+          /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { children: [
+            /* @__PURE__ */ jsxRuntimeExports.jsx("label", { children: "Transport" }),
+            /* @__PURE__ */ jsxRuntimeExports.jsx("span", { children: transportSummary })
+          ] }),
+          /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { children: [
+            /* @__PURE__ */ jsxRuntimeExports.jsx("label", { children: "Status" }),
+            /* @__PURE__ */ jsxRuntimeExports.jsx("span", { children: runtime.transport_status })
+          ] }),
+          /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { children: [
+            /* @__PURE__ */ jsxRuntimeExports.jsx("label", { children: "Tags" }),
+            /* @__PURE__ */ jsxRuntimeExports.jsx("span", { children: runtime.tags.length })
+          ] }),
+          /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { children: [
+            /* @__PURE__ */ jsxRuntimeExports.jsx("label", { children: "Capture" }),
+            /* @__PURE__ */ jsxRuntimeExports.jsx("span", { children: captureSummary })
+          ] })
+        ] })
+      ] }),
+      status && /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: `ct-status ct-status--${status.kind}`, children: status.text }),
+      /* @__PURE__ */ jsxRuntimeExports.jsx("button", { className: "ct-reset-btn", onClick: () => mapCanvasRef.current?.resetView(), children: "Reset View" }),
+      /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "ct-canvas-hint", children: "Drag to pan, scroll to zoom, and drag anchors to tune the map." })
+    ] }),
+    /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "ct-right-panel", children: [
+      /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "ct-panel-header", children: [
+        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { children: [
+          /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "ct-panel-title", children: "Calibration Controls" }),
+          /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "ct-panel-subtitle", children: selectedTagId ? `Editing ${selectedTagId}` : `${runtime.tags.length} profiled tags available` })
+        ] }),
+        /* @__PURE__ */ jsxRuntimeExports.jsx("button", { className: "ct-btn ct-btn--secondary", onClick: handleSaveTag, disabled: !selectedTagId || busy.save, children: busy.save ? "Saving..." : "Save Tag" })
+      ] }),
+      /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "ct-panel-scroll", children: [
+        /* @__PURE__ */ jsxRuntimeExports.jsxs("section", { className: "ct-section", children: [
+          /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "ct-section-title", children: "Connectivity" }),
+          /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "ct-transport-toggle", children: [
+            /* @__PURE__ */ jsxRuntimeExports.jsx("button", { className: `ct-toggle${transportMode === "ble" ? " active" : ""}`, onClick: () => setTransportMode("ble"), children: "Bluetooth (BLE)" }),
+            /* @__PURE__ */ jsxRuntimeExports.jsx("button", { className: `ct-toggle${transportMode === "serial" ? " active" : ""}`, onClick: () => setTransportMode("serial"), children: "Serial Port" })
+          ] }),
+          transportMode === "serial" && /* @__PURE__ */ jsxRuntimeExports.jsxs("select", { className: "ct-input", value: serialPort, onChange: (event) => setSerialPort(event.target.value), children: [
+            /* @__PURE__ */ jsxRuntimeExports.jsx("option", { value: "", children: "Select a COM port" }),
+            runtime.ports.map((port) => /* @__PURE__ */ jsxRuntimeExports.jsx("option", { value: port, children: port }, port))
+          ] }),
+          /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "ct-runtime-note", children: runtime.transport_detail }),
+          runtime.tags.length > 0 ? /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "ct-rows", children: runtime.tags.map((tag) => /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "ct-ble-row", children: [
+            /* @__PURE__ */ jsxRuntimeExports.jsx("span", { children: tag.tag_id }),
+            /* @__PURE__ */ jsxRuntimeExports.jsx("span", { children: tag.status })
+          ] }, tag.tag_id)) }) : /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "ct-runtime-note", children: "No profiled tags available yet." }),
+          /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "ct-actions", children: [
+            /* @__PURE__ */ jsxRuntimeExports.jsx("button", { className: "ct-btn ct-btn--primary", onClick: handleTransportConnect, disabled: busy.transport, children: "Connect" }),
+            /* @__PURE__ */ jsxRuntimeExports.jsx("button", { className: "ct-btn ct-btn--ghost", onClick: handleTransportDisconnect, disabled: busy.transport, children: "Disconnect" })
+          ] })
+        ] }),
+        /* @__PURE__ */ jsxRuntimeExports.jsxs("section", { className: "ct-section", children: [
+          /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "ct-section-title", children: "Map Geometry" }),
+          ANCHOR_IDS.map((anchorId) => /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "ct-field", children: [
+            /* @__PURE__ */ jsxRuntimeExports.jsx("label", { children: anchorId }),
+            /* @__PURE__ */ jsxRuntimeExports.jsx(
+              "input",
+              {
+                className: "ct-input ct-input--mono",
+                value: `${mapState.anchors[anchorId][0]}, ${mapState.anchors[anchorId][1]}`,
+                onChange: (event) => {
+                  const [xRaw, yRaw] = event.target.value.split(",").map((part) => part.trim());
+                  const x = Number.parseFloat(xRaw);
+                  const y = Number.parseFloat(yRaw);
+                  if (!Number.isFinite(x) || !Number.isFinite(y)) return;
+                  setMapState((current) => ({ ...current, anchors: { ...current.anchors, [anchorId]: [x, y] } }));
+                },
+                onBlur: () => void persistMap(mapState)
+              }
+            )
+          ] }, anchorId)),
+          /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "ct-lines-list", children: mapState.lines.map((line) => /* @__PURE__ */ jsxRuntimeExports.jsxs("button", { className: "ct-line-row", onClick: () => void persistMap({ ...mapState, lines: mapState.lines.filter((item) => item.join("-") !== line.join("-")) }), children: [
+            /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { children: [
+              line[0],
+              " ",
+              "->",
+              " ",
+              line[1]
+            ] }),
+            /* @__PURE__ */ jsxRuntimeExports.jsx("span", { children: "x" })
+          ] }, line.join("-"))) }),
+          /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "ct-anchor-picker", children: ANCHOR_IDS.map((anchorId) => /* @__PURE__ */ jsxRuntimeExports.jsx(
+            "button",
+            {
+              className: `ct-pill${linePicker.includes(anchorId) ? " active" : ""}`,
+              onClick: () => {
+                const next = linePicker.includes(anchorId) ? linePicker.filter((item) => item !== anchorId) : [...linePicker, anchorId];
+                if (next.length === 2) {
+                  const newLine = [next[0], next[1]];
+                  const exists = mapState.lines.some((line) => line[0] === newLine[0] && line[1] === newLine[1] || line[0] === newLine[1] && line[1] === newLine[0]);
+                  if (!exists) void persistMap({ ...mapState, lines: [...mapState.lines, newLine] });
+                  setLinePicker([]);
+                } else {
+                  setLinePicker(next);
+                }
+              },
+              children: anchorId
+            },
+            anchorId
+          )) }),
+          /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "ct-field", children: [
+            /* @__PURE__ */ jsxRuntimeExports.jsx("label", { children: "Anchor to Tag height (ft)" }),
+            /* @__PURE__ */ jsxRuntimeExports.jsx(
+              "input",
+              {
+                className: "ct-input",
+                type: "number",
+                step: "0.01",
+                value: mapState.height_offset,
+                onChange: (event) => setMapState((current) => ({ ...current, height_offset: Number.parseFloat(event.target.value) || 0 })),
+                onBlur: () => void persistMap(mapState)
+              }
+            )
+          ] })
+        ] }),
+        /* @__PURE__ */ jsxRuntimeExports.jsxs("section", { className: "ct-section", children: [
+          /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "ct-section-title", children: "Selected Tag" }),
+          /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "ct-tag-tabs", children: runtime.tags.map((tag) => /* @__PURE__ */ jsxRuntimeExports.jsx("button", { className: `ct-pill${selectedTagId === tag.tag_id ? " active" : ""}`, onClick: () => setSelectedTagId(tag.tag_id), children: tag.tag_id }, tag.tag_id)) }),
+          selectedTag ? /* @__PURE__ */ jsxRuntimeExports.jsxs(jsxRuntimeExports.Fragment, { children: [
+            /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "ct-meta-grid", children: [
+              /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { children: [
+                "MAC",
+                /* @__PURE__ */ jsxRuntimeExports.jsx("span", { children: selectedTag.mac_address || "Not set" })
+              ] }),
+              /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { children: [
+                "Device",
+                /* @__PURE__ */ jsxRuntimeExports.jsx("span", { children: selectedTag.device_type || "Unknown" })
+              ] })
+            ] }),
+            /* @__PURE__ */ jsxRuntimeExports.jsxs("table", { className: "ct-table", children: [
+              /* @__PURE__ */ jsxRuntimeExports.jsx("thead", { children: /* @__PURE__ */ jsxRuntimeExports.jsxs("tr", { children: [
+                /* @__PURE__ */ jsxRuntimeExports.jsx("th", { children: "Anchor" }),
+                /* @__PURE__ */ jsxRuntimeExports.jsx("th", { children: "Raw" }),
+                /* @__PURE__ */ jsxRuntimeExports.jsx("th", { children: "Cal" })
+              ] }) }),
+              /* @__PURE__ */ jsxRuntimeExports.jsx("tbody", { children: ANCHOR_IDS.map((anchorId) => /* @__PURE__ */ jsxRuntimeExports.jsxs("tr", { children: [
+                /* @__PURE__ */ jsxRuntimeExports.jsx("td", { children: anchorId }),
+                /* @__PURE__ */ jsxRuntimeExports.jsx("td", { children: selectedTag.raw_distances[anchorId] > 0 ? selectedTag.raw_distances[anchorId].toFixed(2) : "---" }),
+                /* @__PURE__ */ jsxRuntimeExports.jsx("td", { children: selectedTag.calibrated_distances[anchorId] > 0 ? selectedTag.calibrated_distances[anchorId].toFixed(2) : "---" })
+              ] }, anchorId)) })
+            ] }),
+            /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "ct-runtime-note", children: [
+              "RAW X,Y: ",
+              selectedTag.raw_xy ? `${selectedTag.raw_xy[0].toFixed(2)}, ${selectedTag.raw_xy[1].toFixed(2)}` : "---, ---"
+            ] }),
+            /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "ct-runtime-note", children: [
+              "CAL X,Y: ",
+              selectedTag.calibrated_xy ? `${selectedTag.calibrated_xy[0].toFixed(2)}, ${selectedTag.calibrated_xy[1].toFixed(2)}` : "---, ---"
+            ] })
+          ] }) : /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "ct-runtime-note", children: "Create or load a tag profile to start calibrating." })
+        ] }),
+        selectedTag && /* @__PURE__ */ jsxRuntimeExports.jsxs(jsxRuntimeExports.Fragment, { children: [
+          /* @__PURE__ */ jsxRuntimeExports.jsxs("section", { className: "ct-section", children: [
+            /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "ct-section-title", children: "Reference Distances" }),
+            ANCHOR_IDS.map((anchorId) => /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "ct-field", children: [
+              /* @__PURE__ */ jsxRuntimeExports.jsxs("label", { children: [
+                anchorId,
+                " Distance (X)"
+              ] }),
+              /* @__PURE__ */ jsxRuntimeExports.jsx("input", { className: "ct-input", value: referenceDistances[anchorId], onChange: (event) => setReferenceDistances((current) => ({ ...current, [anchorId]: event.target.value })), onBlur: () => void saveReferenceDrafts() })
+            ] }, anchorId)),
+            /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "ct-field", children: [
+              /* @__PURE__ */ jsxRuntimeExports.jsx("label", { children: "Height (Y) ft" }),
+              /* @__PURE__ */ jsxRuntimeExports.jsx("input", { className: "ct-input", value: referenceHeight, onChange: (event) => setReferenceHeight(event.target.value), onBlur: () => void saveReferenceDrafts() })
+            ] }),
+            /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "ct-actions", children: [
+              /* @__PURE__ */ jsxRuntimeExports.jsx("button", { className: `ct-btn ${placingReference ? "ct-btn--primary" : "ct-btn--secondary"}`, onClick: () => setPlacingReference((current) => !current), children: "Place on Map" }),
+              /* @__PURE__ */ jsxRuntimeExports.jsx("button", { className: "ct-btn ct-btn--ghost", onClick: async () => {
+                const data = await postJson("/api/calibration/reference/calculate", { tag_id: selectedTag.tag_id });
+                if (!data.success) showStatus(data.error ?? "Could not calculate reference.", "error");
+                else applySnapshot(data);
+              }, children: "Calculate Reference" })
+            ] })
+          ] }),
+          /* @__PURE__ */ jsxRuntimeExports.jsxs("section", { className: "ct-section", children: [
+            /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "ct-section-title", children: "Calibration Fit" }),
+            /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "ct-lock-grid", children: ANCHOR_IDS.map((anchorId) => /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { children: [
+              anchorId,
+              /* @__PURE__ */ jsxRuntimeExports.jsx("span", { children: selectedTag.locked_reference[anchorId] != null ? selectedTag.locked_reference[anchorId]?.toFixed(3) : "---" })
+            ] }, anchorId)) }),
+            /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "ct-actions", children: [
+              /* @__PURE__ */ jsxRuntimeExports.jsx("input", { className: "ct-input ct-input--small", value: sampleCount, onChange: (event) => setSampleCount(event.target.value) }),
+              /* @__PURE__ */ jsxRuntimeExports.jsx("button", { className: "ct-btn ct-btn--primary", onClick: handleCaptureStart, disabled: busy.capture || runtime.capture.active, children: runtime.capture.active ? runtime.capture.phase : "Capture" })
+            ] }),
+            ANCHOR_IDS.map((anchorId) => /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "ct-progress-row", children: [
+              /* @__PURE__ */ jsxRuntimeExports.jsx("span", { children: anchorId }),
+              /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "ct-progress", children: /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { width: `${Math.min(100, (runtime.capture.counts[anchorId] ?? 0) / Math.max(runtime.capture.target, 1) * 100)}%` } }) }),
+              /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { children: [
+                runtime.capture.counts[anchorId] ?? 0,
+                "/",
+                runtime.capture.target || 0
+              ] })
+            ] }, anchorId)),
+            /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "ct-tag-tabs", children: ANCHOR_IDS.map((anchorId) => /* @__PURE__ */ jsxRuntimeExports.jsx("button", { className: `ct-pill${activeAnchorId === anchorId ? " active" : ""}`, onClick: () => setActiveAnchorId(anchorId), children: anchorId }, anchorId)) }),
+            activeFit && /* @__PURE__ */ jsxRuntimeExports.jsxs(jsxRuntimeExports.Fragment, { children: [
+              /* @__PURE__ */ jsxRuntimeExports.jsxs("label", { className: "ct-check", children: [
+                /* @__PURE__ */ jsxRuntimeExports.jsx("input", { type: "checkbox", checked: activeFit.auto, onChange: (event) => void updateFitOption(activeAnchorId, { auto: event.target.checked }) }),
+                " Auto Calibrate"
+              ] }),
+              /* @__PURE__ */ jsxRuntimeExports.jsx("select", { className: "ct-input", value: activeFit.fit_mode, onChange: (event) => void updateFitOption(activeAnchorId, { fit_mode: event.target.value }), children: FIT_MODES.map((mode) => /* @__PURE__ */ jsxRuntimeExports.jsx("option", { value: mode, children: mode }, mode)) }),
+              activeFit.fit_mode === "Polynomial" && /* @__PURE__ */ jsxRuntimeExports.jsx("input", { className: "ct-input", type: "number", min: 1, max: 10, value: activeFit.poly_deg, onChange: (event) => void updateFitOption(activeAnchorId, { poly_deg: Number.parseInt(event.target.value, 10) || 4 }) }),
+              activeFit.fit_mode === "Moving Average" && /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "ct-inline-fields", children: [
+                /* @__PURE__ */ jsxRuntimeExports.jsx("input", { className: "ct-input", type: "number", min: 2, max: 10, value: activeFit.ma_period, onChange: (event) => void updateFitOption(activeAnchorId, { ma_period: Number.parseInt(event.target.value, 10) || 4 }) }),
+                /* @__PURE__ */ jsxRuntimeExports.jsxs("select", { className: "ct-input", value: activeFit.ma_type, onChange: (event) => void updateFitOption(activeAnchorId, { ma_type: event.target.value }), children: [
+                  /* @__PURE__ */ jsxRuntimeExports.jsx("option", { value: "Trailing", children: "Trailing" }),
+                  /* @__PURE__ */ jsxRuntimeExports.jsx("option", { value: "Centered", children: "Centered" })
+                ] })
+              ] })
+            ] }),
+            ANCHOR_IDS.map((anchorId) => /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "ct-field", children: [
+              /* @__PURE__ */ jsxRuntimeExports.jsxs("label", { children: [
+                anchorId,
+                " Equation"
+              ] }),
+              /* @__PURE__ */ jsxRuntimeExports.jsx("input", { className: "ct-input ct-input--mono", value: equationDrafts[anchorId], onChange: (event) => setEquationDrafts((current) => ({ ...current, [anchorId]: event.target.value })), onBlur: () => void saveEquation(anchorId) }),
+              /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "ct-runtime-note", children: [
+                "Saved: ",
+                selectedTag.saved_profile_equations[anchorId] || "Raw distance"
+              ] })
+            ] }, anchorId))
+          ] }),
+          /* @__PURE__ */ jsxRuntimeExports.jsxs("section", { className: "ct-section", children: [
+            /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "ct-section-title", children: "Captured Points" }),
+            /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "ct-points-log", children: selectedTag.captured_points_log.length > 0 ? selectedTag.captured_points_log.join("\n") : "No data captured yet." }),
+            /* @__PURE__ */ jsxRuntimeExports.jsx("button", { className: "ct-btn ct-btn--ghost", onClick: async () => {
+              const data = await postJson(`/api/calibration/points/clear/${encodeURIComponent(selectedTag.tag_id)}`);
+              applySnapshot(data);
+            }, children: "Clear Captured Data" })
+          ] }),
+          /* @__PURE__ */ jsxRuntimeExports.jsxs("section", { className: "ct-section", children: [
+            /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "ct-section-title", children: "Smoothing Filter" }),
+            /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "ct-tag-tabs", children: ["EMA", "Rolling", "Kalman"].map((mode) => /* @__PURE__ */ jsxRuntimeExports.jsx("button", { className: `ct-pill${runtime.filter.mode === mode ? " active" : ""}`, onClick: async () => {
+              const data = await postJson("/api/calibration/filter", { mode });
+              if (!data.success) showStatus(data.error ?? "Could not update filter.", "error");
+              else applySnapshot(data);
+            }, children: mode }, mode)) }),
+            /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "ct-slider-row", children: [
+              /* @__PURE__ */ jsxRuntimeExports.jsx("label", { children: "EMA a" }),
+              /* @__PURE__ */ jsxRuntimeExports.jsx("input", { className: "ct-input", type: "number", step: "0.01", value: runtime.filter.ema_alpha, onChange: async (event) => {
+                const data = await postJson("/api/calibration/filter", { mode: runtime.filter.mode, ema_alpha: Number.parseFloat(event.target.value) || 0.2 });
+                applySnapshot(data);
+              } })
+            ] }),
+            /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "ct-slider-row", children: [
+              /* @__PURE__ */ jsxRuntimeExports.jsx("label", { children: "Rolling" }),
+              /* @__PURE__ */ jsxRuntimeExports.jsx("input", { className: "ct-input", type: "number", step: "1", value: runtime.filter.roll_n, onChange: async (event) => {
+                const data = await postJson("/api/calibration/filter", { mode: runtime.filter.mode, roll_n: Number.parseInt(event.target.value, 10) || 8 });
+                applySnapshot(data);
+              } })
+            ] }),
+            /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "ct-slider-row", children: [
+              /* @__PURE__ */ jsxRuntimeExports.jsx("label", { children: "Kalman Q" }),
+              /* @__PURE__ */ jsxRuntimeExports.jsx("input", { className: "ct-input", type: "number", step: "0.01", value: runtime.filter.kal_q, onChange: async (event) => {
+                const data = await postJson("/api/calibration/filter", { mode: runtime.filter.mode, kal_q: Number.parseFloat(event.target.value) || 0.1 });
+                applySnapshot(data);
+              } })
+            ] }),
+            /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "ct-slider-row", children: [
+              /* @__PURE__ */ jsxRuntimeExports.jsx("label", { children: "Kalman R" }),
+              /* @__PURE__ */ jsxRuntimeExports.jsx("input", { className: "ct-input", type: "number", step: "0.1", value: runtime.filter.kal_r, onChange: async (event) => {
+                const data = await postJson("/api/calibration/filter", { mode: runtime.filter.mode, kal_r: Number.parseFloat(event.target.value) || 2 });
+                applySnapshot(data);
+              } })
+            ] })
+          ] })
+        ] })
+      ] })
+    ] }),
+    /* @__PURE__ */ jsxRuntimeExports.jsx(CalibrationGraphPanel, { tag: selectedTag, collapsed: graphCollapsed, onToggle: () => setGraphCollapsed((current) => !current) })
+  ] }) });
+};
+FocusStyleManager.onlyShowFocusOnTabs();
+const MODULE_LABELS = {
+  profile: { title: "Profile Manager", sub: "Workspace defaults land here so CAD is entered intentionally.", icon: "P" },
+  calibration: { title: "Calibration Tool", sub: "Tag distance correction and fitting.", icon: "C" },
+  cad: { title: "2D CAD Modeling", sub: "Restored Python CAD backend inside the new shell.", icon: "Q" },
+  anchors: { title: "Anchor Manager", sub: "UWB anchor configuration and layout.", icon: "A" },
+  rtls: { title: "RTLS Dashboard", sub: "Real-time location tracking monitor.", icon: "R" }
+};
+const EmptyWorkspacePanel = () => /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "app-empty-state", children: [
+  /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "app-empty-icon", children: "+" }),
+  /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "app-empty-title", children: "No Workspace Open" }),
+  /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "app-empty-sub", children: "Start from File / New Workspace or use the + button in the tab strip." })
+] });
+const EmptyModulePanel = ({ module }) => {
+  const info = MODULE_LABELS[module];
+  return /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "app-module-placeholder", children: [
+    /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "app-module-icon", children: info.icon }),
+    /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "app-module-title", children: info.title }),
+    /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "app-module-sub", children: info.sub }),
+    module !== "cad" && /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "app-module-pill", children: "Module shell ready" })
+  ] });
+};
+const WorkspaceHost = ({ workspace, isActive }) => {
+  const [mountedModules, setMountedModules] = reactExports.useState(() => /* @__PURE__ */ new Set([workspace.module]));
+  reactExports.useEffect(() => {
+    setMountedModules((current) => {
+      if (current.has(workspace.module)) return current;
+      return /* @__PURE__ */ new Set([...current, workspace.module]);
+    });
+  }, [workspace.module]);
+  const showModule = (module) => workspace.module === module;
+  const shouldMountModule = (module) => mountedModules.has(module);
+  return /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: `app-workspace-host${isActive ? " app-workspace-host--active" : ""}`, children: [
+    shouldMountModule("cad") && /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: `app-workspace-module${showModule("cad") ? " app-workspace-module--visible" : ""}`, children: /* @__PURE__ */ jsxRuntimeExports.jsx(CADModule, { workspaceId: workspace.id }) }),
+    shouldMountModule("profile") && /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: `app-workspace-module${showModule("profile") ? " app-workspace-module--visible" : ""}`, children: /* @__PURE__ */ jsxRuntimeExports.jsx(TagProfiler, { workspaceId: workspace.id }) }),
+    shouldMountModule("anchors") && /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: `app-workspace-module${showModule("anchors") ? " app-workspace-module--visible" : ""}`, children: /* @__PURE__ */ jsxRuntimeExports.jsx(AnchorManager, { workspaceId: workspace.id }) }),
+    shouldMountModule("calibration") && /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: `app-workspace-module${showModule("calibration") ? " app-workspace-module--visible" : ""}`, children: /* @__PURE__ */ jsxRuntimeExports.jsx(CalibrationTool, { workspaceId: workspace.id }) }),
+    shouldMountModule("rtls") && /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: `app-workspace-module${showModule("rtls") ? " app-workspace-module--visible" : ""}`, children: /* @__PURE__ */ jsxRuntimeExports.jsx(EmptyModulePanel, { module: "rtls" }) })
+  ] });
+};
+const App = () => {
+  const nextTabIdRef = reactExports.useRef(1);
+  const [tabs, setTabs] = reactExports.useState([]);
+  const [activeTabId, setActiveTabId] = reactExports.useState(null);
+  const activeTab = reactExports.useMemo(
+    () => tabs.find((tab) => tab.id === activeTabId) ?? null,
+    [activeTabId, tabs]
+  );
+  const handleNewTab = reactExports.useCallback(() => {
+    const id2 = `ws-${nextTabIdRef.current++}`;
+    const newTab = {
+      id: id2,
+      name: `Workspace ${nextTabIdRef.current - 1}`,
+      module: "profile",
+      modified: false
+    };
+    setTabs((prev) => [...prev, newTab]);
+    setActiveTabId(id2);
+  }, []);
+  const handleTabClose = reactExports.useCallback((id2) => {
+    setTabs((prev) => {
+      const index = prev.findIndex((tab) => tab.id === id2);
+      const remaining = prev.filter((tab) => tab.id !== id2);
+      if (activeTabId === id2) {
+        const fallback = remaining[index] ?? remaining[index - 1] ?? null;
+        setActiveTabId(fallback?.id ?? null);
+      }
+      return remaining;
+    });
+  }, [activeTabId]);
+  const handleTabReorder = reactExports.useCallback((draggedId, targetId) => {
+    setTabs((prev) => {
+      const from = prev.findIndex((tab) => tab.id === draggedId);
+      const to = prev.findIndex((tab) => tab.id === targetId);
+      if (from === -1 || to === -1 || from === to) return prev;
+      const next = [...prev];
+      const [moved] = next.splice(from, 1);
+      next.splice(to, 0, moved);
+      return next;
+    });
+  }, []);
+  const handleModuleChange = reactExports.useCallback((module) => {
+    if (!activeTabId) return;
+    setTabs((prev) => prev.map((tab) => tab.id === activeTabId ? { ...tab, module } : tab));
+  }, [activeTabId]);
+  const canCloseTab = tabs.length > 0 && activeTabId !== null;
+  const activeModule = activeTab?.module ?? null;
+  return /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "bp5-dark app-root", children: /* @__PURE__ */ jsxRuntimeExports.jsxs(motion.div, { className: "app-shell", initial: { opacity: 0 }, animate: { opacity: 1 }, transition: { duration: 0.35 }, children: [
+    /* @__PURE__ */ jsxRuntimeExports.jsx(
+      HotBar,
+      {
+        canCloseTab,
+        onNewWorkspace: handleNewTab,
+        onCloseTab: () => activeTabId && handleTabClose(activeTabId)
+      }
+    ),
+    /* @__PURE__ */ jsxRuntimeExports.jsx(
+      TabStrip,
+      {
+        tabs,
+        activeTabId,
+        activeModule,
+        onTabSelect: setActiveTabId,
+        onTabClose: handleTabClose,
+        onTabReorder: handleTabReorder,
+        onNewTab: handleNewTab
+      }
+    ),
+    /* @__PURE__ */ jsxRuntimeExports.jsx(LeftRail, { activeModule, onModuleChange: handleModuleChange, disabled: !activeTab }),
+    tabs.map((tab) => /* @__PURE__ */ jsxRuntimeExports.jsx(WorkspaceHost, { workspace: tab, isActive: tab.id === activeTabId }, tab.id)),
+    !activeTab && /* @__PURE__ */ jsxRuntimeExports.jsx(EmptyWorkspacePanel, {})
+  ] }) });
 };
 ReactDOM$1.createRoot(document.getElementById("root")).render(
   /* @__PURE__ */ jsxRuntimeExports.jsx(React.StrictMode, { children: /* @__PURE__ */ jsxRuntimeExports.jsx(App, {}) })

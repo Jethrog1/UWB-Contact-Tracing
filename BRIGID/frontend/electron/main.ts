@@ -1,12 +1,19 @@
 import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron'
-import { spawn, ChildProcess } from 'child_process'
+import { spawn, ChildProcess, execFile } from 'child_process'
 import { join } from 'path'
+import { promisify } from 'util'
 import { is } from '@electron-toolkit/utils'
 
 let cadServer: ChildProcess | null = null
 let mainWindow: BrowserWindow | null = null
+let shutdownPromise: Promise<void> | null = null
+let appQuitInFlight = false
 
 const CAD_SERVER_HEALTH_URL = 'http://127.0.0.1:8765/health'
+const CAD_SERVER_PORT = 8765
+const execFileAsync = promisify(execFile)
+
+const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms))
 
 async function isCadServerReachable(): Promise<boolean> {
   const controller = new AbortController()
@@ -22,12 +29,87 @@ async function isCadServerReachable(): Promise<boolean> {
   }
 }
 
+async function listCadServerPids(): Promise<number[]> {
+  try {
+    if (process.platform === 'win32') {
+      const { stdout } = await execFileAsync('netstat', ['-ano', '-p', 'tcp'])
+      const matches = stdout
+        .split(/\r?\n/)
+        .map(line => line.trim())
+        .filter(line => line.startsWith('TCP'))
+        .map(line => line.split(/\s+/))
+        .filter(parts => parts.length >= 5 && parts[1].endsWith(`:${CAD_SERVER_PORT}`) && parts[3] === 'LISTENING')
+        .map(parts => Number.parseInt(parts[4], 10))
+        .filter((pid): pid is number => Number.isInteger(pid) && pid > 0)
+      return [...new Set(matches)]
+    }
+
+    const { stdout } = await execFileAsync('lsof', ['-ti', `tcp:${CAD_SERVER_PORT}`, '-sTCP:LISTEN'])
+    return stdout
+      .split(/\r?\n/)
+      .map(line => Number.parseInt(line.trim(), 10))
+      .filter((pid): pid is number => Number.isInteger(pid) && pid > 0)
+  } catch {
+    return []
+  }
+}
+
+async function killProcessTree(pid: number): Promise<void> {
+  if (!Number.isInteger(pid) || pid <= 0 || pid === process.pid) return
+
+  try {
+    if (process.platform === 'win32') {
+      await execFileAsync('taskkill', ['/PID', String(pid), '/T', '/F'])
+      return
+    }
+
+    process.kill(pid, 'SIGTERM')
+    await sleep(500)
+    try {
+      process.kill(pid, 0)
+      process.kill(pid, 'SIGKILL')
+    } catch {
+      // Process exited after SIGTERM.
+    }
+  } catch {
+    // The process may already be gone.
+  }
+}
+
+async function stopCadServersOnPort(excludePid?: number): Promise<void> {
+  const pids = await listCadServerPids()
+  for (const pid of pids) {
+    if (excludePid && pid === excludePid) continue
+    await killProcessTree(pid)
+  }
+
+  const deadline = Date.now() + 4000
+  while (Date.now() < deadline) {
+    const remaining = await listCadServerPids()
+    const live = excludePid ? remaining.filter(pid => pid !== excludePid) : remaining
+    if (live.length === 0 && !(await isCadServerReachable())) return
+    await sleep(120)
+  }
+}
+
+async function waitForCadServerReady(): Promise<void> {
+  const deadline = Date.now() + 10000
+  while (Date.now() < deadline) {
+    if (await isCadServerReachable()) return
+    if (cadServer?.exitCode != null) {
+      throw new Error(`CAD server exited early with code ${cadServer.exitCode}`)
+    }
+    await sleep(150)
+  }
+  throw new Error('Timed out waiting for CAD server to become ready.')
+}
+
 async function startCadServer(): Promise<void> {
-  if (await isCadServerReachable()) {
-    console.log('[main] Reusing existing CAD server on 127.0.0.1:8765')
-    cadServer = null
+  if (cadServer && cadServer.exitCode == null && !cadServer.killed) {
     return
   }
+
+  await stopCadServersOnPort()
 
   const backendDir = is.dev
     ? join(app.getAppPath(), '..', 'backend')
@@ -45,6 +127,7 @@ async function startCadServer(): Promise<void> {
       cwd: backendDir,
       stdio: ['ignore', 'pipe', 'pipe'],
       env: { ...process.env, PYTHONUNBUFFERED: '1' },
+      windowsHide: true,
     },
   )
 
@@ -57,21 +140,41 @@ async function startCadServer(): Promise<void> {
   })
 
   cadServer.on('exit', async (code) => {
-    if (code !== 0 && await isCadServerReachable()) {
-      console.log('[main] CAD server already active on 127.0.0.1:8765, reusing existing instance')
-      cadServer = null
-      return
-    }
-
     console.log(`[main] CAD server exited with code ${code}`)
     cadServer = null
   })
+
+  await waitForCadServerReady()
 }
 
-function stopCadServer(): void {
-  if (!cadServer) return
-  cadServer.kill()
-  cadServer = null
+async function stopCadServer(): Promise<void> {
+  if (shutdownPromise) {
+    await shutdownPromise
+    return
+  }
+
+  shutdownPromise = (async () => {
+    const child = cadServer
+    cadServer = null
+
+    if (child?.pid) {
+      try {
+        child.kill('SIGTERM')
+      } catch {
+        // The process may already be exiting.
+      }
+      await sleep(300)
+      await killProcessTree(child.pid)
+    }
+
+    await stopCadServersOnPort()
+  })()
+
+  try {
+    await shutdownPromise
+  } finally {
+    shutdownPromise = null
+  }
 }
 
 // ── Paths ──────────────────────────────────────────────────────────────
@@ -106,7 +209,7 @@ ipcMain.handle('cad:status', async () => {
 })
 
 ipcMain.handle('cad:restart', async () => {
-  stopCadServer()
+  await stopCadServer()
   await startCadServer()
   const running = (cadServer !== null && !cadServer.killed) || await isCadServerReachable()
   return { ok: running }
@@ -200,7 +303,11 @@ if (!gotSingleInstanceLock) {
 }
 
 app.whenReady().then(async () => {
-  await startCadServer()
+  try {
+    await startCadServer()
+  } catch (error) {
+    console.error('[main] Failed to start CAD server:', error)
+  }
   createWindow()
 
   app.on('activate', () => {
@@ -209,12 +316,16 @@ app.whenReady().then(async () => {
 })
 
 app.on('window-all-closed', () => {
-  stopCadServer()
   if (process.platform !== 'darwin') {
     app.quit()
   }
 })
 
-app.on('before-quit', () => {
-  stopCadServer()
+app.on('before-quit', (event) => {
+  if (appQuitInFlight) return
+  event.preventDefault()
+  appQuitInFlight = true
+  void stopCadServer().finally(() => {
+    app.exit(0)
+  })
 })

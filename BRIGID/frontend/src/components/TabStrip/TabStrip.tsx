@@ -1,12 +1,13 @@
 import React, { useEffect, useRef, useState } from 'react'
 import { Icon } from '@blueprintjs/core'
 import { AnimatePresence, motion } from 'motion/react'
-import { WorkspaceTab } from '../../types'
+import { AppModule, WorkspaceTab } from '../../types'
 import './TabStrip.css'
 
 interface TabStripProps {
   tabs: WorkspaceTab[]
   activeTabId: string | null
+  activeModule: AppModule | null
   onTabSelect: (id: string) => void
   onTabClose: (id: string) => void
   onTabReorder: (draggedId: string, targetId: string) => void
@@ -26,12 +27,14 @@ const VIEW_CONTROLS: { cmd: string; icon: string; label: string; title: string }
 const TabStrip: React.FC<TabStripProps> = ({
   tabs,
   activeTabId,
+  activeModule,
   onTabSelect,
   onTabClose,
   onTabReorder,
   onNewTab,
   onViewCommand,
 }) => {
+  const showViewControls = activeModule === 'cad' || activeModule === 'anchors'
   const [searchVisible, setSearchVisible] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
   const [draggingId, setDraggingId] = useState<string | null>(null)
@@ -50,8 +53,9 @@ const TabStrip: React.FC<TabStripProps> = ({
       onViewCommand(cmd)
       return
     }
-    // Broadcast via custom event so mounted CADModule instances can receive it
-    window.dispatchEvent(new CustomEvent('cad-view-command', { detail: { cmd, workspaceId: activeTabId } }))
+    if (!activeTabId) return
+    const eventName = activeModule === 'anchors' ? 'anchor-view-command' : 'cad-view-command'
+    window.dispatchEvent(new CustomEvent(eventName, { detail: { cmd, workspaceId: activeTabId } }))
   }
 
   return (
@@ -118,22 +122,24 @@ const TabStrip: React.FC<TabStripProps> = ({
 
       <div className="tab-strip__spacer" />
 
-      {/* View control cluster — left of search */}
-      <div className="tab-strip__view-controls electron-no-drag">
-        {VIEW_CONTROLS.map(vc => (
-          <button
-            key={vc.cmd}
-            className="tab-strip__view-btn"
-            title={vc.title}
-            onClick={() => handleViewCmd(vc.cmd)}
-            disabled={!activeTabId}
-          >
-            <Icon icon={vc.icon as any} size={11} />
-            {vc.label && <span className="tab-strip__view-label">{vc.label}</span>}
-          </button>
-        ))}
-        <div className="tab-strip__view-sep" />
-      </div>
+      {/* View control cluster — only shown for CAD workspaces */}
+      {showViewControls && (
+        <div className="tab-strip__view-controls electron-no-drag">
+          {VIEW_CONTROLS.map(vc => (
+            <button
+              key={vc.cmd}
+              className="tab-strip__view-btn"
+              title={vc.title}
+              onClick={() => handleViewCmd(vc.cmd)}
+              disabled={!activeTabId}
+            >
+              <Icon icon={vc.icon as any} size={11} />
+              {vc.label && <span className="tab-strip__view-label">{vc.label}</span>}
+            </button>
+          ))}
+          <div className="tab-strip__view-sep" />
+        </div>
+      )}
 
       {/* Search */}
       <div className="tab-strip__search electron-no-drag">
