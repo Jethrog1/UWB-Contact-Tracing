@@ -1,153 +1,164 @@
-import { useState, useRef, useEffect, MouseEvent } from 'react';
-import { motion, useMotionValue, useSpring, animate } from 'framer-motion';
-import { RotateCcw, ZoomIn, ZoomOut, Play } from 'lucide-react';
+import React, { useCallback, useMemo, useState } from 'react'
+import { FocusStyleManager } from '@blueprintjs/core'
+import { motion } from 'motion/react'
 
-export default function App() {
-  const [equation, setEquation] = useState("sin(x) * x");
-  const [points, setPoints] = useState<{x: number, y: number}[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
+import HotBar from './components/HotBar/HotBar'
+import LeftRail from './components/LeftRail/LeftRail'
+import TabStrip from './components/TabStrip/TabStrip'
+import CADModule from './components/modules/CADModule/CADModule'
+import { AppModule, WorkspaceTab } from './types'
+import './App.css'
 
-  // Animation values
-  const panX = useMotionValue(0);
-  const panY = useMotionValue(0);
-  const scale = useSpring(1, { stiffness: 200, damping: 25 });
-  
-  const fetchPlot = async () => {
-    setLoading(true);
-    setError("");
-    try {
-      const resp = await fetch("http://127.0.0.1:8000/plot", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ equation, x_min: -30, x_max: 30, points: 500 })
-      });
-      const data = await resp.json();
-      if (!resp.ok) {
-        setError(data.detail || "Error evaluating equation");
-      } else {
-        setPoints(data.data);
-      }
-    } catch (e) {
-      setError("Cannot connect to server. Is FastAPI running?");
-    }
-    setLoading(false);
-  };
+FocusStyleManager.onlyShowFocusOnTabs()
 
-  const handleReset = () => {
-    animate(panX, 0, { type: "spring", stiffness: 150, damping: 20 });
-    animate(panY, 0, { type: "spring", stiffness: 150, damping: 20 });
-    scale.set(1);
-  };
+let nextTabId = 1
 
-  const handleZoomIn = () => scale.set(scale.get() * 1.5);
-  const handleZoomOut = () => scale.set(scale.get() / 1.5);
-
-  // Compute SVG Path
-  // 1 unit = 40 pixels
-  const buildPath = () => {
-    if (points.length === 0) return "";
-    const p0 = points[0];
-    let d = `M ${p0.x * 40} ${-p0.y * 40}`;
-    for (let i = 1; i < points.length; i++) {
-        d += ` L ${points[i].x * 40} ${-points[i].y * 40}`;
-    }
-    return d;
-  };
-
-  // Build grid lines
-  const gridLines = [];
-  for (let i = -30; i <= 30; i++) {
-    // Vertical lines
-    gridLines.push(<line key={`vx${i}`} x1={i*40} y1={-1200} x2={i*40} y2={1200} stroke="#333" strokeWidth={i===0?2:0.5} opacity={i===0?1:0.3}/>);
-    // Horizontal lines
-    gridLines.push(<line key={`hy${i}`} x1={-1200} y1={-i*40} x2={1200} y2={-i*40} stroke="#333" strokeWidth={i===0?2:0.5} opacity={i===0?1:0.3}/>);
-  }
-
-  return (
-    <div style={{ width: '100vw', height: '100vh', backgroundColor: '#111', overflow: 'hidden', fontFamily: 'sans-serif', color: 'white', position: 'relative' }}>
-        
-        {/* Interactive Graph Surface */}
-        <div style={{ position: 'absolute', inset: 0, cursor: 'grab' }}>
-            <motion.div 
-               style={{ width: '100%', height: '100%', x: panX, y: panY }}
-               drag
-               dragMomentum={true}
-               whileDrag={{ cursor: 'grabbing' }}
-            >
-                <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                    <motion.svg style={{ scale, width: 2400, height: 2400, overflow: 'visible' }}>
-                        <g transform="translate(1200 1200)">
-                            {gridLines}
-                            {points.length > 0 && (
-                                <motion.path
-                                    d={buildPath()}
-                                    fill="none"
-                                    stroke="cyan"
-                                    strokeWidth={3}
-                                    style={{ filter: "drop-shadow(0px 0px 8px cyan)" }}
-                                    initial={{ pathLength: 0, opacity: 0 }}
-                                    animate={{ pathLength: 1, opacity: 1 }}
-                                    transition={{ duration: 2, ease: "easeInOut" }}
-                                />
-                            )}
-                        </g>
-                    </motion.svg>
-                </div>
-            </motion.div>
-        </div>
-
-        {/* UI Overlay */}
-        <div style={{ position: 'absolute', bottom: '40px', left: '50%', transform: 'translateX(-50%)', display: 'flex', gap: '15px', alignItems: 'center', backgroundColor: 'rgba(30, 30, 30, 0.8)', padding: '20px 30px', borderRadius: '15px', backdropFilter: 'blur(10px)', border: '1px solid #333' }}>
-            <motion.input
-                value={equation}
-                onChange={e => setEquation(e.target.value)}
-                placeholder="Type equation, e.g. sin(x)"
-                whileFocus={{ scale: 1.05, boxShadow: '0px 0px 20px rgba(0, 255, 255, 0.5)' }}
-                style={{
-                   padding: '10px 15px',
-                   borderRadius: '8px',
-                   border: '1px solid #444',
-                   backgroundColor: '#222',
-                   color: 'cyan',
-                   fontSize: '16px',
-                   outline: 'none',
-                   width: '250px',
-                   transition: 'width 0.3s'
-                }}
-            />
-            <motion.button
-                onClick={fetchPlot}
-                whileHover={{ scale: 1.05 }}
-                whileTap={{ scale: 0.95 }}
-                style={{ display: 'flex', alignItems: 'center', gap: '5px', padding: '10px 20px', borderRadius: '8px', border: 'none', backgroundColor: '#00ccaa', color: 'black', fontWeight: 'bold', cursor: 'pointer' }}
-            >
-                {loading ? 'Plotting...' : <><Play size={18} /> Plot</>}
-            </motion.button>
-
-            <div style={{ width: '1px', height: '30px', backgroundColor: '#444' }} />
-
-            {/* View Controls */}
-            <motion.button onClick={handleReset} whileHover={{ scale: 1.1, boxShadow: '0px 0px 10px rgba(255,255,255,0.3)' }} animate={{ scale: [1, 1.02, 1] }} transition={{ repeat: Infinity, duration: 2, ease: "easeInOut" }} style={controlBtnStyle}>
-                <RotateCcw size={18} />
-            </motion.button>
-            <motion.button onClick={handleZoomOut} whileHover={{ scale: 1.1 }} whileTap={{ scale: 0.9 }} style={controlBtnStyle}>
-                <ZoomOut size={18} />
-            </motion.button>
-            <motion.button onClick={handleZoomIn} whileHover={{ scale: 1.1 }} whileTap={{ scale: 0.9 }} style={controlBtnStyle}>
-                <ZoomIn size={18} />
-            </motion.button>
-        </div>
-
-        {error && (
-            <div style={{ position: 'absolute', top: '20px', left: '50%', transform: 'translateX(-50%)', backgroundColor: 'rgba(255,0,0,0.2)', color: '#ff6666', padding: '10px 20px', borderRadius: '8px', border: '1px solid #ff4444' }}>
-                {error}
-            </div>
-        )}
-    </div>
-  );
+const MODULE_LABELS: Record<AppModule, { title: string; sub: string; icon: string }> = {
+  profile: { title: 'Profile Manager', sub: 'Workspace defaults land here so CAD is entered intentionally.', icon: '◎' },
+  calibration: { title: 'Calibration Tool', sub: 'Tag distance correction and fitting.', icon: '◇' },
+  cad: { title: '2D CAD Modeling', sub: 'Restored Python CAD backend inside the new shell.', icon: '□' },
+  anchors: { title: 'Anchor Manager', sub: 'UWB anchor configuration and layout.', icon: '⊕' },
+  rtls: { title: 'RTLS Dashboard', sub: 'Real-time location tracking monitor.', icon: '⊗' },
 }
 
-const controlBtnStyle = {
-    display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '10px', borderRadius: '8px', border: '1px solid #555', backgroundColor: '#333', color: 'white', cursor: 'pointer'
-};
+const EmptyWorkspacePanel: React.FC = () => (
+  <div className="app-empty-state">
+    <div className="app-empty-icon">＋</div>
+    <div className="app-empty-title">No Workspace Open</div>
+    <div className="app-empty-sub">Start from File / New Workspace or use the + button in the tab strip.</div>
+  </div>
+)
+
+const EmptyModulePanel: React.FC<{ module: AppModule }> = ({ module }) => {
+  const info = MODULE_LABELS[module]
+  return (
+    <div className="app-module-placeholder">
+      <div className="app-module-icon">{info.icon}</div>
+      <div className="app-module-title">{info.title}</div>
+      <div className="app-module-sub">{info.sub}</div>
+      {module !== 'cad' && <div className="app-module-pill">Module shell ready</div>}
+    </div>
+  )
+}
+
+const StubRightPanel: React.FC<{ title: string; body: string }> = ({ title, body }) => (
+  <motion.aside
+    initial={{ opacity: 0, x: 16 }}
+    animate={{ opacity: 1, x: 0 }}
+    transition={{ duration: 0.3 }}
+    style={{
+      gridArea: 'right',
+      width: 300,
+      background: '#0c1220',
+      borderLeft: '1px solid rgba(56,68,94,0.35)',
+      display: 'flex',
+      flexDirection: 'column',
+      justifyContent: 'center',
+      padding: 20,
+      color: '#5a6a82',
+      gap: 8,
+    }}
+  >
+    <div style={{ fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.08em', color: '#2d3d50' }}>{title}</div>
+    <div style={{ fontSize: 13, color: '#94a3b8', lineHeight: 1.5 }}>{body}</div>
+  </motion.aside>
+)
+
+const App: React.FC = () => {
+  const [tabs, setTabs] = useState<WorkspaceTab[]>([])
+  const [activeTabId, setActiveTabId] = useState<string | null>(null)
+
+  const activeTab = useMemo(
+    () => tabs.find(tab => tab.id === activeTabId) ?? null,
+    [activeTabId, tabs],
+  )
+
+  const handleNewTab = useCallback(() => {
+    const id = `ws-${nextTabId++}`
+    const newTab: WorkspaceTab = {
+      id,
+      name: `Workspace ${nextTabId - 1}`,
+      module: 'profile',
+      modified: false,
+    }
+    setTabs(prev => [...prev, newTab])
+    setActiveTabId(id)
+  }, [])
+
+  const handleTabClose = useCallback((id: string) => {
+    setTabs(prev => {
+      const index = prev.findIndex(tab => tab.id === id)
+      const remaining = prev.filter(tab => tab.id !== id)
+      if (activeTabId === id) {
+        const fallback = remaining[index] ?? remaining[index - 1] ?? null
+        setActiveTabId(fallback?.id ?? null)
+      }
+      return remaining
+    })
+  }, [activeTabId])
+
+  const handleTabReorder = useCallback((draggedId: string, targetId: string) => {
+    setTabs(prev => {
+      const from = prev.findIndex(tab => tab.id === draggedId)
+      const to = prev.findIndex(tab => tab.id === targetId)
+      if (from === -1 || to === -1 || from === to) return prev
+      const next = [...prev]
+      const [moved] = next.splice(from, 1)
+      next.splice(to, 0, moved)
+      return next
+    })
+  }, [])
+
+  const handleModuleChange = useCallback((module: AppModule) => {
+    if (!activeTabId) return
+    setTabs(prev => prev.map(tab => (tab.id === activeTabId ? { ...tab, module } : tab)))
+  }, [activeTabId])
+
+  const canCloseTab = tabs.length > 0 && activeTabId !== null
+  const activeModule = activeTab?.module ?? null
+
+  return (
+    <div className="bp5-dark app-root">
+      <motion.div className="app-shell" initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.35 }}>
+        <HotBar
+          canCloseTab={canCloseTab}
+          onNewWorkspace={handleNewTab}
+          onCloseTab={() => activeTabId && handleTabClose(activeTabId)}
+        />
+
+        <TabStrip
+          tabs={tabs}
+          activeTabId={activeTabId}
+          onTabSelect={setActiveTabId}
+          onTabClose={handleTabClose}
+          onTabReorder={handleTabReorder}
+          onNewTab={handleNewTab}
+        />
+
+        <LeftRail activeModule={activeModule} onModuleChange={handleModuleChange} disabled={!activeTab} />
+
+        {!activeTab ? (
+          <>
+            <EmptyWorkspacePanel />
+            <StubRightPanel
+              title="Workspace"
+              body="New workspaces start in Profiling by default. Open CAD only when you want to enter the restored drawing module."
+            />
+          </>
+        ) : activeTab.module === 'cad' ? (
+          <CADModule />
+        ) : (
+          <>
+            <EmptyModulePanel module={activeTab.module} />
+            <StubRightPanel
+              title={MODULE_LABELS[activeTab.module].title}
+              body={MODULE_LABELS[activeTab.module].sub}
+            />
+          </>
+        )}
+      </motion.div>
+    </div>
+  )
+}
+
+export default App

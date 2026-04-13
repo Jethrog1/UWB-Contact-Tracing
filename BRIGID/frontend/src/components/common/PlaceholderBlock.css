@@ -1,0 +1,111 @@
+/* ============================================================
+   PlaceholderBlock — Reusable Placeholder Component
+   ============================================================ */
+
+.placeholder-block {
+  border: 1px dashed var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: rgba(24, 34, 51, 0.4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 40px;
+  transition: all var(--transition-smooth);
+  position: relative;
+  overflow: hidden;
+}
+
+.placeholder-block::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    135deg,
+    rgba(56, 189, 248, 0.02) 0%,
+    transparent 50%,
+    rgba(59, 130, 246, 0.02) 100%
+  );
+  opacity: 0;
+  transition: opacity var(--transition-smooth);
+}
+
+.placeholder-block:hover {
+  border-color: var(--border-default);
+  background: rgba(24, 34, 51, 0.6);
+}
+
+.placeholder-block:hover::before {
+  opacity: 1;
+}
+
+.placeholder-block__inner {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  z-index: 1;
+}
+
+.placeholder-block__icon {
+  color: var(--text-muted);
+  opacity: 0.6;
+}
+
+.placeholder-block__label {
+  font-size: var(--text-xs);
+  font-weight: 500;
+  color: var(--text-muted);
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
+/* ---- Type Variants ---- */
+.placeholder-block--image {
+  min-height: 120px;
+  background: linear-gradient(180deg, rgba(24, 34, 51, 0.5) 0%, rgba(15, 23, 36, 0.5) 100%);
+}
+
+.placeholder-block--chart {
+  min-height: 100px;
+  background: linear-gradient(180deg, rgba(24, 34, 51, 0.3) 0%, rgba(15, 23, 36, 0.5) 100%);
+}
+
+.placeholder-block--button {
+  min-height: 32px;
+  max-width: 160px;
+  border-style: solid;
+  border-color: var(--border-default);
+  cursor: pointer;
+}
+
+.placeholder-block--button:hover {
+  border-color: var(--accent-cyan);
+  box-shadow: var(--glow-cyan);
+}
+
+.placeholder-block--observation {
+  min-height: 60px;
+  border-left: 2px solid var(--accent-cyan);
+  border-radius: 0 var(--radius-md) var(--radius-md) 0;
+}
+
+.placeholder-block--text {
+  min-height: 32px;
+  justify-content: flex-start;
+  padding: var(--space-2) var(--space-3);
+}
+
+.placeholder-block--details {
+  min-height: 80px;
+  padding: var(--space-3);
+}
+
+.placeholder-block--action {
+  min-height: 36px;
+  border-style: solid;
+  cursor: pointer;
+}
+
+.placeholder-block--action:hover {
+  border-color: var(--accent-blue);
+  box-shadow: var(--glow-blue);
+}

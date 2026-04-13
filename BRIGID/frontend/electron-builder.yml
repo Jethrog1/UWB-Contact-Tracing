@@ -1,0 +1,19 @@
+appId: com.brigid.rtls
+productName: BRIGID
+directories:
+  buildResources: resources
+  output: dist
+files:
+  - out/**/*
+  - "!node_modules/**/*"
+asarUnpack:
+  - resources/**
+forceCodeSigning: false
+win:
+  target:
+    - target: portable
+      arch:
+        - x64
+  signingHashAlgorithms: []
+  sign: null
+

@@ -1,0 +1,202 @@
+/* ── TopBar ────────────────────────────────────────────────────────────── */
+.topbar {
+  grid-area: topbar;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 46px;
+  padding: 0 16px;
+  background: var(--surface-1);
+  border-bottom: 1px solid var(--border);
+  z-index: 100;
+  -webkit-app-region: drag;
+  user-select: none;
+}
+
+.electron-no-drag {
+  -webkit-app-region: no-drag;
+}
+
+/* ── Left: Brand + Search ── */
+.topbar__left {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-shrink: 0;
+}
+
+.topbar__brand-mark {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--accent-primary);
+  font-weight: 700;
+  font-size: 12px;
+  letter-spacing: 1.5px;
+}
+
+.topbar__brand-name {
+  font-family: 'Inter', sans-serif;
+  font-weight: 800;
+  letter-spacing: 2.5px;
+  font-size: 11px;
+}
+
+.topbar__search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 30px;
+  padding: 0 12px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: border-color var(--transition-fast);
+  min-width: 200px;
+}
+
+.topbar__search:hover {
+  border-color: var(--border-hover);
+}
+
+.topbar__search-icon {
+  color: var(--text-muted);
+}
+
+.topbar__search-text {
+  color: var(--text-muted);
+  font-size: 12px;
+  flex: 1;
+}
+
+.topbar__search-kbd {
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: 1px 5px;
+  font-size: 10px;
+  color: var(--text-muted);
+  font-family: 'Inter', sans-serif;
+}
+
+/* ── Center: Module Tabs ── */
+.topbar__center {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.topbar__tab {
+  position: relative;
+  height: 46px;
+  padding: 0 16px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  transition: color var(--transition-fast);
+}
+
+.topbar__tab-label {
+  position: relative;
+  z-index: 1;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  transition: color var(--transition-fast);
+  white-space: nowrap;
+}
+
+.topbar__tab:hover .topbar__tab-label {
+  color: var(--text-primary);
+}
+
+.topbar__tab--active .topbar__tab-label {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+.topbar__tab-indicator {
+  position: absolute;
+  bottom: 0;
+  left: 8px;
+  right: 8px;
+  height: 2px;
+  background: var(--accent-primary);
+  border-radius: 2px 2px 0 0;
+}
+
+/* ── Right: Workspace + Actions ── */
+.topbar__right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+}
+
+.topbar__save-indicator {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  color: var(--accent-success);
+}
+
+.topbar__save-icon {
+  color: var(--accent-success);
+}
+
+.topbar__separator {
+  width: 1px;
+  height: 20px;
+  background: var(--border);
+}
+
+.topbar__workspace {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 4px;
+  transition: background var(--transition-fast);
+}
+
+.topbar__workspace:hover {
+  background: var(--surface-2);
+  color: var(--text-primary);
+}
+
+.topbar__actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.topbar__icon-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  background: none;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.topbar__icon-btn:hover {
+  background: var(--surface-2);
+  border-color: var(--border);
+  color: var(--text-primary);
+}
+
+.topbar__icon-btn--circle {
+  border-radius: 50%;
+}
