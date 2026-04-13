@@ -1,8 +1,9 @@
 # Tech Stack
 
-This document outlines the core technologies used across the UWB-Contact-Tracing project repositories.
+This document outlines the core technologies used across the UWB-Contact-Tracing project repositories, representing the transition from a legacy Python UI to a modern web-desktop platform.
 
-## BRIGID (Web/Desktop Platform)
+## BRIGID (New Rebuild Architecture)
+This is the modernized, from-scratch rebuild of the platform.
 
 ### Frontend Environment
 - **Framework:** React 18.x
@@ -18,19 +19,12 @@ This document outlines the core technologies used across the UWB-Contact-Tracing
 - **Real-time Comms:** WebSockets (v12.0+)
 - **Language:** Python
 
-## 2DLCAD (Desktop RTLS/CAD Tools)
-
-### GUI & Interactivity
-- **GUI Framework:** PyQt6 standard library
-- **Web Elements:** PyQt6-WebEngine
-- **Language:** Python
-
-### Computation, Hardware, & Rendering
+## 2DLCAD (Legacy Application)
+This is the previous application architecture. It contains the legacy backend logic and frontend UI.
+- **Legacy UI/GUI Framework:** PyQt6 standard library (Python)
+- **Legacy Web Elements:** PyQt6-WebEngine
 - **Hardware Comm:** pyserial (Serial port hardware integration)
 - **Mathematical & Data:** numpy, matplotlib, opencv-python, pyparsing, contourpy
 - **File handling:** PyMuPDF, pillow, PyYAML
 
-### Package Management
-- Standard `pip` and `requirements.txt` based builds with standard setuptools dependencies.
-
-These modules show a heavy reliance on Python combined with a modern TypeScript/React web-desktop UI overlay via Electron/FastAPI architectures.
+The strategy moving forward utilizes the legacy computation algorithms and features within 2DLCAD as a reference while rebuilding the application as BRIGID using a strict FastAPI + TypeScript/React + Electron paradigm.
