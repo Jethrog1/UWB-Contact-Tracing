@@ -1,12 +1,11 @@
 "use strict";
 const electron = require("electron");
 const api = {
-  /** Returns the app version — placeholder */
   getVersion: () => "1.0.0",
-  /** Placeholder for future backend communication */
-  sendToBackend: (_channel, _data) => {
-    console.log("[preload] sendToBackend called — not connected yet");
-  }
+  /** Check if the Python CAD backend process is running */
+  cadStatus: () => electron.ipcRenderer.invoke("cad:status"),
+  /** Ask main process to restart the Python CAD backend */
+  cadRestart: () => electron.ipcRenderer.invoke("cad:restart")
 };
 if (process.contextIsolated) {
   try {
