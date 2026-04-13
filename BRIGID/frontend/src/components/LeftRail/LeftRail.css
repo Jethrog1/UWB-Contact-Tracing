@@ -1,0 +1,113 @@
+/* ============================================================
+   LeftRail — Vertical Icon Navigation
+   ============================================================ */
+
+.left-rail {
+  grid-area: rail;
+  display: flex;
+  flex-direction: column;
+  width: var(--left-rail-width);
+  background: var(--bg-secondary);
+  border-right: 1px solid var(--border-subtle);
+  padding: var(--space-2) 0;
+  z-index: 90;
+  user-select: none;
+}
+
+/* ---- Brand / Logo ---- */
+.left-rail__brand {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-2) 0 var(--space-3);
+  margin-bottom: var(--space-1);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.left-rail__logo {
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-md);
+  background: linear-gradient(135deg, rgba(56, 189, 248, 0.12), rgba(59, 130, 246, 0.12));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--accent-cyan);
+  transition: all var(--transition-smooth);
+}
+
+.left-rail__logo:hover {
+  background: linear-gradient(135deg, rgba(56, 189, 248, 0.2), rgba(59, 130, 246, 0.2));
+  box-shadow: var(--glow-cyan);
+}
+
+/* ---- Navigation ---- */
+.left-rail__nav {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  flex: 1;
+  padding: var(--space-2) 0;
+}
+
+.left-rail__btn {
+  position: relative;
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  border-radius: var(--radius-md);
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: all var(--transition-smooth);
+}
+
+.left-rail__btn:hover {
+  color: var(--text-primary);
+  background: var(--bg-hover);
+  transform: scale(1.05);
+}
+
+.left-rail__btn:hover::after {
+  content: '';
+  position: absolute;
+  inset: -2px;
+  border-radius: calc(var(--radius-md) + 2px);
+  box-shadow: var(--glow-subtle);
+  pointer-events: none;
+}
+
+.left-rail__btn--active {
+  color: var(--accent-cyan);
+  background: rgba(56, 189, 248, 0.08);
+}
+
+.left-rail__btn--active:hover {
+  color: var(--accent-cyan);
+  background: rgba(56, 189, 248, 0.12);
+}
+
+.left-rail__active-bar {
+  position: absolute;
+  left: -6px;
+  top: 6px;
+  bottom: 6px;
+  width: 3px;
+  background: var(--accent-cyan);
+  border-radius: 0 2px 2px 0;
+  box-shadow: 0 0 8px rgba(56, 189, 248, 0.4);
+}
+
+/* ---- Bottom Section ---- */
+.left-rail__bottom {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: var(--space-2) 0;
+  border-top: 1px solid var(--border-subtle);
+}
