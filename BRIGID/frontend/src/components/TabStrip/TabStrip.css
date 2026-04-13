@@ -1,0 +1,248 @@
+/* ── TabStrip — Project Workspace Tabs ──────────────────────────── */
+.tab-strip {
+  grid-area: tabstrip;
+  display: flex;
+  align-items: center;
+  height: 36px;
+  background: #0a0e17;
+  border-bottom: 1px solid rgba(56, 68, 94, 0.35);
+  padding: 0 6px 0 0;
+  gap: 0;
+  overflow: hidden;
+  position: relative;
+  z-index: 100;
+}
+
+/* ── Tabs container ─────────────────────────────────────────────── */
+.tab-strip__tabs {
+  display: flex;
+  align-items: stretch;
+  height: 100%;
+  gap: 1px;
+  overflow: hidden;
+  flex-shrink: 1;
+}
+
+/* ── Individual Tab ─────────────────────────────────────────────── */
+.tab-strip__tab {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 0 10px 0 8px;
+  min-width: 100px;
+  max-width: 200px;
+  height: 100%;
+  background: transparent;
+  border: none;
+  border-right: 1px solid rgba(56, 68, 94, 0.25);
+  color: #5a6a82;
+  font-size: 12px;
+  font-family: var(--font-primary);
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  transition: color 150ms;
+}
+
+.tab-strip__tab:hover {
+  color: #94a3b8;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.tab-strip__tab--active {
+  color: #e2e8f0;
+}
+
+/* Active background pill */
+.tab-strip__tab-active-bg {
+  position: absolute;
+  inset: 4px 0;
+  background: rgba(56, 68, 94, 0.25);
+  border-radius: 4px;
+  z-index: 0;
+}
+
+/* Tab bottom border indicator for active */
+.tab-strip__tab--active::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: #38bdf8;
+  border-radius: 2px 2px 0 0;
+}
+
+.tab-strip__tab-dot {
+  position: relative;
+  z-index: 1;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: transparent;
+  flex-shrink: 0;
+}
+
+.tab-strip__tab-dot--modified {
+  background: #f59e0b;
+}
+
+.tab-strip__tab-name {
+  position: relative;
+  z-index: 1;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-align: left;
+}
+
+.tab-strip__tab-close {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  background: transparent;
+  border: none;
+  border-radius: 3px;
+  color: #3d4d60;
+  cursor: pointer;
+  flex-shrink: 0;
+  padding: 0;
+  transition: background 120ms, color 120ms;
+}
+
+.tab-strip__tab:hover .tab-strip__tab-close,
+.tab-strip__tab--active .tab-strip__tab-close {
+  color: #5a6a82;
+}
+
+.tab-strip__tab-close:hover {
+  background: rgba(239, 68, 68, 0.15);
+  color: #ef4444 !important;
+}
+
+/* ── New Tab Button ─────────────────────────────────────────────── */
+.tab-strip__new-tab {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+  color: #3d4d60;
+  cursor: pointer;
+  margin: 0 4px;
+  transition: background 120ms, color 120ms;
+  flex-shrink: 0;
+}
+
+.tab-strip__new-tab:hover {
+  background: rgba(56, 68, 94, 0.3);
+  color: #94a3b8;
+}
+
+/* ── Spacer ─────────────────────────────────────────────────────── */
+.tab-strip__spacer {
+  flex: 1;
+  min-width: 12px;
+}
+
+/* ── Tab Search ─────────────────────────────────────────────────── */
+.tab-strip__search {
+  display: flex;
+  align-items: center;
+  height: 100%;
+  padding-right: 4px;
+}
+
+.tab-strip__search-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+  color: #3d4d60;
+  cursor: pointer;
+  transition: background 120ms, color 120ms;
+}
+
+.tab-strip__search-btn:hover {
+  background: rgba(56, 68, 94, 0.3);
+  color: #94a3b8;
+}
+
+.tab-strip__search-input-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.tab-strip__search-icon {
+  position: absolute;
+  left: 8px;
+  color: #4a5a72;
+  pointer-events: none;
+}
+
+.tab-strip__search-input {
+  width: 180px;
+  height: 26px;
+  padding: 0 8px 0 26px;
+  background: rgba(30, 40, 60, 0.8);
+  border: 1px solid rgba(56, 68, 94, 0.5);
+  border-radius: 4px;
+  color: #e2e8f0;
+  font-size: 12px;
+  font-family: var(--font-primary);
+  outline: none;
+  transition: border-color 150ms;
+}
+
+.tab-strip__search-input:focus {
+  border-color: rgba(56, 189, 248, 0.4);
+}
+
+.tab-strip__search-results {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  background: #0f1520;
+  border: 1px solid rgba(56, 68, 94, 0.5);
+  border-radius: 4px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+  z-index: 500;
+  padding: 4px 0;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.tab-strip__search-result {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 10px;
+  background: transparent;
+  border: none;
+  color: #c8d4e0;
+  font-size: 12px;
+  font-family: var(--font-primary);
+  cursor: pointer;
+  text-align: left;
+  transition: background 100ms;
+}
+
+.tab-strip__search-result:hover {
+  background: rgba(56, 189, 248, 0.1);
+}

@@ -1,13 +1,15 @@
-import { contextBridge } from 'electron'
+import { contextBridge, ipcRenderer } from 'electron'
 
-/** Placeholder API surface for future IPC communication with main process */
 const api = {
-  /** Returns the app version — placeholder */
   getVersion: (): string => '1.0.0',
-  /** Placeholder for future backend communication */
-  sendToBackend: (_channel: string, _data?: unknown): void => {
-    console.log('[preload] sendToBackend called — not connected yet')
-  }
+
+  /** Check if the Python CAD backend process is running */
+  cadStatus: (): Promise<{ running: boolean }> =>
+    ipcRenderer.invoke('cad:status'),
+
+  /** Ask main process to restart the Python CAD backend */
+  cadRestart: (): Promise<{ ok: boolean }> =>
+    ipcRenderer.invoke('cad:restart'),
 }
 
 if (process.contextIsolated) {

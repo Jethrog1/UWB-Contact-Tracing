@@ -1,33 +1,30 @@
-import React, { useState } from 'react'
+import React from 'react'
 import { Icon, IconName, Tooltip } from '@blueprintjs/core'
 import { motion } from 'motion/react'
+import { AppModule } from '../../types'
 import './LeftRail.css'
 
-interface NavItem {
-  id: string
+interface ModuleItem {
+  id: AppModule
   icon: IconName
   label: string
+  color?: string
 }
 
-const navItems: NavItem[] = [
-  { id: 'dashboard', icon: 'dashboard', label: 'Dashboard Overview' },
-  { id: 'floorplan', icon: 'map', label: 'Floor Plan View' },
-  { id: 'anchors', icon: 'cell-tower', label: 'Anchor Manager' },
-  { id: 'tags', icon: 'locate', label: 'Tag Tracker' },
-  { id: 'calibration', icon: 'regression-chart', label: 'Calibration Tools' },
-  { id: 'serial', icon: 'feed', label: 'Serial Monitor' },
-  { id: 'profiles', icon: 'people', label: 'Profile Manager' },
-  { id: 'layers', icon: 'layers', label: 'Layers & Overlays' },
+const MODULE_ITEMS: ModuleItem[] = [
+  { id: 'profile',     icon: 'person',           label: 'Profile Manager' },
+  { id: 'calibration', icon: 'regression-chart',  label: 'Calibration Tool' },
+  { id: 'cad',         icon: 'draw',              label: '2D CAD Modeling' },
+  { id: 'anchors',     icon: 'cell-tower',        label: 'Anchor Manager' },
+  { id: 'rtls',        icon: 'pulse',             label: 'RTLS Dashboard' },
 ]
 
-const bottomItems: NavItem[] = [
-  { id: 'docs', icon: 'manual', label: 'Documentation' },
-  { id: 'settings', icon: 'cog', label: 'Settings' },
-]
+interface LeftRailProps {
+  activeModule: AppModule
+  onModuleChange: (module: AppModule) => void
+}
 
-const LeftRail: React.FC = () => {
-  const [activeItem, setActiveItem] = useState('dashboard')
-
+const LeftRail: React.FC<LeftRailProps> = ({ activeModule, onModuleChange }) => {
   return (
     <motion.aside
       className="left-rail"
@@ -35,53 +32,60 @@ const LeftRail: React.FC = () => {
       animate={{ opacity: 1, x: 0 }}
       transition={{ duration: 0.4, delay: 0.1, ease: [0.4, 0, 0.2, 1] }}
     >
-      {/* ---- Navigation ---- */}
+      {/* ── App icon / home ── */}
+      <div className="left-rail__logo">
+        <Icon icon="locate" size={18} color="#38bdf8" />
+      </div>
+
+      <div className="left-rail__divider" />
+
+      {/* ── 5 Module Buttons ── */}
       <nav className="left-rail__nav">
-        {navItems.map((item) => (
-          <Tooltip
-            key={item.id}
-            content={item.label}
-            placement="right"
-            minimal
-            hoverOpenDelay={300}
-          >
-            <button
-              className={`left-rail__btn ${activeItem === item.id ? 'left-rail__btn--active' : ''}`}
-              onClick={() => setActiveItem(item.id)}
-              aria-label={item.label}
+        {MODULE_ITEMS.map((item) => {
+          const isActive = activeModule === item.id
+          return (
+            <Tooltip
+              key={item.id}
+              content={
+                <span style={{ fontSize: 12 }}>{item.label}</span>
+              }
+              placement="right"
+              minimal
+              hoverOpenDelay={400}
             >
-              {activeItem === item.id && (
-                <motion.div
-                  className="left-rail__active-bar"
-                  layoutId="left-rail-active"
-                  transition={{ type: 'spring', stiffness: 350, damping: 30 }}
-                />
-              )}
-              <Icon icon={item.icon} size={16} />
-            </button>
-          </Tooltip>
-        ))}
+              <button
+                className={`left-rail__btn ${isActive ? 'left-rail__btn--active' : ''}`}
+                onClick={() => onModuleChange(item.id)}
+                aria-label={item.label}
+              >
+                {isActive && (
+                  <motion.div
+                    className="left-rail__active-bar"
+                    layoutId="left-rail-active"
+                    transition={{ type: 'spring', stiffness: 380, damping: 32 }}
+                  />
+                )}
+                <span className="left-rail__btn-icon">
+                  <Icon icon={item.icon} size={17} />
+                </span>
+              </button>
+            </Tooltip>
+          )
+        })}
       </nav>
 
-      {/* ---- Bottom Actions ---- */}
+      {/* ── Bottom: Settings ── */}
       <div className="left-rail__bottom">
-        {bottomItems.map((item) => (
-          <Tooltip
-            key={item.id}
-            content={item.label}
-            placement="right"
-            minimal
-            hoverOpenDelay={300}
-          >
-            <button
-              className={`left-rail__btn ${activeItem === item.id ? 'left-rail__btn--active' : ''}`}
-              onClick={() => setActiveItem(item.id)}
-              aria-label={item.label}
-            >
-              <Icon icon={item.icon} size={16} />
-            </button>
-          </Tooltip>
-        ))}
+        <Tooltip
+          content={<span style={{ fontSize: 12 }}>Settings</span>}
+          placement="right"
+          minimal
+          hoverOpenDelay={400}
+        >
+          <button className="left-rail__btn left-rail__btn--bottom" aria-label="Settings">
+            <Icon icon="cog" size={16} />
+          </button>
+        </Tooltip>
       </div>
     </motion.aside>
   )

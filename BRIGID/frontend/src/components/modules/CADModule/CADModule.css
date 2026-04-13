@@ -1,0 +1,164 @@
+/* ── CAD Module Layout ───────────────────────────────────────────── */
+
+/*
+  CADModule renders two sibling children directly into the app-shell grid:
+    .cad-canvas-area  → grid-area: canvas
+    .cad-right-panel  → grid-area: right   (defined in CADRightPanel.css)
+*/
+.cad-canvas-area {
+  grid-area: canvas;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  background: #080d18;
+}
+
+/* ── Offline overlay ─────────────────────────────────────────────── */
+.cad-offline-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background: rgba(8, 13, 24, 0.88);
+  backdrop-filter: blur(6px);
+  gap: 10px;
+  color: #2d3d50;
+  user-select: none;
+}
+
+.cad-offline-icon {
+  font-size: 40px;
+  color: #1e2d3a;
+  line-height: 1;
+}
+
+.cad-offline-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: #3d4d60;
+  letter-spacing: 0.04em;
+}
+
+.cad-offline-sub {
+  font-size: 12px;
+  color: #1e2d42;
+  max-width: 300px;
+  text-align: center;
+  line-height: 1.5;
+}
+
+.cad-offline-retry {
+  margin-top: 8px;
+  padding: 6px 20px;
+  background: rgba(56, 189, 248, 0.08);
+  border: 1px solid rgba(56, 189, 248, 0.25);
+  border-radius: 5px;
+  color: #38bdf8;
+  font-size: 12px;
+  cursor: pointer;
+  transition: background 120ms;
+}
+.cad-offline-retry:hover { background: rgba(56, 189, 248, 0.14); }
+
+/* ── World coordinate readout ────────────────────────────────────── */
+.cad-coord-readout {
+  position: absolute;
+  bottom: 8px;
+  right: 12px;
+  z-index: 10;
+  font-size: 11px;
+  font-family: 'JetBrains Mono', monospace;
+  color: #2d3d50;
+  background: rgba(8, 13, 24, 0.6);
+  padding: 3px 8px;
+  border-radius: 4px;
+  pointer-events: none;
+  user-select: none;
+}
+
+/* ── Dialog overlay ──────────────────────────────────────────────── */
+.cad-dialog-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  background: rgba(0, 0, 0, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  backdrop-filter: blur(3px);
+}
+
+.cad-dialog {
+  width: 300px;
+  background: #0f1520;
+  border: 1px solid rgba(56, 68, 94, 0.4);
+  border-radius: 8px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.7);
+  padding: 20px 20px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.cad-dialog-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: #8a9ab8;
+  letter-spacing: 0.02em;
+}
+
+.cad-dialog-label {
+  font-size: 12px;
+  color: #4a5a74;
+}
+
+.cad-dialog-input {
+  background: rgba(56, 68, 94, 0.12);
+  border: 1px solid rgba(56, 68, 94, 0.3);
+  border-radius: 5px;
+  padding: 8px 10px;
+  color: #cbd5e1;
+  font-size: 13px;
+  font-family: 'JetBrains Mono', monospace;
+  outline: none;
+  transition: border-color 120ms;
+}
+.cad-dialog-input:focus {
+  border-color: rgba(56, 189, 248, 0.5);
+}
+
+.cad-dialog-btns {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  margin-top: 4px;
+}
+
+.cad-dialog-btn {
+  padding: 6px 18px;
+  border-radius: 5px;
+  font-size: 12px;
+  cursor: pointer;
+  border: 1px solid transparent;
+  transition: background 100ms;
+}
+
+.cad-dialog-btn--cancel {
+  background: transparent;
+  border-color: rgba(56, 68, 94, 0.3);
+  color: #4a5a74;
+}
+.cad-dialog-btn--cancel:hover { background: rgba(56, 68, 94, 0.15); }
+
+.cad-dialog-btn--ok {
+  background: rgba(56, 189, 248, 0.15);
+  border-color: rgba(56, 189, 248, 0.35);
+  color: #38bdf8;
+}
+.cad-dialog-btn--ok:hover { background: rgba(56, 189, 248, 0.25); }
