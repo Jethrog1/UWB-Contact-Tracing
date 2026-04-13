@@ -757,6 +757,10 @@ class TrimManager:
         nx = -uy
         ny = ux
 
+        # Screen-space bar half-length: always 10px on screen regardless of zoom
+        BAR_HALF_PX = 10
+        world_bar = BAR_HALF_PX / max(self.app.vp.scale, 1e-9)
+
         def _draw_scrolling_dots(sp1, sp2, color="#888888", width=2):
             # Draw many tiny segments in screen-space with a scrolling phase.
             x1, y1 = sp1
@@ -801,11 +805,10 @@ class TrimManager:
                 px = ln.x1 + t * dx
                 py = ln.y1 + t * dy
 
-                offset = 0.15
-                p1x = px + nx * offset
-                p1y = py + ny * offset
-                p2x = px - nx * offset
-                p2y = py - ny * offset
+                p1x = px + nx * world_bar
+                p1y = py + ny * world_bar
+                p2x = px - nx * world_bar
+                p2y = py - ny * world_bar
 
                 sp1 = self.app.vp.world_to_screen(p1x, p1y)
                 sp2 = self.app.vp.world_to_screen(p2x, p2y)
@@ -813,37 +816,35 @@ class TrimManager:
                 _draw_scrolling_dots(sp1, sp2, color="#888888", width=2)
 
         # ------------------------------------------------------------
-        # Fixed trim points (white perpendicular markers)
+        # Fixed trim points (red perpendicular markers)
         # ------------------------------------------------------------
         if self.trim_point_1 is not None:
             t = self.trim_point_1 / L
             px = ln.x1 + t * dx
             py = ln.y1 + t * dy
 
-            offset = 0.15
-            p1x = px + nx * offset
-            p1y = py + ny * offset
-            p2x = px - nx * offset
-            p2y = py - ny * offset
+            p1x = px + nx * world_bar
+            p1y = py + ny * world_bar
+            p2x = px - nx * world_bar
+            p2y = py - ny * world_bar
 
             sp1 = self.app.vp.world_to_screen(p1x, p1y)
             sp2 = self.app.vp.world_to_screen(p2x, p2y)
-            canvas.create_line(sp1[0], sp1[1], sp2[0], sp2[1], fill="#FFFFFF", width=2)
+            canvas.create_line(sp1[0], sp1[1], sp2[0], sp2[1], fill="#FF5C5C", width=2)
 
         if self.trim_point_2 is not None:
             t = self.trim_point_2 / L
             px = ln.x1 + t * dx
             py = ln.y1 + t * dy
 
-            offset = 0.15
-            p1x = px + nx * offset
-            p1y = py + ny * offset
-            p2x = px - nx * offset
-            p2y = py - ny * offset
+            p1x = px + nx * world_bar
+            p1y = py + ny * world_bar
+            p2x = px - nx * world_bar
+            p2y = py - ny * world_bar
 
             sp1 = self.app.vp.world_to_screen(p1x, p1y)
             sp2 = self.app.vp.world_to_screen(p2x, p2y)
-            canvas.create_line(sp1[0], sp1[1], sp2[0], sp2[1], fill="#FFFFFF", width=2)
+            canvas.create_line(sp1[0], sp1[1], sp2[0], sp2[1], fill="#FF5C5C", width=2)
 
         # ------------------------------------------------------------
         # Red segment between trim points (or point1 -> hover)

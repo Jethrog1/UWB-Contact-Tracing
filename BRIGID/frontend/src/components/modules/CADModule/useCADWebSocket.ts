@@ -2,7 +2,7 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
 import { CADState, CADCommand } from './types'
 
-const WS_URL = 'ws://localhost:8765/cad/ws'
+const WS_BASE = 'ws://localhost:8765/cad/ws'
 const RECONNECT_DELAY_MS = 2000
 const MAX_RECONNECT_ATTEMPTS = 10
 
@@ -15,7 +15,7 @@ export interface UseCADWebSocketReturn {
   reconnect: () => void
 }
 
-export function useCADWebSocket(): UseCADWebSocketReturn {
+export function useCADWebSocket(workspaceId: string): UseCADWebSocketReturn {
   const [state, setState]   = useState<CADState | null>(null)
   const [status, setStatus] = useState<ConnectionStatus>('disconnected')
 
@@ -37,7 +37,8 @@ export function useCADWebSocket(): UseCADWebSocketReturn {
 
     setStatus('connecting')
 
-    const ws = new WebSocket(WS_URL)
+    const url = workspaceId ? `${WS_BASE}/${workspaceId}` : WS_BASE
+    const ws = new WebSocket(url)
     wsRef.current = ws
 
     ws.onopen = () => {
@@ -74,7 +75,7 @@ export function useCADWebSocket(): UseCADWebSocketReturn {
         }, RECONNECT_DELAY_MS)
       }
     }
-  }, [])
+  }, [workspaceId])
 
   // Manual reconnect — resets attempt counter
   const reconnect = useCallback(() => {

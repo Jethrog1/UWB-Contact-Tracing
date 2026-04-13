@@ -198,4 +198,8 @@ export type CADCommand =
   | { type: 'context_close' }
   | { type: 'trim_value_set'; point: 1 | 2; value: string }
   | { type: 'trim_apply' }
+  | { type: 'open_cad'; filepath: string }
+  | { type: 'import_file'; filepath: string }
+  | { type: 'export_svg'; filepath: string }
+  | { type: 'export_pdf'; filepath: string }
 

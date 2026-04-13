@@ -41,28 +41,7 @@ const EmptyModulePanel: React.FC<{ module: AppModule }> = ({ module }) => {
   )
 }
 
-const StubRightPanel: React.FC<{ title: string; body: string }> = ({ title, body }) => (
-  <motion.aside
-    initial={{ opacity: 0, x: 16 }}
-    animate={{ opacity: 1, x: 0 }}
-    transition={{ duration: 0.3 }}
-    style={{
-      gridArea: 'right',
-      width: 300,
-      background: '#0c1220',
-      borderLeft: '1px solid rgba(56,68,94,0.35)',
-      display: 'flex',
-      flexDirection: 'column',
-      justifyContent: 'center',
-      padding: 20,
-      color: '#5a6a82',
-      gap: 8,
-    }}
-  >
-    <div style={{ fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.08em', color: '#2d3d50' }}>{title}</div>
-    <div style={{ fontSize: 13, color: '#94a3b8', lineHeight: 1.5 }}>{body}</div>
-  </motion.aside>
-)
+// StubRightPanel removed — right panel is now floating inside canvas area for all views
 
 const App: React.FC = () => {
   const [tabs, setTabs] = useState<WorkspaceTab[]>([])
@@ -117,6 +96,9 @@ const App: React.FC = () => {
   const canCloseTab = tabs.length > 0 && activeTabId !== null
   const activeModule = activeTab?.module ?? null
 
+  // CAD tabs that have ever been active — keep mounted to preserve WS state
+  const cadTabs = useMemo(() => tabs.filter(t => t.module === 'cad'), [tabs])
+
   return (
     <div className="bp5-dark app-root">
       <motion.div className="app-shell" initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.35 }}>
@@ -137,24 +119,21 @@ const App: React.FC = () => {
 
         <LeftRail activeModule={activeModule} onModuleChange={handleModuleChange} disabled={!activeTab} />
 
-        {!activeTab ? (
-          <>
-            <EmptyWorkspacePanel />
-            <StubRightPanel
-              title="Workspace"
-              body="New workspaces start in Profiling by default. Open CAD only when you want to enter the restored drawing module."
-            />
-          </>
-        ) : activeTab.module === 'cad' ? (
-          <CADModule />
-        ) : (
-          <>
-            <EmptyModulePanel module={activeTab.module} />
-            <StubRightPanel
-              title={MODULE_LABELS[activeTab.module].title}
-              body={MODULE_LABELS[activeTab.module].sub}
-            />
-          </>
+        {/* Keep ALL CAD modules mounted so WS connections and engine state persist.
+            Hide inactive ones with display:none — canvas skips rendering but stays connected. */}
+        {cadTabs.map(tab => (
+          <div
+            key={tab.id}
+            style={{ display: tab.id === activeTabId ? 'contents' : 'none' }}
+          >
+            <CADModule workspaceId={tab.id} />
+          </div>
+        ))}
+
+        {/* Non-CAD views */}
+        {!activeTab && <EmptyWorkspacePanel />}
+        {activeTab && activeTab.module !== 'cad' && (
+          <EmptyModulePanel module={activeTab.module} />
         )}
       </motion.div>
     </div>

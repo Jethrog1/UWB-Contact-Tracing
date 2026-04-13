@@ -17,11 +17,12 @@
   width: 100%;
   height: 100%;
   grid-template-rows: 32px 36px 1fr;
-  grid-template-columns: 52px 1fr 300px;
+  /* right column collapses to 0 when right panel is floating */
+  grid-template-columns: 52px 1fr;
   grid-template-areas:
-    "hotbar   hotbar   hotbar"
-    "tabstrip tabstrip tabstrip"
-    "rail     canvas   right";
+    "hotbar   hotbar"
+    "tabstrip tabstrip"
+    "rail     canvas";
 }
 
 /* When CAD module is active, CADModule owns the "canvas + right" cells
@@ -36,9 +37,9 @@
   align-items: center;
   justify-content: center;
   background:
-    radial-gradient(circle at top, rgba(56, 189, 248, 0.08), transparent 35%),
-    linear-gradient(180deg, #08101b 0%, #060b14 100%);
-  color: #6a7a94;
+    radial-gradient(ellipse at 50% 30%, rgba(50, 80, 130, 0.06), transparent 60%),
+    linear-gradient(180deg, #0c1018 0%, #090d14 100%);
+  color: #3a4a60;
   gap: 10px;
   text-align: center;
   padding: 40px;
@@ -46,40 +47,41 @@
 
 .app-empty-icon,
 .app-module-icon {
-  width: 56px;
-  height: 56px;
-  border-radius: 18px;
+  width: 52px;
+  height: 52px;
+  border-radius: 14px;
   display: grid;
   place-items: center;
-  background: rgba(56, 68, 94, 0.16);
-  color: #d7e7f6;
-  font-size: 28px;
-  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.24);
+  background: rgba(50, 70, 100, 0.12);
+  border: 1px solid rgba(50, 70, 100, 0.18);
+  color: #7a9ab8;
+  font-size: 26px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
 }
 
 .app-empty-title,
 .app-module-title {
-  font-size: 20px;
+  font-size: 18px;
   font-weight: 600;
-  color: #eff6ff;
+  color: #c8d4e0;
 }
 
 .app-empty-sub,
 .app-module-sub {
-  max-width: 520px;
-  font-size: 13px;
+  max-width: 460px;
+  font-size: 12px;
   line-height: 1.6;
-  color: #8aa0b7;
+  color: #5a6a80;
 }
 
 .app-module-pill {
   margin-top: 8px;
-  padding: 8px 14px;
+  padding: 6px 14px;
   border-radius: 999px;
-  border: 1px solid rgba(56, 189, 248, 0.25);
-  background: rgba(56, 189, 248, 0.08);
-  color: #9ed7f7;
-  font-size: 11px;
-  letter-spacing: 0.04em;
+  border: 1px solid rgba(50, 80, 130, 0.2);
+  background: rgba(50, 80, 130, 0.07);
+  color: #6a8aaa;
+  font-size: 10px;
+  letter-spacing: 0.05em;
   text-transform: uppercase;
 }

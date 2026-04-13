@@ -27,7 +27,7 @@
   font-size: 12px;
   font-weight: 700;
   letter-spacing: 0.12em;
-  color: #38bdf8;
+  color: #c8d4e0;
   font-family: var(--font-primary);
 }
 
@@ -104,7 +104,7 @@
 }
 
 .hot-bar__dropdown-item:hover {
-  background: rgba(56, 189, 248, 0.1);
+  background: rgba(50, 70, 100, 0.18);
   color: #e2e8f0;
 }
 

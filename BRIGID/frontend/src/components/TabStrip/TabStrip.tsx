@@ -11,7 +11,17 @@ interface TabStripProps {
   onTabClose: (id: string) => void
   onTabReorder: (draggedId: string, targetId: string) => void
   onNewTab: () => void
+  // View commands forwarded to the active CAD module via context/event
+  onViewCommand?: (cmd: string) => void
 }
+
+const VIEW_CONTROLS: { cmd: string; icon: string; label: string; title: string }[] = [
+  { cmd: 'undo',       icon: 'undo',        label: '',           title: 'Undo (Ctrl+Z)' },
+  { cmd: 'redo',       icon: 'redo',        label: '',           title: 'Redo (Ctrl+Y)' },
+  { cmd: 'zoom_in',   icon: 'zoom-in',     label: '',           title: 'Zoom In' },
+  { cmd: 'zoom_out',  icon: 'zoom-out',    label: '',           title: 'Zoom Out' },
+  { cmd: 'zoom_reset', icon: 'zoom-to-fit', label: 'Reset View', title: 'Reset View (0)' },
+]
 
 const TabStrip: React.FC<TabStripProps> = ({
   tabs,
@@ -20,6 +30,7 @@ const TabStrip: React.FC<TabStripProps> = ({
   onTabClose,
   onTabReorder,
   onNewTab,
+  onViewCommand,
 }) => {
   const [searchVisible, setSearchVisible] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
@@ -31,13 +42,21 @@ const TabStrip: React.FC<TabStripProps> = ({
     : []
 
   useEffect(() => {
-    if (searchVisible) {
-      searchRef.current?.focus()
-    }
+    if (searchVisible) searchRef.current?.focus()
   }, [searchVisible])
+
+  const handleViewCmd = (cmd: string) => {
+    if (onViewCommand) {
+      onViewCommand(cmd)
+      return
+    }
+    // Broadcast via custom event so mounted CADModule instances can receive it
+    window.dispatchEvent(new CustomEvent('cad-view-command', { detail: { cmd, workspaceId: activeTabId } }))
+  }
 
   return (
     <div className="tab-strip electron-drag">
+      {/* Tab list */}
       <div className="tab-strip__left electron-no-drag">
         <div className="tab-strip__tabs">
           <AnimatePresence initial={false}>
@@ -56,18 +75,16 @@ const TabStrip: React.FC<TabStripProps> = ({
                 exit={{ opacity: 0, x: -8, scale: 0.96 }}
                 transition={{ duration: 0.18 }}
                 onClick={() => onTabSelect(tab.id)}
-                onDragStart={event => {
+                onDragStartCapture={event => {
                   setDraggingId(tab.id)
                   event.dataTransfer.effectAllowed = 'move'
                   event.dataTransfer.setData('text/plain', tab.id)
                 }}
-                onDragOver={event => {
+                onDragOverCapture={event => {
                   event.preventDefault()
-                  if (draggingId && draggingId !== tab.id) {
-                    onTabReorder(draggingId, tab.id)
-                  }
+                  if (draggingId && draggingId !== tab.id) onTabReorder(draggingId, tab.id)
                 }}
-                onDragEnd={() => setDraggingId(null)}
+                onDragEndCapture={() => setDraggingId(null)}
                 title={tab.name}
               >
                 {activeTabId === tab.id && (
@@ -87,7 +104,7 @@ const TabStrip: React.FC<TabStripProps> = ({
                   }}
                   title="Close tab"
                 >
-                  <Icon icon="cross" size={10} />
+                  <Icon icon="cross" size={9} />
                 </button>
               </motion.button>
             ))}
@@ -95,12 +112,30 @@ const TabStrip: React.FC<TabStripProps> = ({
         </div>
 
         <button className="tab-strip__new-tab" onClick={onNewTab} title="New workspace">
-          <Icon icon="plus" size={12} />
+          <Icon icon="plus" size={11} />
         </button>
       </div>
 
       <div className="tab-strip__spacer" />
 
+      {/* View control cluster — left of search */}
+      <div className="tab-strip__view-controls electron-no-drag">
+        {VIEW_CONTROLS.map(vc => (
+          <button
+            key={vc.cmd}
+            className="tab-strip__view-btn"
+            title={vc.title}
+            onClick={() => handleViewCmd(vc.cmd)}
+            disabled={!activeTabId}
+          >
+            <Icon icon={vc.icon as any} size={11} />
+            {vc.label && <span className="tab-strip__view-label">{vc.label}</span>}
+          </button>
+        ))}
+        <div className="tab-strip__view-sep" />
+      </div>
+
+      {/* Search */}
       <div className="tab-strip__search electron-no-drag">
         {searchVisible ? (
           <div className="tab-strip__search-input-wrap">
@@ -129,7 +164,7 @@ const TabStrip: React.FC<TabStripProps> = ({
                       setSearchQuery('')
                     }}
                   >
-                    <Icon icon="document" size={11} />
+                    <Icon icon="document" size={10} />
                     <span>{tab.name}</span>
                   </button>
                 ))}
@@ -138,7 +173,7 @@ const TabStrip: React.FC<TabStripProps> = ({
           </div>
         ) : (
           <button className="tab-strip__search-btn" onClick={() => setSearchVisible(true)} title="Search tabs">
-            <Icon icon="search" size={12} />
+            <Icon icon="search" size={11} />
           </button>
         )}
       </div>
@@ -147,4 +182,3 @@ const TabStrip: React.FC<TabStripProps> = ({
 }
 
 export default TabStrip
-
