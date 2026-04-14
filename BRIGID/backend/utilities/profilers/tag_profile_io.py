@@ -76,7 +76,7 @@ def save_profile(profile: dict, profile_dir: str) -> Tuple[bool, str]:
         return False, str(e)
 
 
-def load_profile(tag_id: str, profile_dir: str) -> Tuple[dict | None, str]:
+def load_profile(tag_id: str, profile_dir: str) -> Optional[Tuple[dict], str]:
     for directory in _candidate_profile_dirs(profile_dir):
         path = directory / f"{_slugify(tag_id)}.json"
         if not path.is_file():
@@ -90,7 +90,7 @@ def load_profile(tag_id: str, profile_dir: str) -> Tuple[dict | None, str]:
     return None, f"Profile not found: {tag_id}"
 
 
-def load_profile_by_path(filepath: str) -> Tuple[dict | None, str]:
+def load_profile_by_path(filepath: str) -> Optional[Tuple[dict], str]:
     try:
         with Path(filepath).open("r", encoding="utf-8") as f:
             data = json.load(f)

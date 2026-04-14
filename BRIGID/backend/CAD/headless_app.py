@@ -24,7 +24,7 @@ class HeadlessDropdown:
         self.anchor_x = 0
         self.anchor_y = 0
         self.zoom_display_label = HeadlessLabel(text="100%")
-        self.model: dict[str, Any] | None = None
+        self.model: dict[str, Optional[Any]] = None
 
     def open_menu(self, screen_x: float, screen_y: float) -> None:
         self.active = True
@@ -130,10 +130,10 @@ class HeadlessCADDocument(main_cad.FloorPlanCAD):
         self._tree_dim_iids = set()
         self._line_ids: dict[main_cad.Line, str] = {}
 
-        self.pending_dialog: dict[str, Any] | None = None
-        self._pending_dialog_handler: Callable[[float | None], None] | None = None
-        self.last_error: str | None = None
-        self.last_notice: dict[str, str] | None = None
+        self.pending_dialog: dict[str, Optional[Any]] = None
+        self._pending_dialog_handler: Optional[Callable[[float]], Optional[None]] = None
+        self.last_error: Optional[str] = None
+        self.last_notice: dict[str, Optional[str]] = None
 
         self._scene: list[dict[str, Any]] = []
         self._last_flush_ts = time.time()
@@ -184,7 +184,7 @@ class HeadlessCADDocument(main_cad.FloorPlanCAD):
         title: str,
         label: str,
         initial: float,
-        handler: Callable[[float | None], None],
+        handler: Optional[Callable[[float]], None],
     ) -> None:
         request_id = str(uuid.uuid4())
         self.pending_dialog = {
@@ -197,7 +197,7 @@ class HeadlessCADDocument(main_cad.FloorPlanCAD):
         self._pending_dialog_handler = handler
         self._request_redraw()
 
-    def resolve_dialog(self, request_id: str, value: float | None) -> None:
+    def resolve_dialog(self, request_id: str, value: Optional[float]) -> None:
         pending = self.pending_dialog
         handler = self._pending_dialog_handler
         self.pending_dialog = None
@@ -309,7 +309,7 @@ class HeadlessCADDocument(main_cad.FloorPlanCAD):
         old_map = self._line_ids
         self._line_ids = {line: old_map.get(line, str(uuid.uuid4())) for line in active}
 
-    def line_id(self, line: main_cad.Line | None) -> str | None:
+    def line_id(self, line: main_cad.Optional[Line]) -> Optional[str]:
         if line is None:
             return None
         self._refresh_line_ids()

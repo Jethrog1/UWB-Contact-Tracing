@@ -76,7 +76,7 @@ _rtls_runtime = RTLSRuntime()
 _workspace_names: dict[str, str] = {}
 
 
-def _resolve_tags_dir(workspace_id: str | None, workspace_name: str | None = None) -> str:
+def _resolve_tags_dir(workspace_id: Optional[str], workspace_name: Optional[str] = None) -> str:
     """Resolve the tags directory. workspace_name takes priority over the registry lookup."""
     name = workspace_name or (workspace_id and _workspace_names.get(workspace_id))
     if name:
@@ -86,7 +86,7 @@ def _resolve_tags_dir(workspace_id: str | None, workspace_name: str | None = Non
     return str(TAGS_DIR)
 
 
-def _resolve_rooms_dir(workspace_id: str | None, workspace_name: str | None = None) -> str:
+def _resolve_rooms_dir(workspace_id: Optional[str], workspace_name: Optional[str] = None) -> str:
     """Resolve the rooms directory. workspace_name takes priority over the registry lookup."""
     name = workspace_name or (workspace_id and _workspace_names.get(workspace_id))
     if name:
@@ -131,7 +131,7 @@ def _get_engine(workspace_id: str) -> CADEngine:
     return _workspace_engines[workspace_id]
 
 
-def _load_all_profiles(workspace_id: str | None = None, workspace_name: str | None = None) -> list[dict]:
+def _load_all_profiles(workspace_id: Optional[str] = None, workspace_name: Optional[str] = None) -> list[dict]:
     tags_dir = _resolve_tags_dir(workspace_id, workspace_name)
     profiles: list[dict] = []
     for tag_id in list_profiles(tags_dir):
@@ -225,7 +225,7 @@ class CalibrationMapUpdateRequest(BaseModel):
 
 class CalibrationReferenceUpdateRequest(BaseModel):
     tag_id: str
-    distances: dict[str, float | None]
+    distances: dict[str, Optional[float]]
     height: float = 0.0
 
 

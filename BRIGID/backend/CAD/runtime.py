@@ -52,7 +52,7 @@ class WidgetStub:
     def lift(self, *args: Any, **kwargs: Any) -> None:
         return None
 
-    def bind(self, event: str, handler: Any, add: str | None = None) -> Any:
+    def bind(self, event: str, handler: Any, add: Optional[str] = None) -> Any:
         self._bindings[event] = handler
         return handler
 
@@ -67,7 +67,7 @@ class WidgetStub:
 
 
 class HeadlessEntry(WidgetStub):
-    def __init__(self, *args: Any, textvariable: VarBase | None = None, **kwargs: Any):
+    def __init__(self, *args: Any, textvariable: Optional[VarBase] = None, **kwargs: Any):
         self.textvariable = textvariable
         super().__init__(*args, **kwargs)
 
@@ -209,7 +209,7 @@ class HeadlessTree(WidgetStub):
         node = self._nodes.get(str(item))
         return tuple(node.children if node else [])
 
-    def item(self, iid: str, option: str | None = None, **kwargs: Any) -> Any:
+    def item(self, iid: str, option: Optional[str] = None, **kwargs: Any) -> Any:
         node = self._nodes[str(iid)]
         if kwargs:
             if "text" in kwargs:
@@ -261,10 +261,10 @@ class HeadlessRoot(WidgetStub):
     def title(self, text: str) -> None:
         self.title_text = text
 
-    def after(self, delay_ms: int, callback: Any | None = None) -> None:
+    def after(self, delay_ms: int, callback: Optional[Any] = None) -> None:
         return None
 
-    def bind_all(self, event: str, handler: Any, add: str | None = None) -> Any:
+    def bind_all(self, event: str, handler: Any, add: Optional[str] = None) -> Any:
         self._bindings[event] = handler
         return handler
 
@@ -326,7 +326,7 @@ class MouseEvent:
     x: float
     y: float
     state: int = 0
-    num: int | None = None
+    num: Optional[int] = None
     delta: int = 0
     button: int = 0
     x_root: int = 0
