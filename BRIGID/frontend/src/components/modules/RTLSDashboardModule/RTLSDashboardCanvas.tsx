@@ -27,6 +27,8 @@ interface RTLSDashboardCanvasProps {
 
 export interface RTLSDashboardCanvasHandle {
   resetView: () => void
+  zoomIn: () => void
+  zoomOut: () => void
 }
 
 // ── Colour helpers ──────────────────────────────────────────────────────────────
@@ -129,7 +131,17 @@ const RTLSDashboardCanvas = forwardRef<RTLSDashboardCanvasHandle, RTLSDashboardC
       onViewportChange?.(vpRef.current)
     }, [segments, roomBounds, onViewportChange])
 
-    useImperativeHandle(ref, () => ({ resetView }))
+    const zoomIn = useCallback(() => {
+      vpRef.current.scale = Math.min(300, vpRef.current.scale * 1.15)
+      draw()
+    }, [])
+
+    const zoomOut = useCallback(() => {
+      vpRef.current.scale = Math.max(1, vpRef.current.scale / 1.15)
+      draw()
+    }, [])
+
+    useImperativeHandle(ref, () => ({ resetView, zoomIn, zoomOut }))
 
     // ── Draw ───────────────────────────────────────────────────────────────────
     const draw = useCallback(() => {
@@ -146,48 +158,24 @@ const RTLSDashboardCanvas = forwardRef<RTLSDashboardCanvasHandle, RTLSDashboardC
 
       ctx.clearRect(0, 0, canvas.width, canvas.height)
 
-      // ── SVG background ──
-      const svgImg = svgImgRef.current
-      if (svgImg && roomBounds.min_x !== undefined) {
-        const bMinX = roomBounds.min_x
-        const bMinY = roomBounds.min_y!
-        const bMaxX = roomBounds.max_x!
-        const bMaxY = roomBounds.max_y!
-        const cx1 = tx(bMinX)
-        const cy1 = ty(bMaxY) // top-left on canvas (Y is flipped)
-        const cw = (bMaxX - bMinX) * scale
-        const ch = (bMaxY - bMinY) * scale
-        ctx.globalAlpha = 0.35
-        ctx.drawImage(svgImg, cx1, cy1, cw, ch)
-        ctx.globalAlpha = 1.0
+      // ── Determine Reference Offset ──
+      let refX = 0
+      let refY = 0
+      if (referenceAnchorId && anchors[referenceAnchorId]) {
+        [refX, refY] = anchors[referenceAnchorId]
       }
 
-      // ── Grid ──
-      const gridStep = 5
-      const allX = segments.flatMap(s => [s.x1, s.x2])
-      const allY = segments.flatMap(s => [s.y1, s.y2])
-      if (allX.length > 0) {
-        const xMin = Math.floor(Math.min(...allX) / gridStep) * gridStep - gridStep
-        const xMax = Math.ceil(Math.max(...allX) / gridStep) * gridStep + gridStep
-        const yMin = Math.floor(Math.min(...allY) / gridStep) * gridStep - gridStep
-        const yMax = Math.ceil(Math.max(...allY) / gridStep) * gridStep + gridStep
-        ctx.strokeStyle = 'rgba(40,65,100,0.3)'
-        ctx.lineWidth = 0.5
-        for (let x = xMin; x <= xMax; x += gridStep) {
-          ctx.beginPath(); ctx.moveTo(tx(x), ty(yMin)); ctx.lineTo(tx(x), ty(yMax)); ctx.stroke()
-        }
-        for (let y = yMin; y <= yMax; y += gridStep) {
-          ctx.beginPath(); ctx.moveTo(tx(xMin), ty(y)); ctx.lineTo(tx(xMax), ty(y)); ctx.stroke()
-        }
-      }
+      // Helper with offset
+      const tXoff = (x: number) => tx(x - refX)
+      const tYoff = (y: number) => ty(y - refY)
 
       // ── Floor plan segments ──
       ctx.strokeStyle = 'rgba(140, 180, 230, 0.6)'
       ctx.lineWidth = 1.5
       for (const seg of segments) {
         ctx.beginPath()
-        ctx.moveTo(tx(seg.x1), ty(seg.y1))
-        ctx.lineTo(tx(seg.x2), ty(seg.y2))
+        ctx.moveTo(tXoff(seg.x1), tYoff(seg.y1))
+        ctx.lineTo(tXoff(seg.x2), tYoff(seg.y2))
         ctx.stroke()
       }
 
@@ -202,8 +190,8 @@ const RTLSDashboardCanvas = forwardRef<RTLSDashboardCanvasHandle, RTLSDashboardC
           const [x1, y1] = anchors[anchorIds[i]]
           const [x2, y2] = anchors[anchorIds[next]]
           ctx.beginPath()
-          ctx.moveTo(tx(x1), ty(y1))
-          ctx.lineTo(tx(x2), ty(y2))
+          ctx.moveTo(tXoff(x1), tYoff(y1))
+          ctx.lineTo(tXoff(x2), tYoff(y2))
           ctx.stroke()
         }
         ctx.setLineDash([])
@@ -213,8 +201,8 @@ const RTLSDashboardCanvas = forwardRef<RTLSDashboardCanvasHandle, RTLSDashboardC
       for (let i = 0; i < anchorIds.length; i++) {
         const aid = anchorIds[i]
         const [ax, ay] = anchors[aid]
-        const cx = tx(ax)
-        const cy = ty(ay)
+        const cx = tXoff(ax)
+        const cy = tYoff(ay)
         const isRef = aid === referenceAnchorId
         const r = isRef ? 9 : 7
         const color = anchorColor(i)
@@ -242,9 +230,11 @@ const RTLSDashboardCanvas = forwardRef<RTLSDashboardCanvasHandle, RTLSDashboardC
         ctx.font = `bold ${Math.max(9, Math.min(12, scale * 0.6))}px "SF Mono", monospace`
         ctx.textAlign = 'left'
         ctx.textBaseline = 'bottom'
+        const displayAx = ax - refX
+        const displayAy = ay - refY
         const label = isRef
-          ? `${aid} ★ (${ax.toFixed(1)}, ${ay.toFixed(1)})`
-          : `${aid} (${ax.toFixed(1)}, ${ay.toFixed(1)})`
+          ? `${aid} ★ (0.0, 0.0)`
+          : `${aid} (${displayAx.toFixed(1)}, ${displayAy.toFixed(1)})`
         ctx.fillText(label, cx + 10, cy - 4)
       }
 
@@ -255,8 +245,8 @@ const RTLSDashboardCanvas = forwardRef<RTLSDashboardCanvasHandle, RTLSDashboardC
           const a = connected[i].position!
           const b = connected[j].position!
           const dist = Math.hypot(b.x - a.x, b.y - a.y)
-          const cx1 = tx(a.x); const cy1 = ty(a.y)
-          const cx2 = tx(b.x); const cy2 = ty(b.y)
+          const cx1 = tXoff(a.x); const cy1 = tYoff(a.y)
+          const cx2 = tXoff(b.x); const cy2 = tYoff(b.y)
           ctx.setLineDash([4, 4])
           ctx.strokeStyle = 'rgba(200, 140, 60, 0.35)'
           ctx.lineWidth = 1
@@ -272,8 +262,8 @@ const RTLSDashboardCanvas = forwardRef<RTLSDashboardCanvasHandle, RTLSDashboardC
       // ── Tags ──
       for (const tag of tags) {
         if (!tag.position) continue
-        const cx = tx(tag.position.x)
-        const cy = ty(tag.position.y)
+        const cx = tXoff(tag.position.x)
+        const cy = tYoff(tag.position.y)
         const r = 9
 
         // Glow
@@ -302,7 +292,9 @@ const RTLSDashboardCanvas = forwardRef<RTLSDashboardCanvasHandle, RTLSDashboardC
         ctx.fillText(tag.tag_id, cx + 14, cy)
 
         // Coords
-        const coordLabel = `(${tag.position.x.toFixed(2)}, ${tag.position.y.toFixed(2)}) ft`
+        const displayX = tag.position.x - refX
+        const displayY = tag.position.y - refY
+        const coordLabel = `(${displayX.toFixed(2)}, ${displayY.toFixed(2)}) ft`
         ctx.fillStyle = 'rgba(200, 220, 255, 0.6)'
         ctx.font = '9px sans-serif'
         ctx.fillText(coordLabel, cx + 14, cy + 12)
@@ -354,7 +346,9 @@ const RTLSDashboardCanvas = forwardRef<RTLSDashboardCanvasHandle, RTLSDashboardC
 
     const onMouseUp = () => { dragRef.current = null }
 
-    const onWheel = (e: React.WheelEvent) => {
+    const onWheel = useCallback((e: WheelEvent) => {
+      e.preventDefault()
+      e.stopPropagation()
       const canvas = canvasRef.current
       if (!canvas) return
       const rect = canvas.getBoundingClientRect()
@@ -371,7 +365,15 @@ const RTLSDashboardCanvas = forwardRef<RTLSDashboardCanvasHandle, RTLSDashboardC
         offsetY: mouseY + worldY * newScale,
       }
       draw()
-    }
+    }, [draw])
+
+    // Native wheel listener with { passive: false } to guarantee preventDefault
+    useEffect(() => {
+      const el = canvasRef.current
+      if (!el) return
+      el.addEventListener('wheel', onWheel, { passive: false })
+      return () => el.removeEventListener('wheel', onWheel)
+    }, [onWheel])
 
     return (
       <canvas
@@ -381,7 +383,6 @@ const RTLSDashboardCanvas = forwardRef<RTLSDashboardCanvasHandle, RTLSDashboardC
         onMouseMove={onMouseMove}
         onMouseUp={onMouseUp}
         onMouseLeave={onMouseUp}
-        onWheel={onWheel}
       />
     )
   },

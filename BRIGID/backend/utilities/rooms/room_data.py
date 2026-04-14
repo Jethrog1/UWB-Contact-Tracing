@@ -62,6 +62,7 @@ class Room:
     segments: List[Segment]                          # boundary in world coords
     interior_segments: List[Segment] = field(default_factory=list)
     anchors: List[Anchor] = field(default_factory=list)
+    edges: List[Tuple[str, str]] = field(default_factory=list)
     rtls_settings: dict = field(default_factory=dict)
     reference_anchor_id: str | None = None
 
@@ -180,6 +181,7 @@ class Room:
                 "height": round(self.height, 3),
             },
             "anchors": [a.to_dict() for a in self.anchors],
+            "edges": [[str(u), str(v)] for u, v in self.edges],
             "segments_ft": [
                 {"x1": round(x1, 3), "y1": round(y1, 3),
                  "x2": round(x2, 3), "y2": round(y2, 3)}
@@ -210,6 +212,7 @@ class Room:
             reference_anchor_id=d.get("reference_anchor_id"),
         )
         room.anchors = [Anchor.from_dict(a) for a in d.get("anchors", [])]
+        room.edges = [(str(edge[0]), str(edge[1])) for edge in d.get("edges", []) if len(edge) == 2]
         if room.reference_anchor_id is None and room.anchors:
             room.reference_anchor_id = room.anchors[0].id
         return room

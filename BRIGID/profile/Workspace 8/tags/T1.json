@@ -6,7 +6,7 @@
         "description": ""
     },
     "device": {
-        "mac_address": "",
+        "mac_address": "DC:B4:D9:22:3A:55",
         "device_type": "Wrist Band",
         "wrist_to_floor_ft": 0,
         "arm_to_floor_ft": 0,

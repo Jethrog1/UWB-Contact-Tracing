@@ -48,6 +48,7 @@ const cloneState = (state: AnchorWorkspaceState): AnchorWorkspaceState => JSON.p
 const normalizeRoom = (room: RoomData): RoomData => ({
   ...room,
   reference_anchor_id: room.reference_anchor_id ?? room.anchors[0]?.id ?? null,
+  edges: room.edges ?? [],
 })
 
 const normalizeState = (state: Partial<AnchorWorkspaceState> | null | undefined): AnchorWorkspaceState => {
@@ -417,9 +418,11 @@ const AnchorManager: React.FC<AnchorManagerProps> = ({ workspaceId }) => {
       rooms: current.rooms.map(room => {
         if (room.room_name !== roomName) return room
         const anchors = room.anchors.filter(anchor => anchor.id !== anchorId)
+        const edges = (room.edges ?? []).filter(e => e[0] !== anchorId && e[1] !== anchorId)
         return {
           ...room,
           anchors,
+          edges,
           reference_anchor_id: room.reference_anchor_id === anchorId ? anchors[0]?.id ?? null : room.reference_anchor_id,
         }
       }),
@@ -432,6 +435,15 @@ const AnchorManager: React.FC<AnchorManagerProps> = ({ workspaceId }) => {
       ...current,
       rooms: current.rooms.map(room => (
         room.room_name === roomName ? { ...room, reference_anchor_id: referenceAnchorId } : room
+      )),
+    }))
+  }, [commitWorkspaceState])
+
+  const handleEdgesUpdate = useCallback((roomName: string, nextEdges: [string, string][]) => {
+    commitWorkspaceState(current => ({
+      ...current,
+      rooms: current.rooms.map(room => (
+        room.room_name === roomName ? { ...room, edges: nextEdges } : room
       )),
     }))
   }, [commitWorkspaceState])
@@ -590,6 +602,7 @@ const AnchorManager: React.FC<AnchorManagerProps> = ({ workspaceId }) => {
                 onRoomSelect={roomName => updateWorkspaceState(current => ({ ...current, selectedRoomName: roomName }))}
                 onAnchorUpdate={handleAnchorUpdate}
                 onAnchorDelete={handleAnchorDelete}
+                onEdgesUpdate={handleEdgesUpdate}
                 onAnchorSelect={anchorId => updateWorkspaceState(current => ({ ...current, selectedAnchorId: anchorId }))}
                 onReferenceAnchorChange={handleReferenceAnchorChange}
                 onUndo={handleUndo}

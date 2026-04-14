@@ -87,7 +87,7 @@ const CalibrationGraphPanel: React.FC<Props> = ({ tag, collapsed, onToggle }) =>
         <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
           {!collapsed && zoom !== 1 && (
             <button className="ct-mini-btn" onClick={() => setZoom(1)} title="Reset zoom" style={{ fontSize: 9 }}>
-              1:1
+              Reset View
             </button>
           )}
           <button className="ct-mini-btn" onClick={onToggle}>{collapsed ? 'Show' : 'Hide'}</button>
@@ -104,8 +104,8 @@ const CalibrationGraphPanel: React.FC<Props> = ({ tag, collapsed, onToggle }) =>
             aria-label="Calibration graph"
             onWheel={handleWheel}
           >
-            {/* Background */}
-            <rect x="0" y="0" width={WIDTH} height={HEIGHT} fill="#0d1119" />
+            {/* Background — transparent so panel blur shows through */}
+            <rect x="0" y="0" width={WIDTH} height={HEIGHT} fill="transparent" />
 
             {/* Plot area clip */}
             <defs>
@@ -114,21 +114,11 @@ const CalibrationGraphPanel: React.FC<Props> = ({ tag, collapsed, onToggle }) =>
               </clipPath>
             </defs>
 
-            {/* Grid lines */}
-            {xTicks.map(v => {
-              const x = toSvgX(v)
-              if (x < plotAreaLeft || x > plotAreaRight + 0.5) return null
-              return <line key={`gx-${v}`} x1={x} y1={plotAreaTop} x2={x} y2={plotAreaBottom} stroke="rgba(255,255,255,0.05)" />
-            })}
-            {yTicks.map(v => {
-              const y = toSvgY(v)
-              if (y < plotAreaTop - 0.5 || y > plotAreaBottom) return null
-              return <line key={`gy-${v}`} x1={plotAreaLeft} y1={y} x2={plotAreaRight} y2={y} stroke="rgba(255,255,255,0.05)" />
-            })}
+            {/* Grid lines removed for clean look */}
 
-            {/* Axes */}
-            <line x1={plotAreaLeft} y1={plotAreaBottom} x2={plotAreaRight} y2={plotAreaBottom} stroke="rgba(80,100,130,0.45)" />
-            <line x1={plotAreaLeft} y1={plotAreaTop} x2={plotAreaLeft} y2={plotAreaBottom} stroke="rgba(80,100,130,0.45)" />
+            {/* Axes — same gray as graph bg border */}
+            <line x1={plotAreaLeft} y1={plotAreaBottom} x2={plotAreaRight} y2={plotAreaBottom} stroke="rgba(255,255,255,0.08)" />
+            <line x1={plotAreaLeft} y1={plotAreaTop} x2={plotAreaLeft} y2={plotAreaBottom} stroke="rgba(255,255,255,0.08)" />
 
             {/* X axis ticks + labels */}
             {xTicks.map(v => {
@@ -136,8 +126,8 @@ const CalibrationGraphPanel: React.FC<Props> = ({ tag, collapsed, onToggle }) =>
               if (x < plotAreaLeft - 0.5 || x > plotAreaRight + 0.5) return null
               return (
                 <g key={`xt-${v}`}>
-                  <line x1={x} y1={plotAreaBottom} x2={x} y2={plotAreaBottom + 4} stroke="rgba(80,100,130,0.5)" />
-                  <text x={x} y={plotAreaBottom + 14} fill="#4a6080" fontSize="9" textAnchor="middle">
+                  <line x1={x} y1={plotAreaBottom} x2={x} y2={plotAreaBottom + 3} stroke="rgba(255,255,255,0.1)" />
+                  <text x={x} y={plotAreaBottom + 13} fill="#5b6574" fontSize="8" textAnchor="middle" fontFamily="var(--font-primary)">
                     {v % 1 === 0 ? v : v.toFixed(1)}
                   </text>
                 </g>
@@ -150,8 +140,8 @@ const CalibrationGraphPanel: React.FC<Props> = ({ tag, collapsed, onToggle }) =>
               if (y < plotAreaTop - 0.5 || y > plotAreaBottom + 0.5) return null
               return (
                 <g key={`yt-${v}`}>
-                  <line x1={plotAreaLeft - 4} y1={y} x2={plotAreaLeft} y2={y} stroke="rgba(80,100,130,0.5)" />
-                  <text x={plotAreaLeft - 6} y={y + 3} fill="#4a6080" fontSize="9" textAnchor="end">
+                  <line x1={plotAreaLeft - 3} y1={y} x2={plotAreaLeft} y2={y} stroke="rgba(255,255,255,0.1)" />
+                  <text x={plotAreaLeft - 5} y={y + 3} fill="#5b6574" fontSize="8" textAnchor="end" fontFamily="var(--font-primary)">
                     {v % 1 === 0 ? v : v.toFixed(1)}
                   </text>
                 </g>
@@ -159,15 +149,16 @@ const CalibrationGraphPanel: React.FC<Props> = ({ tag, collapsed, onToggle }) =>
             })}
 
             {/* Axis labels */}
-            <text x={(plotAreaLeft + plotAreaRight) / 2} y={HEIGHT - 4} fill="#3a5070" fontSize="10" textAnchor="middle">
+            <text x={(plotAreaLeft + plotAreaRight) / 2} y={HEIGHT - 4} fill="#5b6574" fontSize="9" textAnchor="middle" fontFamily="var(--font-primary)">
               Raw UWB (ft)
             </text>
             <text
               x={10}
               y={(plotAreaTop + plotAreaBottom) / 2}
-              fill="#3a5070"
-              fontSize="10"
+              fill="#5b6574"
+              fontSize="9"
               textAnchor="middle"
+              fontFamily="var(--font-primary)"
               transform={`rotate(-90 10 ${(plotAreaTop + plotAreaBottom) / 2})`}
             >
               Reference (ft)
@@ -212,12 +203,12 @@ const CalibrationGraphPanel: React.FC<Props> = ({ tag, collapsed, onToggle }) =>
               })}
             </g>
 
-            {/* Floating legend — top right of plot area */}
-            <g transform={`translate(${plotAreaRight - 4}, ${plotAreaTop + 4})`}>
+            {/* Legend — anchored to very top-right of plot area */}
+            <g transform={`translate(${plotAreaRight - 8}, ${plotAreaTop + 4})`}>
               {ANCHOR_IDS.map((anchorId, i) => (
-                <g key={anchorId} transform={`translate(0, ${i * 16})`}>
-                  <circle cx={-72} cy={4} r={4} fill={ANCHOR_COLORS[anchorId]} />
-                  <text x={-64} y={8} fill="#8aa0be" fontSize="10">{anchorId}</text>
+                <g key={anchorId} transform={`translate(0, ${i * 14})`}>
+                  <circle cx={-48} cy={4} r={3} fill={ANCHOR_COLORS[anchorId]} />
+                  <text x={-40} y={7} fill="#8c96a5" fontSize="9" fontFamily="var(--font-primary)">{anchorId}</text>
                 </g>
               ))}
             </g>

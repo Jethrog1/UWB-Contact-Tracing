@@ -132,8 +132,6 @@ const CADCanvas: React.FC<Props> = ({ state, onCommand }) => {
     ctx.setTransform(1, 0, 0, 1, 0, 0)
     ctx.clearRect(0, 0, canvas.width, canvas.height)
     ctx.scale(dpr, dpr)
-    ctx.fillStyle = '#090d15'
-    ctx.fillRect(0, 0, w, h)
 
     if (!state) return
 

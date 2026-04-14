@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from 'react'
 import { Icon } from '@blueprintjs/core'
 import './HotBar.css'
 
-type MenuAction = 'new-workspace' | 'close-tab' | null
+type MenuAction = 'new-workspace' | 'open-workspace' | 'save' | 'save-as' | 'close-tab' | null
 
 interface MenuItem {
   label: string
@@ -18,25 +18,27 @@ interface MenuEntry {
 }
 
 interface HotBarProps {
-  canCloseTab: boolean
+  hasWorkspace: boolean
   onNewWorkspace: () => void
+  onOpenWorkspace: () => void
+  onSave: () => void
+  onSaveAs: () => void
   onCloseTab: () => void
 }
 
-const buildMenus = (canCloseTab: boolean): MenuEntry[] => [
+const buildMenus = (hasWorkspace: boolean): MenuEntry[] => [
   {
     label: 'File',
     items: [
       { label: 'New Workspace', shortcut: 'Ctrl+N', action: 'new-workspace' },
-      { label: 'Open Project...', shortcut: 'Ctrl+O', disabled: true },
+      { label: 'Open Workspace...', shortcut: 'Ctrl+O', action: 'open-workspace' },
       { separator: true, label: '' },
-      { label: 'Save', shortcut: 'Ctrl+S', disabled: true },
-      { label: 'Save As...', shortcut: 'Ctrl+Shift+S', disabled: true },
+      { label: 'Save', shortcut: 'Ctrl+S', action: 'save', disabled: !hasWorkspace },
+      { label: 'Save As...', shortcut: 'Ctrl+Shift+S', action: 'save-as', disabled: !hasWorkspace },
       { separator: true, label: '' },
       { label: 'Import SVG Floor Plan...', disabled: true },
       { separator: true, label: '' },
-      { label: 'Close Tab', shortcut: 'Ctrl+W', action: 'close-tab', disabled: !canCloseTab },
-      { label: 'Close Project', disabled: true },
+      { label: 'Close Workspace', shortcut: 'Ctrl+W', action: 'close-tab', disabled: !hasWorkspace },
     ],
   },
   {
@@ -93,10 +95,10 @@ const buildMenus = (canCloseTab: boolean): MenuEntry[] => [
   },
 ]
 
-const HotBar: React.FC<HotBarProps> = ({ canCloseTab, onNewWorkspace, onCloseTab }) => {
+const HotBar: React.FC<HotBarProps> = ({ hasWorkspace, onNewWorkspace, onOpenWorkspace, onSave, onSaveAs, onCloseTab }) => {
   const [openMenu, setOpenMenu] = useState<string | null>(null)
   const barRef = useRef<HTMLDivElement>(null)
-  const menus = buildMenus(canCloseTab)
+  const menus = buildMenus(hasWorkspace)
 
   useEffect(() => {
     const handleClick = (event: MouseEvent) => {
@@ -114,6 +116,9 @@ const HotBar: React.FC<HotBarProps> = ({ canCloseTab, onNewWorkspace, onCloseTab
 
   const runAction = (action: MenuAction) => {
     if (action === 'new-workspace') onNewWorkspace()
+    if (action === 'open-workspace') onOpenWorkspace()
+    if (action === 'save') onSave()
+    if (action === 'save-as') onSaveAs()
     if (action === 'close-tab') onCloseTab()
     setOpenMenu(null)
   }

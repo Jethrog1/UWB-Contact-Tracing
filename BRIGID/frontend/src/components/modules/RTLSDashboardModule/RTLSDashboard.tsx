@@ -212,12 +212,18 @@ const RTLSDashboard: React.FC<RTLSDashboardProps> = ({ workspaceId, workspaceNam
     return () => { cancelled = true; setAutoLoading(false) }
   }, [workspaceId]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ── View commands (refresh from TabStrip) ──────────────────────────────────
+  // ── View commands (refresh / zoom from TabStrip) ───────────────────────────
   useEffect(() => {
     const handler = (e: Event) => {
       const detail = (e as CustomEvent).detail as { cmd: string; workspaceId: string }
       if (detail.workspaceId !== workspaceId) return
       if (detail.cmd === 'refresh') loadWorkspace()
+      
+      const canvas = canvasRef.current
+      if (!canvas) return
+      if (detail.cmd === 'zoom_in') canvas.zoomIn()
+      else if (detail.cmd === 'zoom_out') canvas.zoomOut()
+      else if (detail.cmd === 'zoom_reset') canvas.resetView()
     }
     window.addEventListener('rtls-view-command', handler)
     return () => window.removeEventListener('rtls-view-command', handler)
@@ -324,13 +330,18 @@ const RTLSDashboard: React.FC<RTLSDashboardProps> = ({ workspaceId, workspaceNam
   }))
 
   const tStatus = snap.transport_status
-  const transportKind: 'ok' | 'warn' | 'error' | undefined =
-    tStatus === 'connected' ? 'ok'
-    : tStatus === 'connecting' ? 'warn'
-    : tStatus === 'error' ? 'error'
-    : undefined
+  const transportKind: 'ok' | 'error' =
+    (tStatus === 'connected' && !snap.transport_detail.toLowerCase().includes('disconnect')) ? 'ok'
+    : 'error'
 
   const { filter, elevation } = snap
+  
+  // Reference anchor offset
+  let refX = 0
+  let refY = 0
+  if (snap.reference_anchor_id && snap.anchors[snap.reference_anchor_id]) {
+    [refX, refY] = snap.anchors[snap.reference_anchor_id]
+  }
 
   return (
     <div className="rtls-root">
@@ -367,281 +378,199 @@ const RTLSDashboard: React.FC<RTLSDashboardProps> = ({ workspaceId, workspaceNam
             {statusMsg.text}
           </div>
         )}
-        {!statusMsg && transportKind && (
-          <div className={`rtls-status rtls-status--${transportKind}`}>
-            {snap.transport_detail}
-          </div>
-        )}
-
-        <div className="rtls-canvas-hint">Scroll to zoom · Drag to pan</div>
 
         {/* ── Right panel ── */}
         <div className="rtls-right-panel">
           <div className="rtls-panel-header">
-            <div className="rtls-panel-title">RTLS Dashboard</div>
-            <div className="rtls-panel-subtitle">{snap.room_name || 'No room loaded'}</div>
+            <div>
+              <div className="rtls-panel-title">RTLS Dashboard</div>
+              <div className="rtls-panel-subtitle">{snap.room_name || 'No room loaded'}</div>
+            </div>
           </div>
 
           <div className="rtls-panel-body">
 
             {/* Load */}
             <div className="rtls-section">
-              <div className="rtls-section-label">Load</div>
-              <div className="rtls-section-body">
-                <div className="rtls-load-row">
-                  <button className="rtls-btn rtls-btn--primary" onClick={() => loadWorkspace()}>
-                    Load Workspace
-                  </button>
-                  <button className="rtls-btn" onClick={loadFile}>Load File</button>
-                </div>
-                <div className="rtls-load-row">
-                  <button className="rtls-btn" onClick={loadFolder}>Browse Folder</button>
-                </div>
-                <div className="rtls-section-label" style={{ paddingTop: 8, paddingBottom: 2 }}>Load Individually</div>
-                <div className="rtls-load-row">
-                  <button className="rtls-btn" style={{ flex: 1 }} onClick={loadRoomsFolder}>Rooms…</button>
-                  <button className="rtls-btn" style={{ flex: 1 }} onClick={loadTagsFolder}>Tags…</button>
-                  <button className="rtls-btn" style={{ flex: 1 }} onClick={loadSvgFolder}>SVG…</button>
-                </div>
-                <button
-                  className="rtls-btn"
-                  style={{ width: '100%', marginTop: 4 }}
-                  onClick={() => canvasRef.current?.resetView()}
-                >
-                  Reset View
-                </button>
+              <div className="rtls-section-title">Load</div>
+              <button className="rtls-btn rtls-btn--primary rtls-btn--full" onClick={loadFolder}>
+                Load Workspace
+              </button>
+              <div className="rtls-section-title" style={{ marginTop: 8 }}>Load Individually</div>
+              <div className="rtls-load-row">
+                <button className="rtls-btn" style={{ flex: 1 }} onClick={loadRoomsFolder}>Rooms…</button>
+                <button className="rtls-btn" style={{ flex: 1 }} onClick={loadTagsFolder}>Tags…</button>
+                <button className="rtls-btn" style={{ flex: 1 }} onClick={loadSvgFolder}>SVG…</button>
               </div>
             </div>
 
             {/* Connectivity */}
             <div className="rtls-section">
-              <div className="rtls-section-label">Connectivity</div>
-              <div className="rtls-section-body">
-                <div className="rtls-transport-tabs">
-                  {(['Serial Port', 'Bluetooth (BLE)'] as const).map(m => (
-                    <button
-                      key={m}
-                      className={`rtls-transport-tab${transportMode === m ? ' rtls-transport-tab--active' : ''}`}
-                      onClick={() => setTransportMode(m)}
-                    >
-                      {m}
-                    </button>
-                  ))}
+              <div className="rtls-section-title">Connectivity</div>
+              <div className="rtls-transport-tabs">
+                <button className={`rtls-transport-tab${transportMode === 'Bluetooth (BLE)' ? ' active' : ''}`} onClick={() => setTransportMode('Bluetooth (BLE)')}>Bluetooth (BLE)</button>
+                <button className={`rtls-transport-tab${transportMode === 'Serial Port' ? ' active' : ''}`} onClick={() => setTransportMode('Serial Port')}>Serial Port</button>
+              </div>
+              {transportMode === 'Serial Port' && (
+                <select className="rtls-input" value={snap.selected_port || snap.auto_detect_port || ''} onChange={e => setSnap(p => ({ ...p, selected_port: e.target.value }))}>
+                  <option value="">Select a COM port</option>
+                  {snap.ports.map(port => <option key={port} value={port}>{port}</option>)}
+                </select>
+              )}
+              <div className="rtls-runtime-note">{snap.transport_detail}</div>
+              {snap.tags.length > 0 ? (
+                <div className="rtls-ble-rows">
+                  {snap.tags.map((tag, i) => {
+                    const s = tag.status.toLowerCase()
+                    const statusColor = s.includes('connected') && !s.includes('disconnect') ? '#42d17e'
+                      : s.includes('connecting') ? '#ffb11f' : '#ff5b4d'
+                    return (
+                      <div key={tag.tag_id} className="rtls-ble-row">
+                        <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                          <span className="rtls-tag-dot" style={{ background: tagColor(i) }} />
+                          {tag.tag_id}
+                        </span>
+                        <span style={{ color: statusColor, fontWeight: 600 }}>{tag.status}</span>
+                      </div>
+                    )
+                  })}
                 </div>
-
-                {transportMode === 'Serial Port' ? (
-                  <>
-                    <div className="rtls-port-row">
-                      <select
-                        className="rtls-port-select"
-                        value={snap.selected_port || snap.auto_detect_port || ''}
-                        onChange={e => setSnap(p => ({ ...p, selected_port: e.target.value }))}
-                      >
-                        {snap.ports.length === 0
-                          ? <option value="">No ports found</option>
-                          : snap.ports.map(p => <option key={p} value={p}>{p}</option>)
-                        }
-                      </select>
-                    </div>
-                    <div className="rtls-connect-row">
-                      <button
-                        className="rtls-btn rtls-btn--primary"
-                        disabled={tStatus === 'connected'}
-                        onClick={connect}
-                      >
-                        Connect
-                      </button>
-                      <button
-                        className="rtls-btn rtls-btn--danger"
-                        disabled={tStatus === 'idle'}
-                        onClick={disconnect}
-                      >
-                        Disconnect
-                      </button>
-                    </div>
-                  </>
-                ) : (
-                  <div style={{ fontSize: 10, color: '#4d6a88', lineHeight: 1.5 }}>
-                    BLE scanning is handled automatically by the ESP32-C6 dongle
-                    connected via Serial Port.
-                  </div>
-                )}
-
-                {/* Tag status table */}
-                <div className="rtls-tag-table" style={{ marginTop: 8 }}>
-                  {snap.tags.length === 0
-                    ? <div style={{ fontSize: 10, color: '#3d5470' }}>No tags loaded. Load workspace first.</div>
-                    : snap.tags.map((t, i) => {
-                      const statusClass = t.status === 'Connected' ? 'connected'
-                        : t.status.startsWith('Connect') ? 'connecting'
-                        : 'disconnected'
-                      return (
-                        <div key={t.tag_id} className="rtls-tag-row">
-                          <div className="rtls-tag-dot" style={{ background: tagColor(i) }} />
-                          <div className="rtls-tag-id">{t.tag_id}</div>
-                          <div className="rtls-tag-coords">
-                            {t.position
-                              ? `(${t.position.x.toFixed(2)}, ${t.position.y.toFixed(2)})`
-                              : '(---, ---)'
-                            }
-                          </div>
-                          <div className={`rtls-tag-status rtls-tag-status--${statusClass}`}>
-                            {t.status}
-                          </div>
-                        </div>
-                      )
-                    })
-                  }
-                </div>
+              ) : (
+                <div className="rtls-runtime-note">No profiled tags available yet.</div>
+              )}
+              <div className="rtls-connect-row">
+                <button className="rtls-btn rtls-btn--primary" style={{ flex: 1 }} disabled={tStatus === 'connected'} onClick={connect}>Connect</button>
+                <button className="rtls-btn" style={{ flex: 1 }} disabled={tStatus === 'idle'} onClick={disconnect}>Disconnect</button>
               </div>
             </div>
 
             {/* Coordinates */}
             {snap.tags.length > 0 && (
               <div className="rtls-section">
-                <div className="rtls-section-label">Coordinates (ft)</div>
-                <div className="rtls-section-body">
-                  <div className="rtls-tag-table">
-                    {snap.tags.map((t, i) => (
-                      <div key={t.tag_id} className="rtls-tag-row">
-                        <div className="rtls-tag-dot" style={{ background: tagColor(i) }} />
-                        <div className="rtls-tag-id">{t.tag_id}</div>
-                        <div className="rtls-tag-coords" style={{ gridColumn: '3 / 5' }}>
-                          {t.position
-                            ? `X: ${t.position.x.toFixed(3)}   Y: ${t.position.y.toFixed(3)}`
-                            : '---'
-                          }
-                        </div>
-                      </div>
-                    ))}
-                  </div>
+                <div className="rtls-section-title">Coordinates (ft)</div>
+                <div className="rtls-ble-rows">
+                  {snap.tags.map((t, i) => (
+                    <div key={t.tag_id} className="rtls-ble-row">
+                      <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <span className="rtls-tag-dot" style={{ background: tagColor(i) }} />
+                        {t.tag_id}
+                      </span>
+                      <span>
+                        {t.position
+                          ? `(${(t.position.x - refX).toFixed(2)}, ${(t.position.y - refY).toFixed(2)})`
+                          : '(---, ---)'
+                        }
+                      </span>
+                    </div>
+                  ))}
                 </div>
               </div>
             )}
 
             {/* Tag Elevation */}
             <div className="rtls-section">
-              <div className="rtls-section-label">Tag Elevation</div>
-              <div className="rtls-section-body">
+              <div className="rtls-section-title">Tag Elevation</div>
+              <label className="rtls-check">
+                <input
+                  type="checkbox"
+                  checked={elevation.override}
+                  onChange={e => setElevation({ override: e.target.checked })}
+                />
+                Manual Z-Height Override
+              </label>
+              {elevation.override && (
                 <div className="rtls-elevation-row">
-                  <div className="rtls-elevation-label">
-                    {elevation.override ? 'Manual override (ft):' : 'Auto — |anchor_z − tag_z|'}
-                  </div>
-                  <label className="rtls-elevation-toggle">
-                    <input
-                      type="checkbox"
-                      checked={elevation.override}
-                      onChange={e => setElevation({ override: e.target.checked })}
-                    />
-                    <span>Override</span>
-                  </label>
+                  <div className="rtls-elevation-label">Height (ft):</div>
+                  <NumInput
+                    value={elevation.value_ft}
+                    min={0}
+                    max={30}
+                    onChange={v => setElevation({ value_ft: v })}
+                  />
                 </div>
-                {elevation.override && (
-                  <div className="rtls-elevation-row" style={{ marginTop: 6 }}>
-                    <div className="rtls-elevation-label">Height (ft):</div>
-                    <NumInput
-                      value={elevation.value_ft}
-                      min={0}
-                      max={30}
-                      onChange={v => setElevation({ value_ft: v })}
-                    />
-                  </div>
-                )}
-              </div>
+              )}
             </div>
 
             {/* Smoothing Filter */}
             <div className="rtls-section">
-              <div className="rtls-section-label">Smoothing Filter</div>
-              <div className="rtls-section-body">
-                <div className="rtls-filter-tabs">
-                  {(['EMA', 'Rolling', 'Kalman'] as const).map(m => (
-                    <button
-                      key={m}
-                      className={`rtls-filter-tab${filter.mode === m ? ' rtls-filter-tab--active' : ''}`}
-                      onClick={() => setFilter({ mode: m })}
-                    >
-                      {m}
-                    </button>
-                  ))}
+              <div className="rtls-section-title">Smoothing Filter</div>
+              <div className="rtls-transport-tabs">
+                {(['EMA', 'Rolling', 'Kalman'] as const).map(m => (
+                  <button
+                    key={m}
+                    className={`rtls-filter-tab${filter.mode === m ? ' active' : ''}`}
+                    onClick={() => setFilter({ mode: m })}
+                  >
+                    {m}
+                  </button>
+                ))}
+              </div>
+
+              <div className="rtls-slider-row">
+                <div className="rtls-slider-header">
+                  <span className="rtls-slider-label">EMA α</span>
+                  <span className="rtls-slider-value">{filter.ema_alpha.toFixed(2)}</span>
                 </div>
+                <input
+                  type="range" className="rtls-range"
+                  min={0.01} max={0.99} step={0.01}
+                  value={filter.ema_alpha}
+                  onChange={e => setFilter({ ema_alpha: parseFloat(e.target.value) })}
+                />
+              </div>
 
-                {filter.mode === 'EMA' && (
-                  <div className="rtls-slider-row">
-                    <div className="rtls-slider-header">
-                      <span className="rtls-slider-label">α (0=smooth, 1=raw)</span>
-                      <span className="rtls-slider-value">{filter.ema_alpha.toFixed(2)}</span>
-                    </div>
-                    <input
-                      type="range" className="rtls-slider"
-                      min={0.01} max={1.0} step={0.01}
-                      value={filter.ema_alpha}
-                      onChange={e => setFilter({ ema_alpha: parseFloat(e.target.value) })}
-                    />
-                  </div>
-                )}
+              <div className="rtls-slider-row">
+                <div className="rtls-slider-header">
+                  <span className="rtls-slider-label">Rolling N</span>
+                  <span className="rtls-slider-value">{filter.roll_n}</span>
+                </div>
+                <input
+                  type="range" className="rtls-range"
+                  min={2} max={30} step={1}
+                  value={filter.roll_n}
+                  onChange={e => setFilter({ roll_n: parseInt(e.target.value) })}
+                />
+              </div>
 
-                {filter.mode === 'Rolling' && (
-                  <div className="rtls-slider-row">
-                    <div className="rtls-slider-header">
-                      <span className="rtls-slider-label">Window (frames)</span>
-                      <span className="rtls-slider-value">{filter.roll_n}</span>
-                    </div>
-                    <input
-                      type="range" className="rtls-slider"
-                      min={2} max={30} step={1}
-                      value={filter.roll_n}
-                      onChange={e => setFilter({ roll_n: parseInt(e.target.value) })}
-                    />
-                  </div>
-                )}
+              <div className="rtls-slider-row">
+                <div className="rtls-slider-header">
+                  <span className="rtls-slider-label">Kalman Q</span>
+                  <span className="rtls-slider-value">{filter.kal_q.toFixed(3)}</span>
+                </div>
+                <input
+                  type="range" className="rtls-range"
+                  min={0.001} max={1} step={0.001}
+                  value={filter.kal_q}
+                  onChange={e => setFilter({ kal_q: parseFloat(e.target.value) })}
+                />
+              </div>
 
-                {filter.mode === 'Kalman' && (
-                  <>
-                    <div className="rtls-slider-row">
-                      <div className="rtls-slider-header">
-                        <span className="rtls-slider-label">Q (process noise)</span>
-                        <span className="rtls-slider-value">{filter.kal_q.toFixed(2)}</span>
-                      </div>
-                      <input
-                        type="range" className="rtls-slider"
-                        min={0.01} max={2.0} step={0.01}
-                        value={filter.kal_q}
-                        onChange={e => setFilter({ kal_q: parseFloat(e.target.value) })}
-                      />
-                    </div>
-                    <div className="rtls-slider-row">
-                      <div className="rtls-slider-header">
-                        <span className="rtls-slider-label">R (meas. noise)</span>
-                        <span className="rtls-slider-value">{filter.kal_r.toFixed(1)}</span>
-                      </div>
-                      <input
-                        type="range" className="rtls-slider"
-                        min={0.1} max={10.0} step={0.1}
-                        value={filter.kal_r}
-                        onChange={e => setFilter({ kal_r: parseFloat(e.target.value) })}
-                      />
-                    </div>
-                  </>
-                )}
+              <div className="rtls-slider-row">
+                <div className="rtls-slider-header">
+                  <span className="rtls-slider-label">Kalman R</span>
+                  <span className="rtls-slider-value">{filter.kal_r.toFixed(1)}</span>
+                </div>
+                <input
+                  type="range" className="rtls-range"
+                  min={0.1} max={20} step={0.1}
+                  value={filter.kal_r}
+                  onChange={e => setFilter({ kal_r: parseFloat(e.target.value) })}
+                />
               </div>
             </div>
 
             {/* CSV Logging */}
             <div className="rtls-section">
-              <div className="rtls-section-label">CSV Logging</div>
-              <div className="rtls-section-body">
-                <button
-                  className={`rtls-btn ${snap.csv.enabled ? 'rtls-btn--danger' : 'rtls-btn--primary'}`}
-                  style={{ width: '100%' }}
-                  onClick={toggleCsv}
-                >
-                  {snap.csv.enabled ? 'Stop Logging' : 'Start Logging'}
-                </button>
-                {snap.csv.enabled && snap.csv.path && (
-                  <div className="rtls-csv-path">{snap.csv.path}</div>
-                )}
-              </div>
+              <div className="rtls-section-title">CSV Logging</div>
+              <button
+                className={`rtls-btn rtls-btn--full ${snap.csv.enabled ? 'rtls-btn--danger' : 'rtls-btn--primary'}`}
+                onClick={toggleCsv}
+              >
+                {snap.csv.enabled ? 'Stop Logging' : 'Start Logging'}
+              </button>
+              {snap.csv.enabled && snap.csv.path && (
+                <div className="rtls-csv-path">{snap.csv.path}</div>
+              )}
             </div>
 
           </div>

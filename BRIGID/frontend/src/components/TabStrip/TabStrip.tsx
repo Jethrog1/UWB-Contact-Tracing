@@ -40,8 +40,9 @@ const TabStrip: React.FC<TabStripProps> = ({
   onOpenFolder,
   onViewCommand,
 }) => {
-  const showViewControls = activeModule === 'cad' || activeModule === 'anchors' || activeModule === 'calibration' || activeModule === 'rtls'
-  const showWorkspaceActions = activeModule === 'calibration' || activeModule === 'rtls'
+  // Show view controls (undo/redo/zoom) for CAD, Calibration, and RTLS modules
+  const showViewControls = activeModule === 'cad' || activeModule === 'calibration' || activeModule === 'rtls'
+  const showWorkspaceActions = activeModule === 'rtls'
   const [searchVisible, setSearchVisible] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
   const [draggingId, setDraggingId] = useState<string | null>(null)
@@ -90,7 +91,9 @@ const TabStrip: React.FC<TabStripProps> = ({
       ? 'anchor-view-command'
       : activeModule === 'calibration'
         ? 'calibration-view-command'
-        : 'cad-view-command'
+        : activeModule === 'rtls'
+          ? 'rtls-view-command'
+          : 'cad-view-command'
     window.dispatchEvent(new CustomEvent(eventName, { detail: { cmd, workspaceId: activeTabId } }))
   }
 

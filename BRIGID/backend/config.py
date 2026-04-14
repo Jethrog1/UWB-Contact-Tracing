@@ -102,14 +102,23 @@ def rename_workspace_folder(old_name: str, new_name: str) -> bool:
         return False
 
 
-def list_existing_workspaces() -> list[str]:
-    """Return sorted list of existing workspace folder names under Profile/."""
+def list_existing_workspaces() -> list[dict]:
+    """Return sorted list of existing workspace folder names and timestamps under Profile/."""
     if not PROFILE_ROOT.exists():
         return []
-    return sorted(
-        p.name for p in PROFILE_ROOT.iterdir()
-        if p.is_dir() and not p.name.startswith(".")
-    )
+    
+    workspaces = []
+    for p in PROFILE_ROOT.iterdir():
+        if p.is_dir() and not p.name.startswith("."):
+            try:
+                mod_time = p.stat().st_mtime
+            except OSError:
+                mod_time = 0.0
+            workspaces.append({"name": p.name, "modified": mod_time})
+            
+    # Sort by modified time descending (newest first)
+    workspaces.sort(key=lambda x: x["modified"], reverse=True)
+    return workspaces
 
 
 # ── Legacy ensure (kept for old code paths) ───────────────────────────────────

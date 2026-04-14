@@ -1,5 +1,4 @@
 import React, { useState } from 'react'
-import { Icon } from '@blueprintjs/core'
 import { motion, AnimatePresence } from 'motion/react'
 import { CADFeatureNode, CADState } from './types'
 import './FeatureManager.css'
@@ -25,7 +24,7 @@ const FeatureNodeRow: React.FC<{
         onClick={() => hasChildren && setOpen(v => !v)}
       >
         <span className="fm-node-chevron">
-          {hasChildren ? <Icon icon={open ? 'chevron-down' : 'chevron-right'} size={10} /> : null}
+          {hasChildren ? (open ? '▾' : '▸') : null}
         </span>
         <span className="fm-node-text">{node.text}</span>
       </button>
@@ -62,10 +61,9 @@ const FeatureManager: React.FC<Props> = ({ state }) => {
       transition={{ duration: 0.3, ease: 'easeOut' }}
     >
       <div className="fm-header" onClick={() => setCollapsed(v => !v)}>
-        <Icon icon="diagram-tree" size={11} color="#3d4d60" />
+        <span className="fm-chevron" style={{ fontSize: 10, color: 'var(--text-muted)' }}>{collapsed ? '▸' : '▾'}</span>
         <span className="fm-title">Features</span>
         <span className="fm-summary">{nodes.length ? `${nodes.length}` : '—'}</span>
-        <Icon icon={collapsed ? 'chevron-right' : 'chevron-down'} size={10} color="#2d3d50" className="fm-chevron" />
       </div>
 
       <AnimatePresence initial={false}>

@@ -145,7 +145,6 @@ const CADRightPanel: React.FC<Props> = ({ state, onCommand, status, workspaceId,
                 className={`crp-tool-btn${tool === entry.mode ? ' crp-tool-btn--active' : ''}`}
                 onClick={() => setTool(entry.mode)}
               >
-                <span className="crp-tool-icon">{entry.icon}</span>
                 <span className="crp-tool-label">{entry.label}</span>
               </button>
             </Tooltip>
@@ -194,15 +193,14 @@ const CADRightPanel: React.FC<Props> = ({ state, onCommand, status, workspaceId,
       </div>
 
       <div className="crp-section">
-        <div className="crp-section-label">Angle Snap</div>
+        <div className="crp-section-label">Angle Snap (deg)</div>
         <div className="crp-angle-grid">
-          {(state?.angle_snap_values ?? ['', '', '', '']).map((value, index) => (
+          {(state?.angle_snap_values ?? ['', '']).slice(0, 2).map((value, index) => (
             <input
               key={index}
               className="crp-angle-input"
               value={value}
               onChange={(e) => onCommand({ type: 'angle_snap_set', index, value: e.target.value })}
-              placeholder={`∠${index + 1}`}
             />
           ))}
         </div>
@@ -212,22 +210,22 @@ const CADRightPanel: React.FC<Props> = ({ state, onCommand, status, workspaceId,
         <div className="crp-section-label">File</div>
         <Tooltip content="Open a previously saved CAD design (SVG)" placement="left">
           <button className="crp-io-btn" onClick={handleOpen} disabled={iobusy || !openFile}>
-            ↗ Open
+            Open
           </button>
         </Tooltip>
         <Tooltip content="Import an external floor plan (PDF, SVG, PNG)" placement="left">
           <button className="crp-io-btn" onClick={handleImport} disabled={iobusy || !openFile}>
-            ↥ Import
+            Import
           </button>
         </Tooltip>
         <Tooltip content="Save design to BRIGID/svg/" placement="left">
           <button className="crp-io-btn" onClick={handleSaveSVG} disabled={iobusy || !state?.lines.length || !saveFile}>
-            ⬡ Save SVG
+            Save SVG
           </button>
         </Tooltip>
         <Tooltip content="Export print-ready PDF to BRIGID/pdf/" placement="left">
           <button className="crp-io-btn" onClick={handleSavePDF} disabled={iobusy || !state?.lines.length || !saveFile}>
-            ▣ Save PDF
+            Save PDF
           </button>
         </Tooltip>
       </div>

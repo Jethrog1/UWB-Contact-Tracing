@@ -10,7 +10,7 @@
   min-width: 0;
   min-height: 0;
   overflow: hidden;
-  background: #090d15;
+  background: var(--bg-primary);
 }
 
 /* ── Offline overlay ─────────────────────────────────────────────── */

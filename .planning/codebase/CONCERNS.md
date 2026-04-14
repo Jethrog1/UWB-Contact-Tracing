@@ -2,13 +2,13 @@
 
 Current findings, tech debt assessments, and potential specific pitfalls to avoid during the BRIGID rebuild process.
 
-## Legacy Monolithic Tech Debt
-**2DLCAD Overlap:**
-- The legacy PyQt6 project suffered from monolithic files (`main_cad.py`, `rtls_dashboard.py` > 100kb), making it difficult to maintain and scale. The BRIGID rebuild must actively avoid recreating these monolithic structures by tightly enforcing React component paradigms and strict separation of concerns in the FastAPI backend.
+## The BRIGID Transition Checklist
+The primary concern across the codebase is ensuring the 5 main workflows accurately match or exceed legacy 2DLCAD behaviors while remaining decoupled.
 
-## Rebuild Transition Risks
-- **Extraction Accuracy:** Rebuilding the mathematical logic, serial parsers, and UI mechanics from 2DLCAD into the cleanly separated BRIGID (TypeScript Frontend + Python Backend) carries a high risk of feature degradation or logical transcription errors during porting.
-- **IPC Latency:** Transitioning from a Python-only memory thread base to Python backend -> WebSocket -> TypeScript Electron renderer introduces IPC (Inter-Process Communication) and networking latency that must be monitored tightly, especially given real-time UWB tracking frequencies.
+1. **Workspace Architecture:** As `cad_server.py` relies on `_workspace_engines` global dictionaries, memory leaks can occur if Workspaces are constantly created and deleted without a cleanup garbage collection logic inside Python.
+2. **Calibration Engine Math:** Migrating Python `numpy` and `pandas` polyfit models over to the new `/api/calibration` endpoints requires severe strictness. Small math errors multiply fast when generating tags for an RTLS floorplan.
+3. **2D CAD Real-Time Sockets:** WebSockets connecting `cad_engine.py` to React require fast ping/pong thresholds. Rapidly clicking CAD elements could overwhelm an unthrottled socket, leading to sync desynchronization.
+4. **Anchor Tracking UI:** The React UI must maintain a 60FPS DOM refresh when rendering the RTLS Dashboard while streaming high-velocity serial tracking events. If not batched properly, the React reconciler will crash.
 
-## Build Confidence
-- The legacy project showed a complete lack of automated CI pipelines or test harnesses. Establishing strong test practices early in the BRIGID lifecycle translates into higher velocity down the road.
+## Legacy Code Debt
+- Do not import directly from `2DLCAD/` into `BRIGID/`. All legacy math or parsers must be cleanly reconstructed in `BRIGID/backend/utilities/` and typed via Pydantic forms to enforce the new architectural mandate.

@@ -1,6 +1,6 @@
-import React, { useEffect, useMemo, useState } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 import { AnchorData, RoomData } from '../../../types'
-import { getAnchorRelativeBounds } from './anchorGeometry'
+import AnchorPreviewCanvas, { AnchorPreviewCanvasHandle } from './AnchorPreviewCanvas'
 
 interface Props {
   rooms: RoomData[]
@@ -12,6 +12,7 @@ interface Props {
   onAnchorUpdate: (roomName: string, anchorId: string, patch: Partial<AnchorData>) => void
   onAnchorDelete: (roomName: string, anchorId: string) => void
   onAnchorSelect: (anchorId: string | null) => void
+  onEdgesUpdate: (roomName: string, nextEdges: [string, string][]) => void
   onReferenceAnchorChange: (roomName: string, referenceAnchorId: string | null) => void
   onUndo: () => void
   onRedo: () => void
@@ -28,11 +29,13 @@ const AnchorEditPanel: React.FC<Props> = ({
   onAnchorUpdate,
   onAnchorDelete,
   onAnchorSelect,
+  onEdgesUpdate,
   onReferenceAnchorChange,
   onUndo,
   onRedo,
   onEscapeCanvas,
 }) => {
+  const previewRef = useRef<AnchorPreviewCanvasHandle>(null)
   const [editFields, setEditFields] = useState<Partial<AnchorData>>({})
   const selectedRoom = rooms.find(room => room.room_name === selectedRoomName) ?? null
   const selectedAnchor = selectedRoom?.anchors.find(anchor => anchor.id === selectedAnchorId) ?? null
@@ -50,21 +53,6 @@ const AnchorEditPanel: React.FC<Props> = ({
     })
   }, [selectedAnchor])
 
-  const coordinatePreview = useMemo(() => {
-    if (!selectedRoom || selectedRoom.anchors.length === 0) return null
-    const relative = getAnchorRelativeBounds(selectedRoom)
-    const extentX = Math.max(relative.width, 1)
-    const extentY = Math.max(relative.height, 1)
-    return {
-      ...relative,
-      anchors: relative.anchors.map(anchor => ({
-        ...anchor,
-        previewLeft: ((anchor.relX - relative.minX) / extentX) * 100,
-        previewTop: 100 - ((anchor.relY - relative.minY) / extentY) * 100,
-      })),
-    }
-  }, [selectedRoom])
-
   const handleApply = () => {
     if (!selectedRoom || !selectedAnchor) return
     onAnchorUpdate(selectedRoom.room_name, selectedAnchor.id, editFields)
@@ -75,7 +63,6 @@ const AnchorEditPanel: React.FC<Props> = ({
       <div className="am-floating-header">
         <div>
           <div className="am-floating-title">Anchor Workspace</div>
-          <div className="am-floating-subtitle">Rooms, anchors, reference frame</div>
         </div>
         <div className="am-floating-actions">
           <button className="am-mini-btn" onClick={onEscapeCanvas}>Esc</button>
@@ -177,24 +164,37 @@ const AnchorEditPanel: React.FC<Props> = ({
             )}
           </div>
 
-          {coordinatePreview && (
+          {selectedRoom.anchors.length > 0 && (
             <div className="am-panel-section">
-              <div className="am-section-label">Anchor Coordinates</div>
-              <div className="am-coord-meta">
-                {coordinatePreview.width.toFixed(2)} x {coordinatePreview.height.toFixed(2)} ft relative span
+              <div className="am-section-label" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span>Anchor Coordinates</span>
+                <div style={{ display: 'flex', gap: '6px' }}>
+                  <button className="am-mini-btn" onClick={() => previewRef.current?.resetView()} title="Fit View">Fit</button>
+                  <button className="am-mini-btn" onClick={() => previewRef.current?.zoomIn()} title="Zoom In">+</button>
+                  <button className="am-mini-btn" onClick={() => previewRef.current?.zoomOut()} title="Zoom Out">-</button>
+                </div>
               </div>
-              <div className="am-coord-preview">
-                <div className="am-coord-highlight" />
-                {coordinatePreview.anchors.map(anchor => (
-                  <div
-                    key={anchor.id}
-                    className={`am-coord-point${anchor.id === selectedAnchorId ? ' active' : ''}`}
-                    style={{ left: `${anchor.previewLeft}%`, top: `${anchor.previewTop}%` }}
-                  >
-                    <span>{anchor.hw_id || anchor.id}</span>
-                  </div>
-                ))}
+              <div className="am-coord-meta" style={{ marginBottom: '8px' }}>
+                {(selectedRoom.edges?.length ?? 0)} distance edges mapped
               </div>
+              <AnchorPreviewCanvas
+                ref={previewRef}
+                room={selectedRoom}
+                selectedAnchorId={selectedAnchorId}
+                onAnchorSelect={onAnchorSelect}
+                onEdgeDraw={(a1, a2) => {
+                  const currentEdges = selectedRoom.edges ?? []
+                  const exists = currentEdges.some(e => (e[0] === a1 && e[1] === a2) || (e[0] === a2 && e[1] === a1))
+                  if (!exists) onEdgesUpdate(selectedRoom.room_name, [...currentEdges, [a1, a2]])
+                }}
+                onEdgeDelete={(a1, a2) => {
+                  const currentEdges = selectedRoom.edges ?? []
+                  onEdgesUpdate(
+                    selectedRoom.room_name,
+                    currentEdges.filter(e => !((e[0] === a1 && e[1] === a2) || (e[0] === a2 && e[1] === a1)))
+                  )
+                }}
+              />
             </div>
           )}
 

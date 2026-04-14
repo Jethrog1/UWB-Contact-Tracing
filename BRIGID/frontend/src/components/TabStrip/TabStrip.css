@@ -2,9 +2,9 @@
   grid-area: tabstrip;
   display: flex;
   align-items: center;
-  height: 36px;
-  background: #0b0e14;
-  border-bottom: 1px solid rgba(50, 70, 100, 0.28);
+  height: 32px;
+  background: var(--bg-secondary);
+  border-bottom: 1px solid var(--border-default);
   padding: 0 4px 0 0;
   overflow: hidden;
   position: relative;

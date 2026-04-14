@@ -8,7 +8,6 @@ interface ModuleItem {
   id: AppModule
   icon: IconName
   label: string
-  color?: string
 }
 
 const MODULE_ITEMS: ModuleItem[] = [
@@ -22,10 +21,11 @@ const MODULE_ITEMS: ModuleItem[] = [
 interface LeftRailProps {
   activeModule: AppModule | null
   onModuleChange: (module: AppModule) => void
+  onHomeClick: () => void
   disabled?: boolean
 }
 
-const LeftRail: React.FC<LeftRailProps> = ({ activeModule, onModuleChange, disabled = false }) => {
+const LeftRail: React.FC<LeftRailProps> = ({ activeModule, onModuleChange, onHomeClick, disabled = false }) => {
   return (
     <motion.aside
       className="left-rail"
@@ -34,9 +34,16 @@ const LeftRail: React.FC<LeftRailProps> = ({ activeModule, onModuleChange, disab
       transition={{ duration: 0.4, delay: 0.1, ease: [0.4, 0, 0.2, 1] }}
     >
       {/* ── App icon / home ── */}
-      <div className="left-rail__logo">
-        <Icon icon="locate" size={18} color="#38bdf8" />
-      </div>
+      <Tooltip
+        content={<span style={{ fontSize: 10, letterSpacing: '0.05em' }}>Home</span>}
+        placement="right"
+        minimal
+        hoverOpenDelay={200}
+      >
+        <button className="left-rail__logo-btn" onClick={onHomeClick}>
+          <Icon icon="locate" size={18} color="#5a90c8" />
+        </button>
+      </Tooltip>
 
       <div className="left-rail__divider" />
 
@@ -48,11 +55,11 @@ const LeftRail: React.FC<LeftRailProps> = ({ activeModule, onModuleChange, disab
             <Tooltip
               key={item.id}
               content={
-                <span style={{ fontSize: 12 }}>{item.label}</span>
+                <span style={{ fontSize: 10, letterSpacing: '0.05em' }}>{item.label}</span>
               }
               placement="right"
               minimal
-              hoverOpenDelay={400}
+              hoverOpenDelay={200}
             >
               <button
                 className={`left-rail__btn ${isActive ? 'left-rail__btn--active' : ''}`}
@@ -62,13 +69,13 @@ const LeftRail: React.FC<LeftRailProps> = ({ activeModule, onModuleChange, disab
               >
                 {isActive && (
                   <motion.div
-                    className="left-rail__active-bar"
+                    className="left-rail__active-bg"
                     layoutId="left-rail-active"
-                    transition={{ type: 'spring', stiffness: 380, damping: 32 }}
+                    transition={{ type: 'spring', stiffness: 350, damping: 28 }}
                   />
                 )}
                 <span className="left-rail__btn-icon">
-                  <Icon icon={item.icon} size={17} />
+                  <Icon icon={item.icon} size={16} />
                 </span>
               </button>
             </Tooltip>
@@ -79,13 +86,13 @@ const LeftRail: React.FC<LeftRailProps> = ({ activeModule, onModuleChange, disab
       {/* ── Bottom: Settings ── */}
       <div className="left-rail__bottom">
         <Tooltip
-          content={<span style={{ fontSize: 12 }}>Settings</span>}
+          content={<span style={{ fontSize: 10, letterSpacing: '0.05em' }}>Settings</span>}
           placement="right"
           minimal
-          hoverOpenDelay={400}
+          hoverOpenDelay={200}
         >
           <button className="left-rail__btn left-rail__btn--bottom" aria-label="Settings">
-            <Icon icon="cog" size={16} />
+            <Icon icon="cog" size={14} />
           </button>
         </Tooltip>
       </div>

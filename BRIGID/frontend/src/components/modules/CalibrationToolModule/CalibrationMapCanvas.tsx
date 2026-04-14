@@ -47,12 +47,12 @@ const ANCHOR_COLORS: Record<string, string> = {
 
 const TAG_COLORS = ['#00f0d0', '#ffc44d', '#d16cff', '#78d0ff', '#8ee36b']
 
-const BACKGROUND = '#151515'
-const GRID = 'rgba(255,255,255,0.085)'
-const AXIS = 'rgba(255,255,255,0.16)'
-const LINE = '#f3f3f3'
-const CROSSHAIR_COLOR = '#7de9ff'
-const CROSSHAIR_SELECTED = '#ffffff'
+const BACKGROUND = '#0a0b0d'
+const GRID = 'rgba(0,0,0,0)'
+const AXIS = 'rgba(255,255,255,0.06)'
+const LINE = 'rgba(255,255,255,0.25)'
+const CROSSHAIR_COLOR = '#8c96a5'
+const CROSSHAIR_SELECTED = '#c1c9d4'
 
 const worldToScreen = (viewport: Viewport, x: number, y: number): [number, number] => (
   [viewport.offsetX + x * viewport.scale, viewport.offsetY - y * viewport.scale]
@@ -82,7 +82,7 @@ const CalibrationMapCanvas = forwardRef<CalibrationMapCanvasHandle, Props>(({
   const [viewport, setViewport] = useState<Viewport>({ offsetX: 0, offsetY: 0, scale: 30 })
   const [canvasSize, setCanvasSize] = useState({ width: 0, height: 0 })
   const didInitViewRef = useRef(false)
-  const dragRef = useRef<{ anchorId: string } | null>(null)
+  const dragRef = useRef<{ anchorId?: string; refDot?: boolean } | null>(null)
   const panRef = useRef<{ active: boolean; x: number; y: number } | null>(null)
   const latestMapRef = useRef(map)
 
@@ -96,29 +96,33 @@ const CalibrationMapCanvas = forwardRef<CalibrationMapCanvasHandle, Props>(({
     [map.anchors],
   )
 
-  const resetView = useCallback((insets?: { rightInset?: number; bottomInset?: number }) => {
-    const canvas = canvasRef.current
-    if (!canvas) return
-    const ri = insets?.rightInset ?? 0
-    const bi = insets?.bottomInset ?? 0
-    const xs = anchorList.map(anchor => anchor.coords[0])
-    const ys = anchorList.map(anchor => anchor.coords[1])
-    const minX = Math.min(...xs)
-    const maxX = Math.max(...xs)
-    const minY = Math.min(...ys)
-    const maxY = Math.max(...ys)
-    const span = Math.max(maxX - minX, maxY - minY, 1)
-    const availW = canvas.width - ri
-    const availH = canvas.height - bi
-    const scale = Math.min(availW, availH) * 0.45 / span
-    const centerX = (minX + maxX) / 2
-    const centerY = (minY + maxY) / 2
-    setViewport({
-      scale,
-      offsetX: availW / 2 - centerX * scale,
-      offsetY: availH / 2 + centerY * scale,
-    })
-  }, [anchorList])
+    const resetView = useCallback((insets?: { rightInset?: number; bottomInset?: number }) => {
+      const canvas = canvasRef.current
+      if (!canvas) return
+      
+      // If we somehow get a number (like from requestAnimationFrame directly), fallback to defaults
+      const isEvent = typeof insets !== 'object' || insets === null
+      const ri = (!isEvent && insets?.rightInset) != null ? insets!.rightInset! : 352
+      const bi = (!isEvent && insets?.bottomInset) != null ? insets!.bottomInset! : 290
+  
+      const xs = anchorList.map(anchor => anchor.coords[0])
+      const ys = anchorList.map(anchor => anchor.coords[1])
+      const minX = Math.min(...xs)
+      const maxX = Math.max(...xs)
+      const minY = Math.min(...ys)
+      const maxY = Math.max(...ys)
+      const span = Math.max(maxX - minX, maxY - minY, 1)
+      const availW = canvas.width - ri
+      const availH = canvas.height - bi
+      const scale = Math.min(availW, availH) * 0.45 / span
+      const centerX = (minX + maxX) / 2
+      const centerY = (minY + maxY) / 2
+      setViewport({
+        scale,
+        offsetX: availW / 2 - centerX * scale,
+        offsetY: availH / 2 + centerY * scale,
+      })
+    }, [anchorList])
 
   const zoomIn = useCallback(() => {
     setViewport(v => ({ ...v, scale: Math.min(v.scale * 1.25, 120) }))
@@ -146,7 +150,7 @@ const CalibrationMapCanvas = forwardRef<CalibrationMapCanvasHandle, Props>(({
         ))
         if (!didInitViewRef.current) {
           didInitViewRef.current = true
-          requestAnimationFrame(resetView)
+          requestAnimationFrame(() => resetView({ rightInset: 352, bottomInset: 290 }))
         }
       }
     }
@@ -184,11 +188,8 @@ const CalibrationMapCanvas = forwardRef<CalibrationMapCanvasHandle, Props>(({
       ctx.beginPath(); ctx.moveTo(0, screenY); ctx.lineTo(canvas.width, screenY); ctx.stroke()
     }
 
-    ctx.strokeStyle = AXIS
-    const [axisX] = worldToScreen(viewport, 0, 0)
-    const [, axisY] = worldToScreen(viewport, 0, 0)
-    ctx.beginPath(); ctx.moveTo(axisX, 0); ctx.lineTo(axisX, canvas.height); ctx.stroke()
-    ctx.beginPath(); ctx.moveTo(0, axisY); ctx.lineTo(canvas.width, axisY); ctx.stroke()
+
+    // Axis lines removed per user request
 
     // ── Crosshair dotted lines to anchors ─────────────────────────
     if (referenceDot) {
@@ -259,36 +260,44 @@ const CalibrationMapCanvas = forwardRef<CalibrationMapCanvasHandle, Props>(({
       ctx.fillText(`(${coords[0].toFixed(1)}, ${coords[1].toFixed(1)})`, screenX + 10, screenY + 12)
     }
 
-    // ── Reference crosshair ────────────────────────────────────────
+    // ── Reference crosshair — small + with coordinates ─────────────
     if (referenceDot) {
       const [screenX, screenY] = worldToScreen(viewport, referenceDot.x, referenceDot.y)
       const color = referenceDotSelected ? CROSSHAIR_SELECTED : CROSSHAIR_COLOR
       ctx.strokeStyle = color
-      ctx.lineWidth = referenceDotSelected ? 2 : 1.5
+      ctx.lineWidth = referenceDotSelected ? 1.8 : 1.2
       ctx.setLineDash([])
 
-      // Draw + crosshair arms
-      const arm = 14
+      // Draw small + crosshair arms (8px)
+      const arm = 8
       ctx.beginPath()
       ctx.moveTo(screenX - arm, screenY); ctx.lineTo(screenX + arm, screenY)
       ctx.moveTo(screenX, screenY - arm); ctx.lineTo(screenX, screenY + arm)
       ctx.stroke()
 
-      // Small center circle
-      ctx.beginPath()
-      ctx.arc(screenX, screenY, 4, 0, Math.PI * 2)
-      ctx.stroke()
+      // Coordinate label beside crosshair
+      ctx.font = '9px var(--font-primary, sans-serif)'
+      ctx.fillStyle = color
+      ctx.fillText(`(${referenceDot.x.toFixed(1)}, ${referenceDot.y.toFixed(1)})`, screenX + arm + 4, screenY - arm)
 
-      // Selection ring
-      if (referenceDotSelected) {
-        ctx.strokeStyle = color
-        ctx.lineWidth = 1
-        ctx.setLineDash([3, 3])
-        ctx.beginPath()
-        ctx.arc(screenX, screenY, 18, 0, Math.PI * 2)
-        ctx.stroke()
+      // Dashed lines to anchors with distance labels
+      ctx.save()
+      ctx.setLineDash([4, 4])
+      ctx.lineWidth = 1
+      for (const { anchorId, coords } of anchorList) {
+        const [ax, ay] = worldToScreen(viewport, coords[0], coords[1])
+        const floorDist = Math.hypot(referenceDot.x - coords[0], referenceDot.y - coords[1])
+        ctx.strokeStyle = '#8c96a566' // Gray lines
+        ctx.beginPath(); ctx.moveTo(screenX, screenY); ctx.lineTo(ax, ay); ctx.stroke()
+        const mx = (screenX + ax) / 2
+        const my = (screenY + ay) / 2
         ctx.setLineDash([])
+        ctx.font = '8px var(--font-primary, sans-serif)'
+        ctx.fillStyle = '#8c96a5' // Gray text
+        ctx.fillText(`${floorDist.toFixed(2)} ft`, mx + 4, my - 4)
+        ctx.setLineDash([4, 4])
       }
+      ctx.restore()
     }
 
     // ── Tags ───────────────────────────────────────────────────────
@@ -383,6 +392,7 @@ const CalibrationMapCanvas = forwardRef<CalibrationMapCanvasHandle, Props>(({
     // Hit: ref dot select
     if (hitRefDot(event.clientX, event.clientY)) {
       onReferenceDotSelect(true)
+      dragRef.current = { refDot: true }
       return
     }
 
@@ -415,15 +425,20 @@ const CalibrationMapCanvas = forwardRef<CalibrationMapCanvasHandle, Props>(({
       if (!canvas) return
       const rect = canvas.getBoundingClientRect()
       const [worldX, worldY] = screenToWorld(viewport, event.clientX - rect.left, event.clientY - rect.top)
-      const nextMap: CalibrationMapRuntime = {
-        ...latestMapRef.current,
-        anchors: {
-          ...latestMapRef.current.anchors,
-          [dragRef.current.anchorId]: [Number(worldX.toFixed(3)), Number(worldY.toFixed(3))],
-        },
+      
+      if (dragRef.current.anchorId) {
+        const nextMap: CalibrationMapRuntime = {
+          ...latestMapRef.current,
+          anchors: {
+            ...latestMapRef.current.anchors,
+            [dragRef.current.anchorId]: [Number(worldX.toFixed(3)), Number(worldY.toFixed(3))],
+          },
+        }
+        latestMapRef.current = nextMap
+        onMapChange(nextMap)
+      } else if (dragRef.current.refDot) {
+        onReferencePlaced(Number(worldX.toFixed(3)), Number(worldY.toFixed(3)))
       }
-      latestMapRef.current = nextMap
-      onMapChange(nextMap)
       return
     }
 

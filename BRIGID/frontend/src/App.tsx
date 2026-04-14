@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { FocusStyleManager } from '@blueprintjs/core'
-import { motion } from 'motion/react'
+import { FocusStyleManager, Spinner } from '@blueprintjs/core'
+import { motion, AnimatePresence } from 'motion/react'
 
 import HotBar from './components/HotBar/HotBar'
 import LeftRail from './components/LeftRail/LeftRail'
@@ -17,33 +17,49 @@ FocusStyleManager.onlyShowFocusOnTabs()
 
 const API = 'http://localhost:8765'
 
-const MODULE_LABELS: Record<AppModule, { title: string; sub: string; icon: string }> = {
-  profile: { title: 'Profile Manager', sub: 'Workspace defaults land here so CAD is entered intentionally.', icon: 'P' },
-  calibration: { title: 'Calibration Tool', sub: 'Tag distance correction and fitting.', icon: 'C' },
-  cad: { title: '2D CAD Modeling', sub: 'Restored Python CAD backend inside the new shell.', icon: 'Q' },
-  anchors: { title: 'Anchor Manager', sub: 'UWB anchor configuration and layout.', icon: 'A' },
-  rtls: { title: 'RTLS Dashboard', sub: 'Real-time location tracking monitor.', icon: 'R' },
+interface WorkspaceInfo {
+  name: string
+  modified: number
 }
 
-const EmptyWorkspacePanel: React.FC = () => (
+const EmptyWorkspacePanel: React.FC<{
+  workspaces: WorkspaceInfo[]
+  onOpen: (name: string) => void
+}> = ({ workspaces, onOpen }) => (
   <div className="app-empty-state">
     <div className="app-empty-icon">+</div>
-    <div className="app-empty-title">No Workspace Open</div>
-    <div className="app-empty-sub">Start from File / New Workspace or use the + button in the tab strip.</div>
+    <div className="app-empty-title">Welcome to BRIGID</div>
+    <div className="app-empty-sub">Select a previous workspace or create new.</div>
+    
+    {workspaces.length > 0 && (
+      <div className="workspace-explorer">
+        <div className="workspace-explorer-header">Recent Workspaces</div>
+        <div className="workspace-explorer-list">
+          {workspaces.map(ws => (
+            <button 
+              key={ws.name} 
+              className="workspace-explorer-item" 
+              onClick={() => onOpen(ws.name)}
+            >
+              <div className="workspace-item-name">{ws.name}</div>
+              {ws.modified > 0 && (
+                <div className="workspace-item-date">
+                  {new Date(ws.modified * 1000).toLocaleString('en-US', {
+                    minute: '2-digit',
+                    hour: '2-digit',
+                    month: 'short',
+                    day: 'numeric',
+                    year: 'numeric'
+                  })}
+                </div>
+              )}
+            </button>
+          ))}
+        </div>
+      </div>
+    )}
   </div>
 )
-
-const EmptyModulePanel: React.FC<{ module: AppModule }> = ({ module }) => {
-  const info = MODULE_LABELS[module]
-  return (
-    <div className="app-module-placeholder">
-      <div className="app-module-icon">{info.icon}</div>
-      <div className="app-module-title">{info.title}</div>
-      <div className="app-module-sub">{info.sub}</div>
-      {module !== 'cad' && <div className="app-module-pill">Module shell ready</div>}
-    </div>
-  )
-}
 
 const WorkspaceHost: React.FC<{
   workspace: WorkspaceTab
@@ -106,7 +122,7 @@ async function registerWorkspaceFolder(workspaceId: string, workspaceName: strin
       body: JSON.stringify({ workspace_id: workspaceId, workspace_name: workspaceName }),
     })
   } catch {
-    // Server may not be running yet on first open
+    // ignore
   }
 }
 
@@ -134,7 +150,7 @@ async function deleteWorkspaceFolderIfEmpty(workspaceId: string, workspaceName: 
   }
 }
 
-async function fetchExistingWorkspaces(): Promise<string[]> {
+async function fetchExistingWorkspaces(): Promise<WorkspaceInfo[]> {
   try {
     const res = await fetch(`${API}/api/workspace/list`)
     if (!res.ok) return []
@@ -150,7 +166,14 @@ async function fetchExistingWorkspaces(): Promise<string[]> {
 const App: React.FC = () => {
   const nextTabNumRef = useRef(1)
   const [tabs, setTabs] = useState<WorkspaceTab[]>([])
+  
+  // Track active tab and whether we are on the global 'Home' screen instead
   const [activeTabId, setActiveTabId] = useState<string | null>(null)
+  const [isHome, setIsHome] = useState<boolean>(true)
+  
+  const [existingWorkspaces, setExistingWorkspaces] = useState<WorkspaceInfo[]>([])
+  const [isLoading, setIsLoading] = useState(true)
+  
   // Track per-tab workspace name for renaming (keeps names stable)
   const tabNamesRef = useRef<Record<string, string>>({})
 
@@ -159,19 +182,22 @@ const App: React.FC = () => {
     [activeTabId, tabs],
   )
 
-  // On first load: discover existing workspace folders and seed nextTabNum
+  // On first load: discover existing workspace folders, seed nextTabNum, delay
   useEffect(() => {
     fetchExistingWorkspaces().then(existing => {
-      if (existing.length === 0) return
-      // Determine the highest existing Workspace N number
-      let max = 0
-      for (const name of existing) {
-        const m = name.match(/^Workspace\s+(\d+)$/i)
-        if (m) max = Math.max(max, parseInt(m[1], 10))
+      setExistingWorkspaces(existing)
+      if (existing.length > 0) {
+        let max = 0
+        for (const item of existing) {
+          const m = item.name.match(/^Workspace\s+(\d+)$/i)
+          if (m) max = Math.max(max, parseInt(m[1], 10))
+        }
+        if (max >= nextTabNumRef.current) {
+          nextTabNumRef.current = max + 1
+        }
       }
-      if (max >= nextTabNumRef.current) {
-        nextTabNumRef.current = max + 1
-      }
+    }).finally(() => {
+      setTimeout(() => setIsLoading(false), 900)
     })
   }, [])
 
@@ -183,16 +209,61 @@ const App: React.FC = () => {
     tabNamesRef.current[id] = name
     setTabs(prev => [...prev, newTab])
     setActiveTabId(id)
+    setIsHome(false)
     registerWorkspaceFolder(id, name)
   }, [])
 
+  const handleOpenWorkspace = useCallback((wsName: string) => {
+    // Check if it's already open
+    const existingObj = Object.entries(tabNamesRef.current).find(([, name]) => name === wsName)
+    if (existingObj) {
+      setActiveTabId(existingObj[0])
+      setIsHome(false)
+      return
+    }
+
+    const num = nextTabNumRef.current++
+    const id = `ws-${num}`
+    const newTab: WorkspaceTab = { id, name: wsName, module: 'profile', modified: false }
+    tabNamesRef.current[id] = wsName
+    setTabs(prev => [...prev, newTab])
+    setActiveTabId(id)
+    setIsHome(false)
+    registerWorkspaceFolder(id, wsName)
+  }, [])
+
+  const handleOpenWorkspaceDialog = useCallback(async () => {
+    if (window.api && window.api.openFolder) {
+      const { canceled, folderPath } = await window.api.openFolder()
+      if (!canceled && folderPath) {
+        const folderName = folderPath.split(/[/\\]/).pop() || 'Imported Workspace'
+        handleOpenWorkspace(folderName)
+      }
+    } else {
+      alert("Open Workspace requires the desktop app environment.")
+    }
+  }, [handleOpenWorkspace])
+
+  const handleSave = useCallback(() => {
+    if (activeTabId) window.dispatchEvent(new CustomEvent('workspace-save-command', { detail: { workspaceId: activeTabId } }))
+  }, [activeTabId])
+
+  const handleSaveAs = useCallback(() => {
+    if (activeTabId) window.dispatchEvent(new CustomEvent('workspace-save-as-command', { detail: { workspaceId: activeTabId } }))
+  }, [activeTabId])
+
   const handleTabClose = useCallback((id: string) => {
+    if (!window.confirm("Are you sure you would like to close this workspace? Unsaved changes may be lost.")) {
+      return
+    }
+
     setTabs(prev => {
       const index = prev.findIndex(tab => tab.id === id)
       const remaining = prev.filter(tab => tab.id !== id)
       if (activeTabId === id) {
         const fallback = remaining[index] ?? remaining[index - 1] ?? null
         setActiveTabId(fallback?.id ?? null)
+        if (!fallback) setIsHome(true)
       }
       const name = tabNamesRef.current[id] ?? `Workspace ${id}`
       deleteWorkspaceFolderIfEmpty(id, name)
@@ -225,9 +296,14 @@ const App: React.FC = () => {
   const activeModule = activeTab?.module ?? null
 
   const handleModuleChange = useCallback((module: AppModule) => {
-    if (!activeTabId) return
-    setTabs(prev => prev.map(tab => (tab.id === activeTabId ? { ...tab, module } : tab)))
-  }, [activeTabId])
+    // If we're on Home Screen but have an activeTab context, switch to it seamlessly
+    if (isHome && activeTabId) {
+       setIsHome(false)
+       setTabs(prev => prev.map(tab => (tab.id === activeTabId ? { ...tab, module } : tab)))
+    } else if (activeTabId) {
+       setTabs(prev => prev.map(tab => (tab.id === activeTabId ? { ...tab, module } : tab)))
+    }
+  }, [activeTabId, isHome])
 
   const handleRefresh = useCallback(() => {
     if (!activeTabId || !activeModule) return
@@ -259,34 +335,67 @@ const App: React.FC = () => {
 
   return (
     <div className="bp5-dark app-root">
-      <motion.div className="app-shell" initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.35 }}>
-        <HotBar
-          canCloseTab={canCloseTab}
-          onNewWorkspace={handleNewTab}
-          onCloseTab={() => activeTabId && handleTabClose(activeTabId)}
-        />
+      <AnimatePresence>
+        {isLoading && (
+          <motion.div 
+            className="app-loader"
+            initial={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.6 }}
+          >
+            <Spinner size={32} />
+            <div style={{ marginTop: '16px', letterSpacing: '0.2em', textTransform: 'uppercase', color: 'var(--text-muted)' }}>
+              Booting System...
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
-        <TabStrip
-          tabs={tabs}
-          activeTabId={activeTabId}
-          activeModule={activeModule}
-          onTabSelect={setActiveTabId}
-          onTabClose={handleTabClose}
-          onTabReorder={handleTabReorder}
-          onTabRename={handleTabRename}
-          onNewTab={handleNewTab}
-          onRefresh={handleRefresh}
-          onOpenFolder={handleOpenFolder}
-        />
+      {!isLoading && (
+        <motion.div className="app-shell" initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.6 }}>
+          <HotBar
+            hasWorkspace={canCloseTab}
+            onNewWorkspace={handleNewTab}
+            onOpenWorkspace={handleOpenWorkspaceDialog}
+            onSave={handleSave}
+            onSaveAs={handleSaveAs}
+            onCloseTab={() => activeTabId && handleTabClose(activeTabId)}
+          />
 
-        <LeftRail activeModule={activeModule} onModuleChange={handleModuleChange} disabled={!activeTab} />
+          <TabStrip
+            tabs={tabs}
+            activeTabId={activeTabId}
+            activeModule={activeModule}
+            onTabSelect={(id) => {
+              setActiveTabId(id)
+              setIsHome(false)
+            }}
+            onTabClose={handleTabClose}
+            onTabReorder={handleTabReorder}
+            onTabRename={handleTabRename}
+            onNewTab={handleNewTab}
+            onRefresh={handleRefresh}
+            onOpenFolder={handleOpenFolder}
+          />
 
-        {tabs.map(tab => (
-          <WorkspaceHost key={tab.id} workspace={tab} isActive={tab.id === activeTabId} />
-        ))}
+          <LeftRail 
+            activeModule={isHome ? null : activeModule} 
+            onModuleChange={handleModuleChange} 
+            onHomeClick={() => setIsHome(true)}
+            disabled={!activeTab && isHome === false} 
+          />
 
-        {!activeTab && <EmptyWorkspacePanel />}
-      </motion.div>
+          {tabs.map(tab => (
+            <WorkspaceHost key={tab.id} workspace={tab} isActive={tab.id === activeTabId && !isHome} />
+          ))}
+
+          {(!activeTab || isHome) && (
+            <div className="app-workspace-host app-workspace-host--active">
+               <EmptyWorkspacePanel workspaces={existingWorkspaces} onOpen={handleOpenWorkspace} />
+            </div>
+          )}
+        </motion.div>
+      )}
     </div>
   )
 }
