@@ -274,7 +274,7 @@ const AnchorManager: React.FC<AnchorManagerProps> = ({ workspaceId }) => {
 
   const handleSaveManifest = useCallback(async () => {
     try {
-      const res = await fetch(`${API}/api/rooms/manifest/save`, {
+      const res = await fetch(`${API}/api/rooms/manifest/save?workspace_id=${encodeURIComponent(workspaceId)}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

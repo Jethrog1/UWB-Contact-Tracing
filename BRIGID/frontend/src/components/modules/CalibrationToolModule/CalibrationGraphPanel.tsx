@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react'
+import React, { useMemo, useRef, useState } from 'react'
 import { ANCHOR_IDS, CalibrationTagRuntime } from './types'
 
 interface Props {
@@ -14,109 +14,214 @@ const ANCHOR_COLORS: Record<string, string> = {
   A3: '#ffb11f',
 }
 
-const WIDTH = 980
-const HEIGHT = 240
-const PADDING = { left: 52, right: 20, top: 16, bottom: 34 }
+const WIDTH = 900
+const HEIGHT = 210
+const PAD = { left: 42, right: 14, top: 12, bottom: 30 }
+
+const TICK_COUNT = 5
+
+function niceTicks(max: number, count: number): number[] {
+  if (max <= 0) return Array.from({ length: count + 1 }, (_, i) => i * 5)
+  const rawStep = max / count
+  const magnitude = Math.pow(10, Math.floor(Math.log10(rawStep)))
+  const normalized = rawStep / magnitude
+  const step = normalized <= 1 ? magnitude : normalized <= 2 ? 2 * magnitude : normalized <= 5 ? 5 * magnitude : 10 * magnitude
+  const ticks: number[] = []
+  for (let v = 0; v <= max + step * 0.01; v += step) ticks.push(parseFloat(v.toFixed(10)))
+  return ticks
+}
 
 const CalibrationGraphPanel: React.FC<Props> = ({ tag, collapsed, onToggle }) => {
-  const bounds = useMemo(() => {
+  const [zoom, setZoom] = useState(1.0)
+  const svgRef = useRef<SVGSVGElement>(null)
+
+  // ── Raw data bounds (always minX=0, minY=0) ──────────────────────
+  const rawBounds = useMemo(() => {
     const xs: number[] = []
     const ys: number[] = []
     if (tag) {
       ANCHOR_IDS.forEach(anchorId => {
         const series = tag.graph[anchorId]
-        series?.points.forEach(point => { xs.push(point.x); ys.push(point.y) })
-        series?.fit_line.forEach(point => { xs.push(point.x); ys.push(point.y) })
-        series?.capture.forEach(point => { xs.push(point.x); ys.push(point.y) })
+        series?.points.forEach(p => { xs.push(p.x); ys.push(p.y) })
+        series?.fit_line.forEach(p => { xs.push(p.x); ys.push(p.y) })
+        series?.capture.forEach(p => { xs.push(p.x); ys.push(p.y) })
         if (series?.live_raw) { xs.push(series.live_raw.x); ys.push(series.live_raw.y) }
         if (series?.live_cal) { xs.push(series.live_cal.x); ys.push(series.live_cal.y) }
       })
     }
-
-    const minX = 0
-    const minY = 0
-    const maxX = Math.max(30, ...xs, 1)
-    const maxY = Math.max(30, ...ys, 1)
-    return { minX, minY, maxX, maxY }
+    return {
+      maxX: Math.max(30, ...xs, 1),
+      maxY: Math.max(30, ...ys, 1),
+    }
   }, [tag])
 
-  const toSvgX = (x: number) => PADDING.left + ((x - bounds.minX) / Math.max(bounds.maxX - bounds.minX, 1)) * (WIDTH - PADDING.left - PADDING.right)
-  const toSvgY = (y: number) => HEIGHT - PADDING.bottom - ((y - bounds.minY) / Math.max(bounds.maxY - bounds.minY, 1)) * (HEIGHT - PADDING.top - PADDING.bottom)
+  // Apply zoom: zooming in reduces the visible range from origin
+  const visibleMaxX = rawBounds.maxX / zoom
+  const visibleMaxY = rawBounds.maxY / zoom
+
+  const xTicks = useMemo(() => niceTicks(visibleMaxX, TICK_COUNT), [visibleMaxX])
+  const yTicks = useMemo(() => niceTicks(visibleMaxY, TICK_COUNT), [visibleMaxY])
+
+  const toSvgX = (x: number) =>
+    PAD.left + (x / visibleMaxX) * (WIDTH - PAD.left - PAD.right)
+  const toSvgY = (y: number) =>
+    HEIGHT - PAD.bottom - (y / visibleMaxY) * (HEIGHT - PAD.top - PAD.bottom)
+
+  const handleWheel = (e: React.WheelEvent<SVGSVGElement>) => {
+    e.preventDefault()
+    const factor = e.deltaY < 0 ? 1.2 : 1 / 1.2
+    setZoom(z => Math.max(0.5, Math.min(12, z * factor)))
+  }
+
+  const plotAreaLeft = PAD.left
+  const plotAreaTop = PAD.top
+  const plotAreaRight = WIDTH - PAD.right
+  const plotAreaBottom = HEIGHT - PAD.bottom
+  const plotWidth = plotAreaRight - plotAreaLeft
+  const plotHeight = plotAreaBottom - plotAreaTop
 
   return (
     <div className={`ct-graph-panel${collapsed ? ' ct-graph-panel--collapsed' : ''}`}>
       <div className="ct-graph-header">
         <div className="ct-graph-title">Calibration Graph</div>
-        <button className="ct-mini-btn" onClick={onToggle}>{collapsed ? 'Show' : 'Hide'}</button>
+        <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+          {!collapsed && zoom !== 1 && (
+            <button className="ct-mini-btn" onClick={() => setZoom(1)} title="Reset zoom" style={{ fontSize: 9 }}>
+              1:1
+            </button>
+          )}
+          <button className="ct-mini-btn" onClick={onToggle}>{collapsed ? 'Show' : 'Hide'}</button>
+        </div>
       </div>
 
       {!collapsed && (
         <div className="ct-graph-body">
-          <svg viewBox={`0 0 ${WIDTH} ${HEIGHT}`} className="ct-graph-svg" role="img" aria-label="Calibration graph">
-            <rect x="0" y="0" width={WIDTH} height={HEIGHT} fill="#151515" />
-            {[0, 0.25, 0.5, 0.75, 1].map(step => {
-              const x = PADDING.left + step * (WIDTH - PADDING.left - PADDING.right)
-              const y = PADDING.top + step * (HEIGHT - PADDING.top - PADDING.bottom)
+          <svg
+            ref={svgRef}
+            viewBox={`0 0 ${WIDTH} ${HEIGHT}`}
+            className="ct-graph-svg"
+            role="img"
+            aria-label="Calibration graph"
+            onWheel={handleWheel}
+          >
+            {/* Background */}
+            <rect x="0" y="0" width={WIDTH} height={HEIGHT} fill="#0d1119" />
+
+            {/* Plot area clip */}
+            <defs>
+              <clipPath id="ct-plot-clip">
+                <rect x={plotAreaLeft} y={plotAreaTop} width={plotWidth} height={plotHeight} />
+              </clipPath>
+            </defs>
+
+            {/* Grid lines */}
+            {xTicks.map(v => {
+              const x = toSvgX(v)
+              if (x < plotAreaLeft || x > plotAreaRight + 0.5) return null
+              return <line key={`gx-${v}`} x1={x} y1={plotAreaTop} x2={x} y2={plotAreaBottom} stroke="rgba(255,255,255,0.05)" />
+            })}
+            {yTicks.map(v => {
+              const y = toSvgY(v)
+              if (y < plotAreaTop - 0.5 || y > plotAreaBottom) return null
+              return <line key={`gy-${v}`} x1={plotAreaLeft} y1={y} x2={plotAreaRight} y2={y} stroke="rgba(255,255,255,0.05)" />
+            })}
+
+            {/* Axes */}
+            <line x1={plotAreaLeft} y1={plotAreaBottom} x2={plotAreaRight} y2={plotAreaBottom} stroke="rgba(80,100,130,0.45)" />
+            <line x1={plotAreaLeft} y1={plotAreaTop} x2={plotAreaLeft} y2={plotAreaBottom} stroke="rgba(80,100,130,0.45)" />
+
+            {/* X axis ticks + labels */}
+            {xTicks.map(v => {
+              const x = toSvgX(v)
+              if (x < plotAreaLeft - 0.5 || x > plotAreaRight + 0.5) return null
               return (
-                <g key={step}>
-                  <line x1={x} y1={PADDING.top} x2={x} y2={HEIGHT - PADDING.bottom} stroke="rgba(255,255,255,0.1)" />
-                  <line x1={PADDING.left} y1={y} x2={WIDTH - PADDING.right} y2={y} stroke="rgba(255,255,255,0.1)" />
+                <g key={`xt-${v}`}>
+                  <line x1={x} y1={plotAreaBottom} x2={x} y2={plotAreaBottom + 4} stroke="rgba(80,100,130,0.5)" />
+                  <text x={x} y={plotAreaBottom + 14} fill="#4a6080" fontSize="9" textAnchor="middle">
+                    {v % 1 === 0 ? v : v.toFixed(1)}
+                  </text>
                 </g>
               )
             })}
 
-            <line x1={PADDING.left} y1={HEIGHT - PADDING.bottom} x2={WIDTH - PADDING.right} y2={HEIGHT - PADDING.bottom} stroke="#4b5563" />
-            <line x1={PADDING.left} y1={PADDING.top} x2={PADDING.left} y2={HEIGHT - PADDING.bottom} stroke="#4b5563" />
-
-            {tag && ANCHOR_IDS.map(anchorId => {
-              const series = tag.graph[anchorId]
-              if (!series) return null
-              const color = ANCHOR_COLORS[anchorId]
-              const fitPath = series.fit_line
-                .map((point, index) => `${index === 0 ? 'M' : 'L'} ${toSvgX(point.x)} ${toSvgY(point.y)}`)
-                .join(' ')
-
+            {/* Y axis ticks + labels */}
+            {yTicks.map(v => {
+              const y = toSvgY(v)
+              if (y < plotAreaTop - 0.5 || y > plotAreaBottom + 0.5) return null
               return (
-                <g key={anchorId}>
-                  {fitPath && <path d={fitPath} fill="none" stroke={color} strokeWidth="2" opacity="0.85" />}
-                  {series.capture.map((point, index) => (
-                    <circle key={`capture-${index}`} cx={toSvgX(point.x)} cy={toSvgY(point.y)} r="2.4" fill={color} opacity="0.35" />
-                  ))}
-                  {series.points.map((point, index) => (
-                    <circle key={`point-${index}`} cx={toSvgX(point.x)} cy={toSvgY(point.y)} r="4" fill={color} />
-                  ))}
-                  {series.live_raw && (
-                    <rect
-                      x={toSvgX(series.live_raw.x) - 4}
-                      y={toSvgY(series.live_raw.y) - 4}
-                      width="8"
-                      height="8"
-                      transform={`rotate(45 ${toSvgX(series.live_raw.x)} ${toSvgY(series.live_raw.y)})`}
-                      fill="rgba(255,255,255,0.12)"
-                      stroke={color}
-                    />
-                  )}
-                  {series.live_cal && (
-                    <circle cx={toSvgX(series.live_cal.x)} cy={toSvgY(series.live_cal.y)} r="5" fill="none" stroke={color} strokeWidth="1.8" />
-                  )}
+                <g key={`yt-${v}`}>
+                  <line x1={plotAreaLeft - 4} y1={y} x2={plotAreaLeft} y2={y} stroke="rgba(80,100,130,0.5)" />
+                  <text x={plotAreaLeft - 6} y={y + 3} fill="#4a6080" fontSize="9" textAnchor="end">
+                    {v % 1 === 0 ? v : v.toFixed(1)}
+                  </text>
                 </g>
               )
             })}
 
-            <text x={WIDTH / 2} y={HEIGHT - 8} fill="#8ea4c8" fontSize="12" textAnchor="middle">Raw UWB (ft)</text>
-            <text x="14" y={HEIGHT / 2} fill="#8ea4c8" fontSize="12" textAnchor="middle" transform={`rotate(-90 14 ${HEIGHT / 2})`}>
+            {/* Axis labels */}
+            <text x={(plotAreaLeft + plotAreaRight) / 2} y={HEIGHT - 4} fill="#3a5070" fontSize="10" textAnchor="middle">
+              Raw UWB (ft)
+            </text>
+            <text
+              x={10}
+              y={(plotAreaTop + plotAreaBottom) / 2}
+              fill="#3a5070"
+              fontSize="10"
+              textAnchor="middle"
+              transform={`rotate(-90 10 ${(plotAreaTop + plotAreaBottom) / 2})`}
+            >
               Reference (ft)
             </text>
-          </svg>
 
-          <div className="ct-graph-legend">
-            {ANCHOR_IDS.map(anchorId => (
-              <div key={anchorId} className="ct-graph-legend-item">
-                <span className="ct-graph-dot" style={{ background: ANCHOR_COLORS[anchorId] }} />
-                <span>{anchorId} pts</span>
-              </div>
-            ))}
-          </div>
+            {/* Data series (clipped to plot area) */}
+            <g clipPath="url(#ct-plot-clip)">
+              {tag && ANCHOR_IDS.map(anchorId => {
+                const series = tag.graph[anchorId]
+                if (!series) return null
+                const color = ANCHOR_COLORS[anchorId]
+                const fitPath = series.fit_line
+                  .filter(p => p.x >= 0 && p.x <= visibleMaxX && p.y >= 0 && p.y <= visibleMaxY)
+                  .map((p, i) => `${i === 0 ? 'M' : 'L'} ${toSvgX(p.x)} ${toSvgY(p.y)}`)
+                  .join(' ')
+
+                return (
+                  <g key={anchorId}>
+                    {fitPath && <path d={fitPath} fill="none" stroke={color} strokeWidth="1.8" opacity="0.9" />}
+                    {series.capture.map((p, i) => (
+                      <circle key={`cap-${i}`} cx={toSvgX(p.x)} cy={toSvgY(p.y)} r="2" fill={color} opacity="0.3" />
+                    ))}
+                    {series.points.map((p, i) => (
+                      <circle key={`pt-${i}`} cx={toSvgX(p.x)} cy={toSvgY(p.y)} r="3.5" fill={color} />
+                    ))}
+                    {series.live_raw && (
+                      <rect
+                        x={toSvgX(series.live_raw.x) - 4}
+                        y={toSvgY(series.live_raw.y) - 4}
+                        width="8" height="8"
+                        transform={`rotate(45 ${toSvgX(series.live_raw.x)} ${toSvgY(series.live_raw.y)})`}
+                        fill="rgba(255,255,255,0.1)"
+                        stroke={color}
+                        strokeWidth="1.2"
+                      />
+                    )}
+                    {series.live_cal && (
+                      <circle cx={toSvgX(series.live_cal.x)} cy={toSvgY(series.live_cal.y)} r="4.5" fill="none" stroke={color} strokeWidth="1.6" />
+                    )}
+                  </g>
+                )
+              })}
+            </g>
+
+            {/* Floating legend — top right of plot area */}
+            <g transform={`translate(${plotAreaRight - 4}, ${plotAreaTop + 4})`}>
+              {ANCHOR_IDS.map((anchorId, i) => (
+                <g key={anchorId} transform={`translate(0, ${i * 16})`}>
+                  <circle cx={-72} cy={4} r={4} fill={ANCHOR_COLORS[anchorId]} />
+                  <text x={-64} y={8} fill="#8aa0be" fontSize="10">{anchorId}</text>
+                </g>
+              ))}
+            </g>
+          </svg>
         </div>
       )}
     </div>

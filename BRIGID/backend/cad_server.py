@@ -21,7 +21,13 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 from cad_engine import CADEngine
-from config import TAGS_DIR, ROOMS_DIR, TEMP_EXTRACT_DIR, ensure_profile_dirs
+from config import (
+    TAGS_DIR, ROOMS_DIR, TEMP_EXTRACT_DIR, ensure_profile_dirs,
+    workspace_tags_dir, workspace_rooms_dir, workspace_rtls_dir,
+    ensure_workspace_dirs, delete_workspace_if_empty,
+    rename_workspace_folder, list_existing_workspaces,
+)
+from RTLSDashboard.rtls_runtime import RTLSRuntime
 from utilities.profilers.tag_profile_io import (
     create_empty_profile,
     save_profile,
@@ -64,11 +70,57 @@ app.add_middleware(
 # Per-workspace engine registry — survives between frontend reconnects
 _workspace_engines: dict[str, CADEngine] = {}
 _calibration_runtime = CalibrationRuntime()
+_rtls_runtime = RTLSRuntime()
+
+# Workspace registry: workspace_id → workspace_name (for path resolution)
+_workspace_names: dict[str, str] = {}
+
+
+def _resolve_tags_dir(workspace_id: str | None, workspace_name: str | None = None) -> str:
+    """Resolve the tags directory. workspace_name takes priority over the registry lookup."""
+    name = workspace_name or (workspace_id and _workspace_names.get(workspace_id))
+    if name:
+        d = workspace_tags_dir(name)
+        d.mkdir(parents=True, exist_ok=True)
+        return str(d)
+    return str(TAGS_DIR)
+
+
+def _resolve_rooms_dir(workspace_id: str | None, workspace_name: str | None = None) -> str:
+    """Resolve the rooms directory. workspace_name takes priority over the registry lookup."""
+    name = workspace_name or (workspace_id and _workspace_names.get(workspace_id))
+    if name:
+        d = workspace_rooms_dir(name)
+        d.mkdir(parents=True, exist_ok=True)
+        return str(d)
+    return str(ROOMS_DIR)
+
+
+@app.get("/api/workspace/paths/{workspace_id}")
+async def api_workspace_paths(workspace_id: str, workspace_name: Optional[str] = None):
+    """Return workspace-specific file paths for a given workspace_id."""
+    from config import workspace_svg_dir, workspace_pdf_dir
+    name = workspace_name or _workspace_names.get(workspace_id)
+    if not name:
+        return {"success": False, "error": "Workspace not registered"}
+    # Auto-register if workspace_name provided
+    if workspace_name and workspace_id not in _workspace_names:
+        _workspace_names[workspace_id] = workspace_name
+    ensure_workspace_dirs(name)
+    return {
+        "success": True,
+        "tags": str(workspace_tags_dir(name)),
+        "rooms": str(workspace_rooms_dir(name)),
+        "svg": str(workspace_svg_dir(name)),
+        "pdf": str(workspace_pdf_dir(name)),
+        "rtls": str(workspace_rtls_dir(name)),
+    }
 
 
 @app.on_event("shutdown")
 async def shutdown_runtime() -> None:
     _calibration_runtime.shutdown()
+    _rtls_runtime.shutdown()
     _workspace_engines.clear()
 
 
@@ -79,10 +131,11 @@ def _get_engine(workspace_id: str) -> CADEngine:
     return _workspace_engines[workspace_id]
 
 
-def _load_all_profiles() -> list[dict]:
+def _load_all_profiles(workspace_id: str | None = None, workspace_name: str | None = None) -> list[dict]:
+    tags_dir = _resolve_tags_dir(workspace_id, workspace_name)
     profiles: list[dict] = []
-    for tag_id in list_profiles(str(TAGS_DIR)):
-        profile, error = load_profile(tag_id, str(TAGS_DIR))
+    for tag_id in list_profiles(tags_dir):
+        profile, error = load_profile(tag_id, tags_dir)
         if profile is None or error:
             logger.warning("Skipping unreadable profile %r: %s", tag_id, error)
             continue
@@ -221,25 +274,28 @@ async def api_profile_new():
 
 
 @app.get("/api/profile/list")
-async def api_profile_list():
-    profiles = list_profiles(str(TAGS_DIR))
+async def api_profile_list(workspace_id: Optional[str] = None):
+    tags_dir = _resolve_tags_dir(workspace_id)
+    profiles = list_profiles(tags_dir)
     return {"success": True, "profiles": profiles}
 
 
 @app.get("/api/profile/{tag_id}")
-async def api_profile_load(tag_id: str):
-    profile, error = load_profile(tag_id, str(TAGS_DIR))
+async def api_profile_load(tag_id: str, workspace_id: Optional[str] = None):
+    tags_dir = _resolve_tags_dir(workspace_id)
+    profile, error = load_profile(tag_id, tags_dir)
     if error:
         return {"success": False, "error": error}
     return {"success": True, "profile": serialize_profile(profile)}
 
 
 @app.post("/api/profile/save")
-async def api_profile_save(req: SaveProfileRequest):
+async def api_profile_save(req: SaveProfileRequest, workspace_id: Optional[str] = None):
     errors = validate_profile(req.profile)
     if errors:
         return {"success": False, "error": "; ".join(errors)}
-    ok, result = save_profile(req.profile, str(TAGS_DIR))
+    tags_dir = _resolve_tags_dir(workspace_id)
+    ok, result = save_profile(req.profile, tags_dir)
     if not ok:
         return {"success": False, "error": result}
     return {"success": True, "tag_id": req.profile.get("tag_id", ""), "path": result}
@@ -261,8 +317,9 @@ async def api_profile_export(req: ExportProfileRequest):
 
 
 @app.delete("/api/profile/{tag_id}")
-async def api_profile_delete(tag_id: str):
-    ok, error = delete_profile(tag_id, str(TAGS_DIR))
+async def api_profile_delete(tag_id: str, workspace_id: Optional[str] = None):
+    tags_dir = _resolve_tags_dir(workspace_id)
+    ok, error = delete_profile(tag_id, tags_dir)
     if not ok:
         return {"success": False, "error": error}
     return {"success": True}
@@ -288,8 +345,11 @@ async def api_calibration_generate(req: CalibrationGenerateRequest):
 
 
 @app.get("/api/calibration/runtime")
-async def api_calibration_runtime():
-    return {"success": True, **_calibration_runtime.snapshot(_load_all_profiles())}
+async def api_calibration_runtime(workspace_id: Optional[str] = None, workspace_name: Optional[str] = None):
+    # Auto-register workspace name if provided (survives server restarts without needing /register)
+    if workspace_id and workspace_name and workspace_id not in _workspace_names:
+        _workspace_names[workspace_id] = workspace_name
+    return {"success": True, **_calibration_runtime.snapshot(_load_all_profiles(workspace_id, workspace_name))}
 
 
 @app.get("/api/calibration/serial/ports")
@@ -302,17 +362,20 @@ async def api_calibration_serial_ports():
 
 
 @app.post("/api/calibration/transport/connect")
-async def api_calibration_transport_connect(req: CalibrationTransportConnectRequest):
-    ok, detail = _calibration_runtime.connect(req.mode, _load_all_profiles(), req.port)
+async def api_calibration_transport_connect(req: CalibrationTransportConnectRequest, workspace_id: Optional[str] = None, workspace_name: Optional[str] = None):
+    if workspace_id and workspace_name and workspace_id not in _workspace_names:
+        _workspace_names[workspace_id] = workspace_name
+    profiles = _load_all_profiles(workspace_id, workspace_name)
+    ok, detail = _calibration_runtime.connect(req.mode, profiles, req.port)
     if not ok:
         return {"success": False, "error": detail}
-    return {"success": True, "detail": detail, **_calibration_runtime.snapshot(_load_all_profiles())}
+    return {"success": True, "detail": detail, **_calibration_runtime.snapshot(profiles)}
 
 
 @app.post("/api/calibration/transport/disconnect")
-async def api_calibration_transport_disconnect():
+async def api_calibration_transport_disconnect(workspace_id: Optional[str] = None, workspace_name: Optional[str] = None):
     _calibration_runtime.disconnect()
-    return {"success": True, **_calibration_runtime.snapshot(_load_all_profiles())}
+    return {"success": True, **_calibration_runtime.snapshot(_load_all_profiles(workspace_id, workspace_name))}
 
 
 @app.post("/api/calibration/map")
@@ -404,13 +467,14 @@ async def api_calibration_filter(req: CalibrationFilterRequest):
 
 
 @app.post("/api/calibration/tag/save/{tag_id}")
-async def api_calibration_tag_save(tag_id: str):
-    profile, error = load_profile(tag_id, str(TAGS_DIR))
+async def api_calibration_tag_save(tag_id: str, workspace_id: Optional[str] = None):
+    tags_dir = _resolve_tags_dir(workspace_id)
+    profile, error = load_profile(tag_id, tags_dir)
     if profile is None or error:
         return {"success": False, "error": error or f"Profile not found: {tag_id}"}
 
     profile["calibration"] = _calibration_runtime.export_profile_equations(tag_id)
-    ok, result = save_profile(profile, str(TAGS_DIR))
+    ok, result = save_profile(profile, tags_dir)
     if not ok:
         return {"success": False, "error": result}
     return {"success": True, "path": result, **_calibration_runtime.snapshot(_load_all_profiles())}
@@ -474,8 +538,9 @@ def _segs_from_list(raw: List[List[float]]):
 
 
 @app.get("/api/rooms/list")
-async def api_rooms_list():
-    manifests = list_room_profiles(str(ROOMS_DIR))
+async def api_rooms_list(workspace_id: Optional[str] = None):
+    rooms_dir = _resolve_rooms_dir(workspace_id)
+    manifests = list_room_profiles(rooms_dir)
     return {"success": True, "manifests": manifests}
 
 
@@ -489,13 +554,14 @@ async def api_rooms_create(req: CreateRoomRequest):
 
 
 @app.post("/api/rooms/manifest/save")
-async def api_rooms_manifest_save(req: SaveManifestRequest):
+async def api_rooms_manifest_save(req: SaveManifestRequest, workspace_id: Optional[str] = None):
     try:
         rooms = [Room.from_dict(r) for r in req.rooms]
     except Exception as exc:
         return {"success": False, "error": f"Invalid room data: {exc}"}
+    rooms_dir = _resolve_rooms_dir(workspace_id)
     ok, result = save_floorplan_manifest(
-        req.project_name, req.svg_path, rooms, str(ROOMS_DIR)
+        req.project_name, req.svg_path, rooms, rooms_dir
     )
     if not ok:
         return {"success": False, "error": result}
@@ -564,3 +630,339 @@ async def api_find_segments(req: FindSegmentsRequest):
     indices = _find_connected(segs, req.start_idx)
     connected = [list(segs[i]) for i in indices]
     return {"success": True, "indices": indices, "segments": connected}
+
+
+# ===========================================================================
+# Workspace Management endpoints
+# ===========================================================================
+
+class WorkspaceRegisterRequest(BaseModel):
+    workspace_id: str
+    workspace_name: str
+
+
+class WorkspaceRenameRequest(BaseModel):
+    workspace_id: str
+    old_name: str
+    new_name: str
+
+
+class WorkspaceDeleteRequest(BaseModel):
+    workspace_id: str
+    workspace_name: str
+
+
+@app.post("/api/workspace/register")
+async def api_workspace_register(req: WorkspaceRegisterRequest):
+    """Called when a workspace tab is created. Creates folder on disk."""
+    _workspace_names[req.workspace_id] = req.workspace_name
+    root = ensure_workspace_dirs(req.workspace_name)
+    return {"success": True, "path": str(root)}
+
+
+@app.post("/api/workspace/rename")
+async def api_workspace_rename(req: WorkspaceRenameRequest):
+    """Called when a workspace tab is renamed. Renames folder on disk."""
+    ok = rename_workspace_folder(req.old_name, req.new_name)
+    if ok:
+        _workspace_names[req.workspace_id] = req.new_name
+    return {"success": ok}
+
+
+@app.post("/api/workspace/delete")
+async def api_workspace_delete(req: WorkspaceDeleteRequest):
+    """Called on tab close. Deletes folder if empty."""
+    deleted = delete_workspace_if_empty(req.workspace_name)
+    if req.workspace_id in _workspace_names:
+        del _workspace_names[req.workspace_id]
+    return {"success": True, "deleted": deleted}
+
+
+@app.get("/api/workspace/list")
+async def api_workspace_list():
+    """Returns all persisted workspace folder names."""
+    return {"success": True, "workspaces": list_existing_workspaces()}
+
+
+# ===========================================================================
+# RTLS Dashboard endpoints
+# ===========================================================================
+
+class RtlsConnectRequest(BaseModel):
+    port: str
+
+
+class RtlsWorkspaceLoadRequest(BaseModel):
+    workspace_id: Optional[str] = None
+    workspace_name: Optional[str] = None  # passed directly — survives server restarts
+    manifest_path: Optional[str] = None   # manual override
+    room_name: Optional[str] = None       # which room to use (first if omitted)
+    folder_path: Optional[str] = None     # browse-folder override (discover manifest/tags inside)
+    svg_folder: Optional[str] = None      # direct path to an svg/ folder
+    rooms_folder: Optional[str] = None    # direct path to a rooms/ folder
+    tags_folder: Optional[str] = None     # direct path to a tags/ folder
+
+
+class RtlsFilterRequest(BaseModel):
+    mode: Optional[str] = None
+    ema_alpha: Optional[float] = None
+    roll_n: Optional[int] = None
+    kal_q: Optional[float] = None
+    kal_r: Optional[float] = None
+
+
+class RtlsElevationRequest(BaseModel):
+    override: bool
+    value_ft: Optional[float] = None
+
+
+def _load_workspace_profiles(workspace_id: Optional[str], workspace_name: Optional[str] = None) -> list[dict]:
+    """Load all tag profiles from workspace-specific or global tags dir."""
+    tags_dir = _resolve_tags_dir(workspace_id, workspace_name)
+    profiles: list[dict] = []
+    for tag_id in list_profiles(tags_dir):
+        profile, error = load_profile(tag_id, tags_dir)
+        if profile and not error:
+            profiles.append(profile)
+    return profiles
+
+
+def _find_workspace_manifest(workspace_id: Optional[str], workspace_name: Optional[str] = None) -> Optional[str]:
+    """Find the most recently saved rooms manifest in a workspace."""
+    rooms_dir = _resolve_rooms_dir(workspace_id, workspace_name)
+    import glob
+    pattern = str(rooms_dir) + "/*.rooms.json"
+    matches = sorted(glob.glob(pattern), key=os.path.getmtime, reverse=True)
+    return matches[0] if matches else None
+
+
+def _find_workspace_svg(workspace_id: Optional[str], workspace_name: Optional[str] = None) -> Optional[str]:
+    """Find the most recently saved SVG in a workspace svg/ dir."""
+    from config import workspace_svg_dir
+    name = workspace_name or (workspace_id and _workspace_names.get(workspace_id))
+    if not name:
+        return None
+    svg_dir = workspace_svg_dir(name)
+    if not svg_dir.exists():
+        return None
+    import glob
+    matches = sorted(glob.glob(str(svg_dir / "*.svg")), key=os.path.getmtime, reverse=True)
+    return matches[0] if matches else None
+
+
+def _find_manifest_in_folder(folder_path: str) -> Optional[str]:
+    """Find the most recent rooms manifest in a user-selected folder."""
+    import glob
+    # Check rooms/ subdir first, then the folder itself
+    rooms_sub = os.path.join(folder_path, "rooms")
+    for search_dir in [rooms_sub, folder_path]:
+        if not os.path.isdir(search_dir):
+            continue
+        matches = sorted(
+            glob.glob(os.path.join(search_dir, "*.rooms.json")),
+            key=os.path.getmtime,
+            reverse=True,
+        )
+        if matches:
+            return matches[0]
+    return None
+
+
+def _load_profiles_from_folder(folder_path: str) -> list[dict]:
+    """Load tag profiles from a user-selected folder's tags/ subdir."""
+    tags_sub = os.path.join(folder_path, "tags")
+    if not os.path.isdir(tags_sub):
+        return []
+    profiles: list[dict] = []
+    for tag_id in list_profiles(tags_sub):
+        profile, error = load_profile(tag_id, tags_sub)
+        if profile and not error:
+            profiles.append(profile)
+    return profiles
+
+
+def _find_svg_in_folder(folder_path: str) -> Optional[str]:
+    """Find the most recent SVG in a folder's svg/ subdir."""
+    import glob
+    svg_sub = os.path.join(folder_path, "svg")
+    if not os.path.isdir(svg_sub):
+        return None
+    matches = sorted(glob.glob(os.path.join(svg_sub, "*.svg")), key=os.path.getmtime, reverse=True)
+    return matches[0] if matches else None
+
+
+def _read_svg_content(svg_path: Optional[str]) -> Optional[str]:
+    """Read SVG file content for frontend rendering."""
+    if not svg_path or not os.path.isfile(svg_path):
+        return None
+    try:
+        with open(svg_path, "r", encoding="utf-8") as f:
+            return f.read()
+    except OSError:
+        return None
+
+
+@app.get("/api/rtls/snapshot")
+async def api_rtls_snapshot():
+    """Poll current RTLS state (20 Hz safe — cheap dict copy)."""
+    return {"success": True, **_rtls_runtime.snapshot()}
+
+
+@app.post("/api/rtls/workspace/load")
+async def api_rtls_workspace_load(req: RtlsWorkspaceLoadRequest):
+    """
+    Load room + tag + SVG data into RTLS runtime from workspace.
+
+    Three modes:
+      1. folder_path set → discover manifest/tags/SVG inside that folder
+      2. manifest_path set → load that specific manifest file
+      3. neither → auto-discover from current workspace (workspace_id/workspace_name)
+    """
+    # Auto-register workspace name so registry survives server restarts
+    if req.workspace_id and req.workspace_name:
+        _workspace_names[req.workspace_id] = req.workspace_name
+
+    manifest_path = req.manifest_path
+    tag_profiles: list[dict] = []
+    svg_path: Optional[str] = None
+
+    if req.folder_path:
+        # Mode 1: workspace root folder — discover manifest/tags/SVG inside
+        manifest_path = _find_manifest_in_folder(req.folder_path)
+        tag_profiles = _load_profiles_from_folder(req.folder_path)
+        svg_path = _find_svg_in_folder(req.folder_path)
+        rtls_dir = os.path.join(req.folder_path, "RTLS")
+        os.makedirs(rtls_dir, exist_ok=True)
+        _rtls_runtime.set_rtls_dir(rtls_dir)
+    elif req.svg_folder or req.rooms_folder or req.tags_folder:
+        # Mode 4: independent folder loading — each resource resolved from its own folder.
+        # Any un-specified resource falls back to workspace auto-discovery.
+        import glob as _glob
+
+        if req.rooms_folder:
+            # Search directly in the given folder for *.rooms.json
+            matches = sorted(
+                _glob.glob(os.path.join(req.rooms_folder, "*.rooms.json")),
+                key=os.path.getmtime, reverse=True,
+            )
+            manifest_path = matches[0] if matches else None
+        else:
+            manifest_path = _find_workspace_manifest(req.workspace_id, req.workspace_name)
+
+        if req.tags_folder:
+            for tag_id in list_profiles(req.tags_folder):
+                profile, error = load_profile(tag_id, req.tags_folder)
+                if profile and not error:
+                    tag_profiles.append(profile)
+        else:
+            tag_profiles = _load_workspace_profiles(req.workspace_id, req.workspace_name)
+
+        if req.svg_folder:
+            matches = sorted(
+                _glob.glob(os.path.join(req.svg_folder, "*.svg")),
+                key=os.path.getmtime, reverse=True,
+            )
+            svg_path = matches[0] if matches else None
+        else:
+            svg_path = _find_workspace_svg(req.workspace_id, req.workspace_name)
+        # RTLS dir unchanged in this mode (keep whatever was previously set)
+    else:
+        # Mode 2/3: workspace-based loading
+        if not manifest_path:
+            manifest_path = _find_workspace_manifest(req.workspace_id, req.workspace_name)
+        tag_profiles = _load_workspace_profiles(req.workspace_id, req.workspace_name)
+        svg_path = _find_workspace_svg(req.workspace_id, req.workspace_name)
+        # Set workspace RTLS dir for CSV logging
+        ws_name = req.workspace_name or (req.workspace_id and _workspace_names.get(req.workspace_id))
+        if ws_name:
+            rtls_dir = str(workspace_rtls_dir(ws_name))
+            os.makedirs(rtls_dir, exist_ok=True)
+            _rtls_runtime.set_rtls_dir(rtls_dir)
+
+    if not manifest_path:
+        return {"success": False, "error": "No rooms manifest found in workspace. Save rooms in Anchor Manager first."}
+
+    manifest, rooms, error = load_floorplan_manifest(manifest_path)
+    if error:
+        return {"success": False, "error": error}
+    if not rooms:
+        return {"success": False, "error": "No rooms in manifest."}
+
+    # Pick the requested room or the first
+    target_room = rooms[0]
+    if req.room_name:
+        for r in rooms:
+            if r.name == req.room_name:
+                target_room = r
+                break
+
+    _rtls_runtime.update_from_workspace(target_room.to_dict(), tag_profiles)
+
+    # Read SVG content for frontend rendering
+    svg_content = _read_svg_content(svg_path)
+
+    return {
+        "success": True,
+        "room_name": target_room.name,
+        "anchor_count": len(target_room.anchors),
+        "tag_count": len(tag_profiles),
+        "svg_content": svg_content,
+        "svg_path": svg_path or "",
+        **_rtls_runtime.snapshot(),
+    }
+
+
+@app.post("/api/rtls/serial/connect")
+async def api_rtls_serial_connect(req: RtlsConnectRequest):
+    _rtls_runtime.start_serial(req.port)
+    return {"success": True, **_rtls_runtime.snapshot()}
+
+
+@app.post("/api/rtls/serial/disconnect")
+async def api_rtls_serial_disconnect():
+    _rtls_runtime.stop_serial()
+    return {"success": True, **_rtls_runtime.snapshot()}
+
+
+@app.get("/api/rtls/serial/ports")
+async def api_rtls_serial_ports():
+    from RTLSDashboard.rtls_runtime import auto_detect_esp32_port
+    return {
+        "success": True,
+        "ports": _rtls_runtime.get_serial_ports(),
+        "auto_detect_port": auto_detect_esp32_port() or "",
+    }
+
+
+@app.post("/api/rtls/filter")
+async def api_rtls_filter(req: RtlsFilterRequest):
+    _rtls_runtime.set_filter(
+        mode=req.mode,
+        ema_alpha=req.ema_alpha,
+        roll_n=req.roll_n,
+        kal_q=req.kal_q,
+        kal_r=req.kal_r,
+    )
+    return {"success": True, **_rtls_runtime.snapshot()}
+
+
+@app.post("/api/rtls/elevation")
+async def api_rtls_elevation(req: RtlsElevationRequest):
+    _rtls_runtime.set_elevation(req.override, req.value_ft)
+    return {"success": True, **_rtls_runtime.snapshot()}
+
+
+@app.post("/api/rtls/csv/start")
+async def api_rtls_csv_start():
+    """Start CSV distance logging into workspace RTLS/ folder."""
+    ok, detail = _rtls_runtime.start_csv_logging()
+    if not ok:
+        return {"success": False, "error": detail}
+    return {"success": True, "path": detail, **_rtls_runtime.snapshot()}
+
+
+@app.post("/api/rtls/csv/stop")
+async def api_rtls_csv_stop():
+    """Stop CSV distance logging."""
+    _rtls_runtime.stop_csv_logging()
+    return {"success": True, **_rtls_runtime.snapshot()}

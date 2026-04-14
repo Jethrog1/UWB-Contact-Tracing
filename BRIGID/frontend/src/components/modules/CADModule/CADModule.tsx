@@ -120,9 +120,10 @@ const FloatingNotice: React.FC<{
 
 interface CADModuleProps {
   workspaceId: string
+  workspaceName?: string
 }
 
-const CADModule: React.FC<CADModuleProps> = ({ workspaceId }) => {
+const CADModule: React.FC<CADModuleProps> = ({ workspaceId, workspaceName }) => {
   const { state, status, sendCommand, reconnect } = useCADWebSocket(workspaceId)
   const dialog = state?.pending_dialog ?? null
   const contextMenu = state?.context_menu ?? null
@@ -339,7 +340,7 @@ const CADModule: React.FC<CADModuleProps> = ({ workspaceId }) => {
         )}
 
         {/* Right panel — absolutely positioned inside canvas area */}
-        <CADRightPanel state={state} onCommand={handleCommand} status={status} />
+        <CADRightPanel state={state} onCommand={handleCommand} status={status} workspaceId={workspaceId} workspaceName={workspaceName} />
       </div>
 
       <AnimatePresence>

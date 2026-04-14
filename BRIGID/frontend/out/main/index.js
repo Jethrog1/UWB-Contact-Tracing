@@ -136,7 +136,8 @@ async function stopCadServer() {
 const brigidRoot = utils.is.dev ? path.join(electron.app.getAppPath(), "..") : path.join(process.resourcesPath, "..");
 electron.ipcMain.handle("app:get-paths", () => ({
   svg: path.join(brigidRoot, "svg"),
-  pdf: path.join(brigidRoot, "pdf")
+  pdf: path.join(brigidRoot, "pdf"),
+  profile: path.join(brigidRoot, "Profile")
 }));
 electron.ipcMain.handle("dialog:open-file", async (_event, options) => {
   if (!mainWindow) return { canceled: true, filePaths: [] };
@@ -148,6 +149,20 @@ electron.ipcMain.handle("dialog:open-file", async (_event, options) => {
 electron.ipcMain.handle("dialog:save-file", async (_event, options) => {
   if (!mainWindow) return { canceled: true, filePath: void 0 };
   return electron.dialog.showSaveDialog(mainWindow, options);
+});
+electron.ipcMain.handle("dialog:open-folder", async (_event, options) => {
+  if (!mainWindow) return { canceled: true, folderPath: void 0 };
+  const result = await electron.dialog.showOpenDialog(mainWindow, {
+    properties: ["openDirectory"],
+    defaultPath: options?.defaultPath
+  });
+  return {
+    canceled: result.canceled,
+    folderPath: result.canceled ? void 0 : result.filePaths[0]
+  };
+});
+electron.ipcMain.handle("shell:open-path", async (_event, path2) => {
+  await electron.shell.openPath(path2);
 });
 electron.ipcMain.handle("cad:status", async () => {
   const running = cadServer !== null && !cadServer.killed || await isCadServerReachable();

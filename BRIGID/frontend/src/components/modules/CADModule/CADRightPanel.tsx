@@ -3,10 +3,14 @@ import { Tooltip } from '@blueprintjs/core'
 import { CADCommand, CADState, ToolMode } from './types'
 import './CADRightPanel.css'
 
+const API = 'http://localhost:8765'
+
 interface Props {
   state: CADState | null
   onCommand: (cmd: CADCommand) => void
   status: 'connecting' | 'connected' | 'disconnected' | 'error'
+  workspaceId?: string
+  workspaceName?: string
 }
 
 const TOOLS: { mode: ToolMode; icon: string; label: string; shortcut: string }[] = [
@@ -16,7 +20,7 @@ const TOOLS: { mode: ToolMode; icon: string; label: string; shortcut: string }[]
   { mode: 'dim', icon: '↔', label: 'Dimension Tool', shortcut: 'D' },
 ]
 
-const CADRightPanel: React.FC<Props> = ({ state, onCommand, status }) => {
+const CADRightPanel: React.FC<Props> = ({ state, onCommand, status, workspaceId, workspaceName }) => {
   const [iobusy, setIoBusy] = useState(false)
   const [paths, setPaths] = useState<{ svg: string; pdf: string } | null>(null)
   const tool = state?.tool_mode ?? 'cursor'
@@ -27,20 +31,23 @@ const CADRightPanel: React.FC<Props> = ({ state, onCommand, status }) => {
 
   useEffect(() => {
     let cancelled = false
-    if (!getPaths) return
 
-    getPaths()
-      .then((nextPaths) => {
-        if (!cancelled) setPaths(nextPaths)
-      })
-      .catch(() => {
-        if (!cancelled) setPaths(null)
-      })
-
-    return () => {
-      cancelled = true
+    if (workspaceId && workspaceName) {
+      // Fetch workspace-specific svg/ and pdf/ paths from the backend
+      fetch(`${API}/api/workspace/paths/${encodeURIComponent(workspaceId)}?workspace_name=${encodeURIComponent(workspaceName)}`)
+        .then(r => r.json())
+        .then(data => {
+          if (!cancelled && data.success) setPaths({ svg: data.svg, pdf: data.pdf })
+        })
+        .catch(() => { if (!cancelled) setPaths(null) })
+    } else if (getPaths) {
+      getPaths()
+        .then(nextPaths => { if (!cancelled) setPaths(nextPaths) })
+        .catch(() => { if (!cancelled) setPaths(null) })
     }
-  }, [getPaths])
+
+    return () => { cancelled = true }
+  }, [workspaceId, workspaceName, getPaths])
 
   const handleOpen = async () => {
     if (!openFile || iobusy) return

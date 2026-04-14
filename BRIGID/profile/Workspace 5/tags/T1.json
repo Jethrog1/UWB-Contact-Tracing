@@ -1,0 +1,28 @@
+{
+    "tag_id": "T1",
+    "identity": {
+        "profile_id": "",
+        "name": "Bob",
+        "description": ""
+    },
+    "device": {
+        "mac_address": "dc:b4:d9:22:3a:55",
+        "device_type": "Wrist Band",
+        "wrist_to_floor_ft": 3.5,
+        "arm_to_floor_ft": 0,
+        "hip_to_floor_ft": 0,
+        "breast_to_floor_ft": 0,
+        "description": ""
+    },
+    "calibration": {
+        "equations": {
+            "A0": "",
+            "A1": "",
+            "A2": "",
+            "A3": ""
+        },
+        "last_calibration_date": "",
+        "equations_enabled": false
+    },
+    "notes": ""
+}

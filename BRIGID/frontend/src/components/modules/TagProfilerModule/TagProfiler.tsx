@@ -25,7 +25,7 @@ const createEmptyProfile = (): TagProfile => ({
   notes: '',
 })
 
-const TagProfiler: React.FC<TagProfilerProps> = ({ workspaceId: _workspaceId }) => {
+const TagProfiler: React.FC<TagProfilerProps> = ({ workspaceId }) => {
   const [profile, setProfile] = useState<TagProfile>(createEmptyProfile)
   const [savedProfiles, setSavedProfiles] = useState<string[]>([])
   const [dirty, setDirty] = useState(false)
@@ -44,13 +44,13 @@ const TagProfiler: React.FC<TagProfilerProps> = ({ workspaceId: _workspaceId }) 
 
   const loadProfileList = useCallback(async () => {
     try {
-      const res = await fetch(`${API}/api/profile/list`)
+      const res = await fetch(`${API}/api/profile/list?workspace_id=${encodeURIComponent(workspaceId)}`)
       const data = await res.json()
       if (data.success) setSavedProfiles(data.profiles)
     } catch {
       // Keep the workspace usable while backend boots.
     }
-  }, [])
+  }, [workspaceId])
 
   useEffect(() => { loadProfileList() }, [loadProfileList])
 
@@ -77,7 +77,7 @@ const TagProfiler: React.FC<TagProfilerProps> = ({ workspaceId: _workspaceId }) 
       return
     }
     try {
-      const res = await fetch(`${API}/api/profile/save`, {
+      const res = await fetch(`${API}/api/profile/save?workspace_id=${encodeURIComponent(workspaceId)}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ profile }),
@@ -98,7 +98,7 @@ const TagProfiler: React.FC<TagProfilerProps> = ({ workspaceId: _workspaceId }) 
   const handleLoadById = useCallback(async (tagId: string) => {
     if (dirty && !window.confirm('Discard unsaved changes?')) return
     try {
-      const res = await fetch(`${API}/api/profile/${encodeURIComponent(tagId)}`)
+      const res = await fetch(`${API}/api/profile/${encodeURIComponent(tagId)}?workspace_id=${encodeURIComponent(workspaceId)}`)
       const data = await res.json()
       if (data.success) {
         setProfile(data.profile)
@@ -109,12 +109,12 @@ const TagProfiler: React.FC<TagProfilerProps> = ({ workspaceId: _workspaceId }) 
     } catch {
       showStatus('Could not reach backend.', 'error')
     }
-  }, [dirty])
+  }, [dirty, workspaceId])
 
   const handleDelete = useCallback(async (tagId: string) => {
     if (!window.confirm(`Delete profile "${tagId}"?`)) return
     try {
-      const res = await fetch(`${API}/api/profile/${encodeURIComponent(tagId)}`, { method: 'DELETE' })
+      const res = await fetch(`${API}/api/profile/${encodeURIComponent(tagId)}?workspace_id=${encodeURIComponent(workspaceId)}`, { method: 'DELETE' })
       const data = await res.json()
       if (data.success) {
         showStatus('Profile deleted.', 'ok')
