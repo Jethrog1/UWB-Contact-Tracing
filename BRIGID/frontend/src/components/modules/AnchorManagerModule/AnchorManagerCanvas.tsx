@@ -50,7 +50,7 @@ interface AnchorManagerCanvasProps {
 }
 
 const COLORS = {
-  bg: '#0b0e14',
+  bg: '#0a0b0d',
   segment: '#314052',
   segmentHover: '#5a90c8',
   segmentSelected: '#4a9eff',
@@ -262,9 +262,9 @@ const AnchorManagerCanvas = forwardRef<AnchorManagerCanvasHandle, AnchorManagerC
         ctx.stroke()
         ctx.fillStyle = COLORS.anchorLabel
         ctx.font = `bold ${Math.max(9, Math.min(11, viewport.scale * 0.45))}px var(--font-mono, monospace)`
-        ctx.textAlign = 'center'
-        ctx.textBaseline = 'middle'
-        ctx.fillText(anchor.hw_id || anchor.id, sx, sy)
+        ctx.textAlign = 'left'
+        ctx.textBaseline = 'bottom'
+        ctx.fillText(anchor.hw_id || anchor.id, sx + 12, sy - 12)
       }
     }
 

@@ -3,9 +3,9 @@
   grid-area: hotbar;
   display: flex;
   align-items: center;
-  height: 32px;
-  background: #060a0f;
-  border-bottom: 1px solid rgba(30, 40, 60, 0.8);
+  height: 28px;
+  background: var(--bg-primary);
+  border-bottom: 1px solid var(--border-default);
   padding: 0 8px 0 0;
   user-select: none;
   z-index: 200;
@@ -46,12 +46,12 @@
 .hot-bar__menu-btn {
   display: flex;
   align-items: center;
-  height: 32px;
+  height: 28px;
   padding: 0 10px;
   background: transparent;
   border: none;
-  color: #94a3b8;
-  font-size: 12px;
+  color: var(--text-secondary);
+  font-size: var(--text-base);
   font-family: var(--font-primary);
   cursor: pointer;
   border-radius: 0;
@@ -61,8 +61,8 @@
 
 .hot-bar__menu-btn:hover,
 .hot-bar__menu-btn--open {
-  color: #e2e8f0;
-  background: rgba(56, 68, 94, 0.25);
+  color: var(--text-primary);
+  background: var(--bg-hover);
 }
 
 /* ── Dropdown ──────────────────────────────────────────────────────── */
@@ -71,10 +71,10 @@
   top: calc(100% + 2px);
   left: 0;
   min-width: 220px;
-  background: #0f1520;
-  border: 1px solid rgba(56, 68, 94, 0.5);
-  border-radius: 4px;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6), 0 2px 8px rgba(0, 0, 0, 0.4);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-floating);
   z-index: 1000;
   padding: 4px 0;
   overflow: hidden;

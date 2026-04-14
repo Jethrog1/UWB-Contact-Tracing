@@ -3,31 +3,34 @@
   width: 100vw;
   height: 100vh;
   overflow: hidden;
-  background: var(--bg-base);
+  background: var(--bg-primary);
 }
 
-/*
-  Grid rows:
-    32px  — HotBar (black application menu bar, matches titleBarOverlay height)
-    36px  — TabStrip (project workspace tabs)
-    1fr   — Main content row (rail + canvas + right panel)
-*/
 .app-shell {
   display: grid;
   width: 100%;
   height: 100%;
-  grid-template-rows: 32px 36px 1fr;
-  /* right column collapses to 0 when right panel is floating */
-  grid-template-columns: 52px 1fr;
+  grid-template-rows: 28px 32px 1fr;
+  grid-template-columns: 46px 1fr;
   grid-template-areas:
     "hotbar   hotbar"
     "tabstrip tabstrip"
-    "rail     canvas";
+    "canvas   canvas";
+  background: transparent;
 }
 
-/* When CAD module is active, CADModule owns the "canvas + right" cells
-   and renders its own internal layout (canvas area + feature manager + right panel).
-   The grid-area assignments for canvas and right are therefore handled inside CADModule. */
+
+
+.app-loader {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-primary);
+  z-index: 9999;
+}
 
 .app-empty-state,
 .app-module-placeholder {
@@ -36,52 +39,50 @@
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  background:
-    radial-gradient(ellipse at 50% 30%, rgba(50, 80, 130, 0.06), transparent 60%),
-    linear-gradient(180deg, #0c1018 0%, #090d14 100%);
-  color: #3a4a60;
-  gap: 10px;
+  background: var(--bg-primary);
+  color: var(--text-muted);
+  gap: 12px;
   text-align: center;
   padding: 40px;
 }
 
 .app-empty-icon,
 .app-module-icon {
-  width: 52px;
-  height: 52px;
-  border-radius: 14px;
+  width: 48px;
+  height: 48px;
+  border-radius: var(--radius-sm);
   display: grid;
   place-items: center;
-  background: rgba(50, 70, 100, 0.12);
-  border: 1px solid rgba(50, 70, 100, 0.18);
-  color: #7a9ab8;
-  font-size: 26px;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-default);
+  color: var(--text-secondary);
+  font-size: 20px;
 }
 
 .app-empty-title,
 .app-module-title {
-  font-size: 18px;
-  font-weight: 600;
-  color: #c8d4e0;
+  font-size: var(--text-lg);
+  font-weight: 500;
+  color: var(--text-primary);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  margin-top: 8px;
 }
 
 .app-empty-sub,
 .app-module-sub {
-  max-width: 460px;
-  font-size: 12px;
-  line-height: 1.6;
-  color: #5a6a80;
+  max-width: 400px;
+  font-size: var(--text-base);
+  color: var(--text-secondary);
 }
 
 .app-module-pill {
   margin-top: 8px;
-  padding: 6px 14px;
-  border-radius: 999px;
-  border: 1px solid rgba(50, 80, 130, 0.2);
-  background: rgba(50, 80, 130, 0.07);
-  color: #6a8aaa;
-  font-size: 10px;
+  padding: 4px 10px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--text-muted);
+  font-size: var(--text-xs);
   letter-spacing: 0.05em;
   text-transform: uppercase;
 }
@@ -95,7 +96,7 @@
   opacity: 0;
   pointer-events: none;
   z-index: 0;
-  transition: opacity 120ms ease;
+  transition: opacity var(--transition-fast) ease;
 }
 
 .app-workspace-host--active {
@@ -120,4 +121,64 @@
 .app-workspace-module > .app-empty-state {
   width: 100%;
   height: 100%;
+}
+
+/* ── Workspace Explorer ────────────────────────────────────────────── */
+.workspace-explorer {
+  margin-top: 32px;
+  width: 100%;
+  max-width: 460px;
+  text-align: left;
+  border-top: 1px solid var(--border-default);
+  padding-top: 24px;
+}
+
+.workspace-explorer-header {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  margin-bottom: 12px;
+}
+
+.workspace-explorer-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  /* Cap visible height at ~10 items (~28px each) then scroll */
+  max-height: 280px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.workspace-explorer-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 6px 12px;
+  background: transparent;
+  border: 1px solid transparent;
+  border-left: 2px solid transparent;
+  cursor: pointer;
+  color: var(--text-secondary);
+  font-family: var(--font-primary);
+  font-size: var(--text-base);
+  transition: background var(--transition-fast), border-color var(--transition-fast);
+}
+
+.workspace-explorer-item:hover {
+  background: var(--bg-hover);
+  border: 1px solid var(--border-default);
+  border-left: 2px solid var(--accent-primary);
+  color: var(--text-primary);
+}
+
+.workspace-item-name {
+  font-weight: 500;
+}
+
+.workspace-item-date {
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  color: var(--text-muted);
 }

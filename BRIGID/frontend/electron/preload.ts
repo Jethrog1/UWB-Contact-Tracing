@@ -12,7 +12,7 @@ const api = {
     ipcRenderer.invoke('cad:restart'),
 
   /** Resolve platform-specific save directories (svg / pdf) */
-  getPaths: (): Promise<{ svg: string; pdf: string }> =>
+  getPaths: (): Promise<{ svg: string; pdf: string; profile: string }> =>
     ipcRenderer.invoke('app:get-paths'),
 
   /** Open a native file-open dialog */
@@ -28,6 +28,16 @@ const api = {
     defaultPath?: string,
   ): Promise<{ canceled: boolean; filePath?: string }> =>
     ipcRenderer.invoke('dialog:save-file', { filters, defaultPath }),
+
+  /** Open a native folder-select dialog */
+  openFolder: (
+    defaultPath?: string,
+  ): Promise<{ canceled: boolean; folderPath?: string }> =>
+    ipcRenderer.invoke('dialog:open-folder', { defaultPath }),
+
+  /** Open a folder or file in the OS file explorer */
+  openPath: (path: string): Promise<void> =>
+    ipcRenderer.invoke('shell:open-path', path),
 }
 
 if (process.contextIsolated) {

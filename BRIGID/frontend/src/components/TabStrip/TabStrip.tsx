@@ -12,6 +12,9 @@ interface TabStripProps {
   onTabClose: (id: string) => void
   onTabReorder: (draggedId: string, targetId: string) => void
   onNewTab: () => void
+  onTabRename?: (id: string, newName: string) => void
+  onRefresh?: () => void
+  onOpenFolder?: () => void
   // View commands forwarded to the active CAD module via context/event
   onViewCommand?: (cmd: string) => void
 }
@@ -32,13 +35,43 @@ const TabStrip: React.FC<TabStripProps> = ({
   onTabClose,
   onTabReorder,
   onNewTab,
+  onTabRename,
+  onRefresh,
+  onOpenFolder,
   onViewCommand,
 }) => {
-  const showViewControls = activeModule === 'cad' || activeModule === 'anchors'
+  // Show view controls (undo/redo/zoom) for CAD, Calibration, and RTLS modules
+  const showViewControls = activeModule === 'cad' || activeModule === 'calibration' || activeModule === 'rtls'
+  const showWorkspaceActions = activeModule === 'rtls'
   const [searchVisible, setSearchVisible] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
   const [draggingId, setDraggingId] = useState<string | null>(null)
+  const [renamingId, setRenamingId] = useState<string | null>(null)
+  const [renameValue, setRenameValue] = useState('')
+  const renameRef = useRef<HTMLInputElement>(null)
   const searchRef = useRef<HTMLInputElement>(null)
+
+  useEffect(() => {
+    if (renamingId) renameRef.current?.focus()
+  }, [renamingId])
+
+  const startRename = (tab: WorkspaceTab) => {
+    setRenamingId(tab.id)
+    setRenameValue(tab.name)
+  }
+
+  const commitRename = () => {
+    if (renamingId && renameValue.trim() && onTabRename) {
+      onTabRename(renamingId, renameValue.trim())
+    }
+    setRenamingId(null)
+    setRenameValue('')
+  }
+
+  const cancelRename = () => {
+    setRenamingId(null)
+    setRenameValue('')
+  }
 
   const filtered = searchQuery
     ? tabs.filter(tab => tab.name.toLowerCase().includes(searchQuery.toLowerCase()))
@@ -54,7 +87,13 @@ const TabStrip: React.FC<TabStripProps> = ({
       return
     }
     if (!activeTabId) return
-    const eventName = activeModule === 'anchors' ? 'anchor-view-command' : 'cad-view-command'
+    const eventName = activeModule === 'anchors'
+      ? 'anchor-view-command'
+      : activeModule === 'calibration'
+        ? 'calibration-view-command'
+        : activeModule === 'rtls'
+          ? 'rtls-view-command'
+          : 'cad-view-command'
     window.dispatchEvent(new CustomEvent(eventName, { detail: { cmd, workspaceId: activeTabId } }))
   }
 
@@ -99,7 +138,28 @@ const TabStrip: React.FC<TabStripProps> = ({
                   />
                 )}
                 <span className={`tab-strip__tab-dot ${tab.modified ? 'tab-strip__tab-dot--modified' : ''}`} />
-                <span className="tab-strip__tab-name">{tab.name}</span>
+                {renamingId === tab.id ? (
+                  <input
+                    ref={renameRef}
+                    className="tab-strip__tab-rename-input"
+                    value={renameValue}
+                    onChange={e => setRenameValue(e.target.value)}
+                    onBlur={commitRename}
+                    onKeyDown={e => {
+                      if (e.key === 'Enter') commitRename()
+                      if (e.key === 'Escape') cancelRename()
+                    }}
+                    onClick={e => e.stopPropagation()}
+                  />
+                ) : (
+                  <span
+                    className="tab-strip__tab-name"
+                    onDoubleClick={e => { e.stopPropagation(); startRename(tab) }}
+                    title="Double-click to rename"
+                  >
+                    {tab.name}
+                  </span>
+                )}
                 <button
                   className="tab-strip__tab-close"
                   onClick={event => {
@@ -125,6 +185,27 @@ const TabStrip: React.FC<TabStripProps> = ({
       {/* View control cluster — only shown for CAD workspaces */}
       {showViewControls && (
         <div className="tab-strip__view-controls electron-no-drag">
+          {showWorkspaceActions && (
+            <>
+              <button
+                className="tab-strip__view-btn"
+                title="Refresh"
+                onClick={onRefresh}
+                disabled={!activeTabId}
+              >
+                <Icon icon="refresh" size={11} />
+              </button>
+              <button
+                className="tab-strip__view-btn"
+                title="Open Tags Folder"
+                onClick={onOpenFolder}
+                disabled={!activeTabId}
+              >
+                <Icon icon="folder-open" size={11} />
+              </button>
+              <div className="tab-strip__view-sep" />
+            </>
+          )}
           {VIEW_CONTROLS.map(vc => (
             <button
               key={vc.cmd}

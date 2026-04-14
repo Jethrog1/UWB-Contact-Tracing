@@ -11,7 +11,11 @@ const api = {
   /** Open a native file-open dialog */
   openFile: (filters, defaultPath) => electron.ipcRenderer.invoke("dialog:open-file", { filters, defaultPath }),
   /** Open a native file-save dialog */
-  saveFile: (filters, defaultPath) => electron.ipcRenderer.invoke("dialog:save-file", { filters, defaultPath })
+  saveFile: (filters, defaultPath) => electron.ipcRenderer.invoke("dialog:save-file", { filters, defaultPath }),
+  /** Open a native folder-select dialog */
+  openFolder: (defaultPath) => electron.ipcRenderer.invoke("dialog:open-folder", { defaultPath }),
+  /** Open a folder or file in the OS file explorer */
+  openPath: (path) => electron.ipcRenderer.invoke("shell:open-path", path)
 };
 if (process.contextIsolated) {
   try {

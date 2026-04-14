@@ -3,10 +3,14 @@ import { Tooltip } from '@blueprintjs/core'
 import { CADCommand, CADState, ToolMode } from './types'
 import './CADRightPanel.css'
 
+const API = 'http://localhost:8765'
+
 interface Props {
   state: CADState | null
   onCommand: (cmd: CADCommand) => void
   status: 'connecting' | 'connected' | 'disconnected' | 'error'
+  workspaceId?: string
+  workspaceName?: string
 }
 
 const TOOLS: { mode: ToolMode; icon: string; label: string; shortcut: string }[] = [
@@ -16,7 +20,7 @@ const TOOLS: { mode: ToolMode; icon: string; label: string; shortcut: string }[]
   { mode: 'dim', icon: '↔', label: 'Dimension Tool', shortcut: 'D' },
 ]
 
-const CADRightPanel: React.FC<Props> = ({ state, onCommand, status }) => {
+const CADRightPanel: React.FC<Props> = ({ state, onCommand, status, workspaceId, workspaceName }) => {
   const [iobusy, setIoBusy] = useState(false)
   const [paths, setPaths] = useState<{ svg: string; pdf: string } | null>(null)
   const tool = state?.tool_mode ?? 'cursor'
@@ -27,20 +31,23 @@ const CADRightPanel: React.FC<Props> = ({ state, onCommand, status }) => {
 
   useEffect(() => {
     let cancelled = false
-    if (!getPaths) return
 
-    getPaths()
-      .then((nextPaths) => {
-        if (!cancelled) setPaths(nextPaths)
-      })
-      .catch(() => {
-        if (!cancelled) setPaths(null)
-      })
-
-    return () => {
-      cancelled = true
+    if (workspaceId && workspaceName) {
+      // Fetch workspace-specific svg/ and pdf/ paths from the backend
+      fetch(`${API}/api/workspace/paths/${encodeURIComponent(workspaceId)}?workspace_name=${encodeURIComponent(workspaceName)}`)
+        .then(r => r.json())
+        .then(data => {
+          if (!cancelled && data.success) setPaths({ svg: data.svg, pdf: data.pdf })
+        })
+        .catch(() => { if (!cancelled) setPaths(null) })
+    } else if (getPaths) {
+      getPaths()
+        .then(nextPaths => { if (!cancelled) setPaths(nextPaths) })
+        .catch(() => { if (!cancelled) setPaths(null) })
     }
-  }, [getPaths])
+
+    return () => { cancelled = true }
+  }, [workspaceId, workspaceName, getPaths])
 
   const handleOpen = async () => {
     if (!openFile || iobusy) return
@@ -138,7 +145,6 @@ const CADRightPanel: React.FC<Props> = ({ state, onCommand, status }) => {
                 className={`crp-tool-btn${tool === entry.mode ? ' crp-tool-btn--active' : ''}`}
                 onClick={() => setTool(entry.mode)}
               >
-                <span className="crp-tool-icon">{entry.icon}</span>
                 <span className="crp-tool-label">{entry.label}</span>
               </button>
             </Tooltip>
@@ -187,15 +193,14 @@ const CADRightPanel: React.FC<Props> = ({ state, onCommand, status }) => {
       </div>
 
       <div className="crp-section">
-        <div className="crp-section-label">Angle Snap</div>
+        <div className="crp-section-label">Angle Snap (deg)</div>
         <div className="crp-angle-grid">
-          {(state?.angle_snap_values ?? ['', '', '', '']).map((value, index) => (
+          {(state?.angle_snap_values ?? ['', '']).slice(0, 2).map((value, index) => (
             <input
               key={index}
               className="crp-angle-input"
               value={value}
               onChange={(e) => onCommand({ type: 'angle_snap_set', index, value: e.target.value })}
-              placeholder={`∠${index + 1}`}
             />
           ))}
         </div>
@@ -205,22 +210,22 @@ const CADRightPanel: React.FC<Props> = ({ state, onCommand, status }) => {
         <div className="crp-section-label">File</div>
         <Tooltip content="Open a previously saved CAD design (SVG)" placement="left">
           <button className="crp-io-btn" onClick={handleOpen} disabled={iobusy || !openFile}>
-            ↗ Open
+            Open
           </button>
         </Tooltip>
         <Tooltip content="Import an external floor plan (PDF, SVG, PNG)" placement="left">
           <button className="crp-io-btn" onClick={handleImport} disabled={iobusy || !openFile}>
-            ↥ Import
+            Import
           </button>
         </Tooltip>
         <Tooltip content="Save design to BRIGID/svg/" placement="left">
           <button className="crp-io-btn" onClick={handleSaveSVG} disabled={iobusy || !state?.lines.length || !saveFile}>
-            ⬡ Save SVG
+            Save SVG
           </button>
         </Tooltip>
         <Tooltip content="Export print-ready PDF to BRIGID/pdf/" placement="left">
           <button className="crp-io-btn" onClick={handleSavePDF} disabled={iobusy || !state?.lines.length || !saveFile}>
-            ▣ Save PDF
+            Save PDF
           </button>
         </Tooltip>
       </div>

@@ -1,72 +1,74 @@
 /* ============================================================
-   BRIGID Design System — Palantir-gray, cinematic, restrained
+   BRIGID Design System — Palantir Gotham Aesthetic
    ============================================================ */
 
 :root {
-  /* ---- Background Palette — layered dark charcoal grays ---- */
-  --bg-primary:   #0b0e14;
-  --bg-secondary: #0e1219;
-  --bg-panel:     #111720;
-  --bg-elevated:  #161d28;
-  --bg-surface:   #1a2232;
-  --bg-hover:     #1e2840;
-  --bg-active:    #22304c;
+  /* ---- Background Palette — layered dark charcoals and deep grays ---- */
+  --bg-primary:   #0a0b0d;
+  --bg-secondary: #0d0f12;
+  --bg-panel:     #121418;
+  --bg-elevated:  #16191d;
+  --bg-surface:   #1a1d22;
+  --bg-hover:     #1f242b;
+  --bg-active:    #252b34;
 
-  /* ---- Border Colors ---- */
-  --border-subtle:  rgba(50, 70, 100, 0.3);
-  --border-default: rgba(50, 70, 100, 0.5);
-  --border-active:  #5a90c8;
-  --border-focus:   rgba(90, 144, 200, 0.45);
+  /* ---- Border Colors — ultra faint, rigid 1px ---- */
+  --border-subtle:  rgba(255, 255, 255, 0.04);
+  --border-default: rgba(255, 255, 255, 0.08);
+  --border-active:  rgba(255, 255, 255, 0.2);
+  --border-focus:   #5a90c8;
 
-  /* ---- Text Colors ---- */
-  --text-primary:   #d4dce8;
-  --text-secondary: #8a9ab8;
-  --text-muted:     #4a5a74;
-  --text-accent:    #5a90c8;
+  /* ---- Text Colors — dense terminal readouts ---- */
+  --text-primary:   #c1c9d4;
+  --text-secondary: #8c96a5;
+  --text-muted:     #5b6574;
+  --text-accent:    #7baae2;
   --text-warning:   #d97706;
 
-  /* ---- Accent Colors — restrained, used sparingly ---- */
-  --accent-blue:   #5a90c8;
-  --accent-indigo: #6366f1;
-  --accent-teal:   #14b8a6;
-  --accent-amber:  #d97706;
-  --accent-red:    #dc2626;
-  --accent-green:  #16a34a;
-  --accent-trim:   #c0404040;   /* trim red */
+  /* ---- Accent Colors — technical, tactical, un-saturated blue/steel ---- */
+  --accent-blue:   #4b729f;
+  --accent-indigo: #4b529a;
+  --accent-teal:   #2b8279;
+  --accent-amber:  #c2823a;
+  --accent-red:    #a63939;
+  --accent-green:  #348550;
+  --accent-trim:   #c0404020;
 
-  /* Legacy alias for components that reference cyan */
-  --accent-cyan:   #5a90c8;
+  --accent-primary: #4b729f;
+  --accent-cyan:   #4b729f;
 
-  /* ---- Shadows ---- */
-  --shadow-panel:    0 4px 20px rgba(0, 0, 0, 0.4);
-  --shadow-elevated: 0 8px 32px rgba(0, 0, 0, 0.5);
-  --shadow-floating: 0 12px 44px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(50, 70, 100, 0.25);
+  /* ---- Shadows — suppressed heavily for dense flat design ---- */
+  --shadow-panel:    0 4px 10px rgba(0, 0, 0, 0.5);
+  --shadow-elevated: 0 8px 24px rgba(0, 0, 0, 0.6);
+  --shadow-floating: 0 10px 40px rgba(0, 0, 0, 0.8), 0 0 0 1px rgba(255, 255, 255, 0.1);
 
-  /* ---- Typography ---- */
-  --font-primary: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  /* ---- Typography — Technical, small, dense ---- */
+  --font-primary: 'Inter', 'Roboto', 'Segoe UI', -apple-system, sans-serif;
   --font-mono:    'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace;
 
-  --text-xs:   0.6875rem;  /* 11px */
-  --text-sm:   0.75rem;    /* 12px */
-  --text-base: 0.8125rem;  /* 13px */
-  --text-md:   0.875rem;   /* 14px */
+  /* Sized down to 10px base logic */
+  --text-xs:   8px;
+  --text-sm:   9px;
+  --text-base: 10px;
+  --text-md:   11px;
+  --text-lg:   13px;
 
-  /* ---- Spacing ---- */
-  --space-1: 4px;
-  --space-2: 8px;
-  --space-3: 12px;
-  --space-4: 16px;
-  --space-5: 20px;
-  --space-6: 24px;
+  /* ---- Spacing — tighter, zero padding fluff ---- */
+  --space-1: 3px;
+  --space-2: 6px;
+  --space-3: 9px;
+  --space-4: 12px;
+  --space-5: 16px;
+  --space-6: 20px;
 
-  /* ---- Transitions ---- */
-  --transition-fast:   120ms cubic-bezier(0.4, 0, 0.2, 1);
-  --transition-smooth: 200ms cubic-bezier(0.4, 0, 0.2, 1);
+  /* ---- Transitions — instant responses, low animation delays ---- */
+  --transition-fast:   80ms cubic-bezier(0.4, 0, 0.2, 1);
+  --transition-smooth: 150ms cubic-bezier(0.4, 0, 0.2, 1);
 
-  /* ---- Radii ---- */
-  --radius-sm: 3px;
-  --radius-md: 6px;
-  --radius-lg: 9px;
+  /* ---- Radii — completely sharp panels for enterprise feel ---- */
+  --radius-sm: 0px;
+  --radius-md: 0px;
+  --radius-lg: 1px;
 
   /* ---- Semantic Aliases ---- */
   --bg-base:           var(--bg-primary);
@@ -74,7 +76,6 @@
   --surface-2:         var(--bg-elevated);
   --border:            var(--border-default);
   --accent-primary:    var(--accent-blue);
-  --accent-primary-rgb: 90, 144, 200;
   --accent-success:    var(--accent-green);
   --accent-warning:    var(--accent-amber);
 }
@@ -96,7 +97,8 @@ html, body, #root {
   background-color: var(--bg-primary);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  line-height: 1.5;
+  line-height: 1.4;
+  letter-spacing: 0.02em; /* Increase legibility slightly for small 10px text */
 }
 
 /* Electron drag region */
@@ -104,10 +106,10 @@ html, body, #root {
 .electron-no-drag { -webkit-app-region: no-drag; }
 
 /* ---- Scrollbar ---- */
-::-webkit-scrollbar       { width: 5px; height: 5px; }
+::-webkit-scrollbar       { width: 4px; height: 4px; }
 ::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: rgba(50, 70, 100, 0.4); border-radius: 3px; }
-::-webkit-scrollbar-thumb:hover { background: rgba(50, 70, 100, 0.65); }
+::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.1); }
+::-webkit-scrollbar-thumb:hover { background: rgba(255, 255, 255, 0.2); }
 
 /* ---- Blueprint.js Dark Theme Overrides ---- */
 .bp5-dark {
@@ -115,38 +117,55 @@ html, body, #root {
 }
 
 .bp5-dark .bp5-input {
-  background-color: var(--bg-elevated) !important;
-  border: 1px solid var(--border-subtle) !important;
+  background-color: var(--bg-panel) !important;
+  border: 1px solid var(--border-default) !important;
   color: var(--text-primary) !important;
   font-family: var(--font-primary) !important;
-  font-size: var(--text-sm) !important;
+  font-size: var(--text-base) !important;
+  border-radius: var(--radius-sm);
+  padding: 0 6px;
 }
 
 .bp5-dark .bp5-input:focus {
-  border-color: var(--border-focus) !important;
-  box-shadow: 0 0 0 1px rgba(90, 144, 200, 0.15) !important;
+  border-color: var(--border-active) !important;
+  box-shadow: none !important;
+  background-color: var(--bg-elevated) !important;
 }
 
 .bp5-dark .bp5-button {
   font-family: var(--font-primary) !important;
+  font-size: var(--text-base) !important;
+  border-radius: var(--radius-sm) !important;
+  background-color: var(--bg-elevated) !important;
+  border: 1px solid var(--border-subtle) !important;
+  color: var(--text-primary) !important;
+  background-image: none !important;
+  box-shadow: none !important;
+}
+
+.bp5-dark .bp5-button:hover {
+  background-color: var(--bg-hover) !important;
+  border: 1px solid var(--border-default) !important;
 }
 
 .bp5-dark .bp5-tooltip .bp5-popover-content {
-  background: #111720 !important;
-  color: #8a9ab8 !important;
-  font-size: 11px !important;
-  border: 1px solid rgba(50, 70, 100, 0.3) !important;
-  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.5) !important;
+  background: var(--bg-secondary) !important;
+  color: var(--text-secondary) !important;
+  font-size: var(--text-base) !important;
+  border: 1px solid var(--border-default) !important;
+  box-shadow: var(--shadow-panel) !important;
+  border-radius: var(--radius-sm) !important;
+  padding: 4px 6px;
 }
 
 /* ---- Selection ---- */
 ::selection {
-  background: rgba(90, 144, 200, 0.22);
-  color: var(--text-primary);
+  background: rgba(123, 170, 226, 0.2);
+  color: #fff;
 }
 
 /* ---- Utility ---- */
 .text-muted     { color: var(--text-muted); }
 .text-secondary { color: var(--text-secondary); }
 .text-accent    { color: var(--text-accent); }
-.text-mono      { font-family: var(--font-mono); }
+.text-mono      { font-family: var(--font-mono); font-size: var(--text-sm); }

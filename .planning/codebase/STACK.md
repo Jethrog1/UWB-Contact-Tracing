@@ -1,30 +1,30 @@
 # Tech Stack
 
-This document outlines the core technologies used across the UWB-Contact-Tracing project repositories, representing the transition from a legacy Python UI to a modern web-desktop platform.
+This document outlines the core technologies used across the UWB-Contact-Tracing project repositories, mapping the migration from the 2DLCAD legacy model to the BRIGID future model.
 
-## BRIGID (New Rebuild Architecture)
+## BRIGID (Future Model)
 This is the modernized, from-scratch rebuild of the platform.
 
 ### Frontend Environment
 - **Framework:** React 18.x
-- **Build & Desktop Environment:** Electron via `electron-vite` with `electron` v33
+- **Build & Desktop Environment:** Electron via `electron-vite`
 - **Language:** TypeScript
-- **UI & Components:** BlueprintJS (`@blueprintjs/core` and `@blueprintjs/icons`)
-- **Animations:** Framer Motion (`motion`) package
-- **Typography:** Inter (`@fontsource/inter`)
+- **UI & Components:** BlueprintJS (`@blueprintjs/core`), SCSS/CSS grid layouts.
+- **Animations:** Framer Motion (`motion`) package.
+- **Visual Presentation:** A highly polished, dark-themed, premium interface design.
 
 ### Backend Environment
-- **Core Framework:** FastAPI (v0.109+)
-- **ASGI Server:** Uvicorn (standard v0.27+)
-- **Real-time Comms:** WebSockets (v12.0+)
+- **Core Framework:** FastAPI
+- **ASGI Server:** Uvicorn
+- **Real-time Comms:** WebSockets (For 2D CAD updates) and HTTP REST (For Profiles, Calibration, Profiles, Anchor Manager).
 - **Language:** Python
+- **Key Python Libraries:** `pydantic` (Data Validation).
 
-## 2DLCAD (Legacy Application)
-This is the previous application architecture. It contains the legacy backend logic and frontend UI.
+## 2DLCAD (Legacy Model)
+This is the previous application architecture. It contains the legacy monolithic backend logic and frontend UI.
 - **Legacy UI/GUI Framework:** PyQt6 standard library (Python)
-- **Legacy Web Elements:** PyQt6-WebEngine
 - **Hardware Comm:** pyserial (Serial port hardware integration)
 - **Mathematical & Data:** numpy, matplotlib, opencv-python, pyparsing, contourpy
 - **File handling:** PyMuPDF, pillow, PyYAML
 
-The strategy moving forward utilizes the legacy computation algorithms and features within 2DLCAD as a reference while rebuilding the application as BRIGID using a strict FastAPI + TypeScript/React + Electron paradigm.
+The transition actively deprecates PyQt6 logic, preferring standard HTTP flows backed by React views, while retaining the deep math algorithms inside the new BRIGID Python Backend.

@@ -1,12 +1,31 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { TagProfile } from '../../../types'
 import ProfileFormSection from './ProfileFormSection'
+import { motion, AnimatePresence } from 'motion/react'
 import './TagProfiler.css'
 
 const API = 'http://localhost:8765'
 
+const PALETTE = [
+  '#4b729f', '#2b8279', '#c2823a', '#a63939', '#348550',
+  '#6b46c1', '#b83280', '#c05621', '#5c8a14', '#2b6cb0'
+]
+
+const getTagColor = (str: string) => {
+  if (!str) return 'var(--text-primary)'
+  let hash = 0
+  for (let i = 0; i < str.length; i++) hash = str.charCodeAt(i) + ((hash << 5) - hash)
+  return PALETTE[Math.abs(hash) % PALETTE.length]
+}
+
 interface TagProfilerProps {
   workspaceId: string
+}
+
+interface Toast {
+  id: number
+  message: string
+  kind: 'ok' | 'error'
 }
 
 const createEmptyProfile = (): TagProfile => ({
@@ -25,32 +44,36 @@ const createEmptyProfile = (): TagProfile => ({
   notes: '',
 })
 
-const TagProfiler: React.FC<TagProfilerProps> = ({ workspaceId: _workspaceId }) => {
+const TagProfiler: React.FC<TagProfilerProps> = ({ workspaceId }) => {
   const [profile, setProfile] = useState<TagProfile>(createEmptyProfile)
   const [savedProfiles, setSavedProfiles] = useState<string[]>([])
   const [dirty, setDirty] = useState(false)
-  const [status, setStatus] = useState<string>('')
-  const [statusKind, setStatusKind] = useState<'ok' | 'error' | ''>('')
+  const [toasts, setToasts] = useState<Toast[]>([])
+  const toastCounter = useRef(0)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
-  const showStatus = (msg: string, kind: 'ok' | 'error') => {
-    setStatus(msg)
-    setStatusKind(kind)
-    window.setTimeout(() => {
-      setStatus('')
-      setStatusKind('')
-    }, 4000)
+  // Stable toast dispatch — lives in a ref so callbacks never go stale
+  const pushToastRef = useRef((message: string, kind: 'ok' | 'error') => {})
+  pushToastRef.current = (message: string, kind: 'ok' | 'error') => {
+    const id = toastCounter.current++
+    setToasts(prev => [...prev, { id, message, kind }])
+    setTimeout(() => {
+      setToasts(prev => prev.filter(t => t.id !== id))
+    }, 3000)
   }
+  const pushToast = useCallback((message: string, kind: 'ok' | 'error') => {
+    pushToastRef.current(message, kind)
+  }, [])
 
   const loadProfileList = useCallback(async () => {
     try {
-      const res = await fetch(`${API}/api/profile/list`)
+      const res = await fetch(`${API}/api/profile/list?workspace_id=${encodeURIComponent(workspaceId)}`)
       const data = await res.json()
       if (data.success) setSavedProfiles(data.profiles)
     } catch {
       // Keep the workspace usable while backend boots.
     }
-  }, [])
+  }, [workspaceId])
 
   useEffect(() => { loadProfileList() }, [loadProfileList])
 
@@ -73,73 +96,63 @@ const TagProfiler: React.FC<TagProfilerProps> = ({ workspaceId: _workspaceId }) 
 
   const handleSave = useCallback(async () => {
     if (!profile.tag_id.trim()) {
-      showStatus('Tag ID is required before saving.', 'error')
+      pushToast('Tag ID is required before saving.', 'error')
       return
     }
     try {
-      const res = await fetch(`${API}/api/profile/save`, {
+      const res = await fetch(`${API}/api/profile/save?workspace_id=${encodeURIComponent(workspaceId)}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ profile }),
       })
       const data = await res.json()
       if (data.success) {
-        showStatus(`Saved: ${data.tag_id}`, 'ok')
+        pushToast(`Saved: ${data.tag_id}`, 'ok')
         setDirty(false)
         loadProfileList()
       } else {
-        showStatus(data.error, 'error')
+        pushToast(data.error, 'error')
       }
     } catch {
-      showStatus('Could not reach backend.', 'error')
+      pushToast('Could not reach backend.', 'error')
     }
-  }, [profile, loadProfileList])
+  }, [profile, loadProfileList, workspaceId])
 
   const handleLoadById = useCallback(async (tagId: string) => {
     if (dirty && !window.confirm('Discard unsaved changes?')) return
     try {
-      const res = await fetch(`${API}/api/profile/${encodeURIComponent(tagId)}`)
+      const res = await fetch(`${API}/api/profile/${encodeURIComponent(tagId)}?workspace_id=${encodeURIComponent(workspaceId)}`)
       const data = await res.json()
       if (data.success) {
         setProfile(data.profile)
         setDirty(false)
       } else {
-        showStatus(data.error, 'error')
+        pushToast(data.error, 'error')
       }
     } catch {
-      showStatus('Could not reach backend.', 'error')
+      pushToast('Could not reach backend.', 'error')
     }
-  }, [dirty])
+  }, [dirty, workspaceId])
 
   const handleDelete = useCallback(async (tagId: string) => {
     if (!window.confirm(`Delete profile "${tagId}"?`)) return
     try {
-      const res = await fetch(`${API}/api/profile/${encodeURIComponent(tagId)}`, { method: 'DELETE' })
+      const res = await fetch(`${API}/api/profile/${encodeURIComponent(tagId)}?workspace_id=${encodeURIComponent(workspaceId)}`, { method: 'DELETE' })
       const data = await res.json()
       if (data.success) {
-        showStatus('Profile deleted.', 'ok')
+        pushToast('Profile deleted.', 'error')
+        // Always reset to blank form so fields are unlocked
+        setProfile(createEmptyProfile())
+        setDirty(false)
         loadProfileList()
-        if (profile.tag_id === tagId) {
-          setProfile(createEmptyProfile())
-          setDirty(false)
-        }
       } else {
-        showStatus(data.error, 'error')
+        pushToast(data.error, 'error')
       }
     } catch {
-      showStatus('Could not reach backend.', 'error')
+      pushToast('Could not reach backend.', 'error')
     }
-  }, [profile.tag_id, loadProfileList])
-
-  const handleExport = useCallback(() => {
-    const blob = new Blob([JSON.stringify(profile, null, 2)], { type: 'application/json' })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = `${profile.tag_id || 'profile'}.json`
-    a.click()
-    URL.revokeObjectURL(url)
-  }, [profile])
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loadProfileList, workspaceId])
 
   const handleImportFile = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
@@ -150,9 +163,9 @@ const TagProfiler: React.FC<TagProfilerProps> = ({ workspaceId: _workspaceId }) 
         const data = JSON.parse(ev.target?.result as string) as TagProfile
         setProfile(data)
         setDirty(true)
-        showStatus(`Loaded: ${data.tag_id || file.name}`, 'ok')
+        pushToast(`Loaded: ${data.tag_id || file.name}`, 'ok')
       } catch {
-        showStatus('Invalid profile JSON.', 'error')
+        pushToast('Invalid profile JSON.', 'error')
       }
     }
     reader.readAsText(file)
@@ -166,37 +179,52 @@ const TagProfiler: React.FC<TagProfilerProps> = ({ workspaceId: _workspaceId }) 
 
   return (
     <div className="tp-root">
+      {/* Floating toast notifications */}
+      <div className="tp-toast-container">
+        <AnimatePresence>
+          {toasts.map(toast => (
+            <motion.div
+              key={toast.id}
+              className={`tp-toast tp-toast--${toast.kind}`}
+              initial={{ x: 80, opacity: 0 }}
+              animate={{ x: 0, opacity: 1 }}
+              exit={{ x: 80, opacity: 0 }}
+              transition={{ type: 'spring', stiffness: 380, damping: 32 }}
+            >
+              <span className="tp-toast-dot" />
+              {toast.message}
+            </motion.div>
+          ))}
+        </AnimatePresence>
+      </div>
+
       <div className="tp-header">
         <div className="tp-header-left">
-          <div className="tp-header-title">Tag Profiler</div>
-          <div className="tp-header-sub">
-            {profile.tag_id ? profile.tag_id : 'No profile loaded'}
-            {dirty && <span className="tp-dirty-badge">*</span>}
-          </div>
+          <div className="tp-header-title">Profile Manager</div>
+          {dirty && <span className="tp-dirty-badge"> *</span>}
         </div>
         <div className="tp-header-actions">
-          <button className="tp-btn tp-btn--ghost" onClick={handleNew}>New</button>
-          <button className="tp-btn tp-btn--ghost" onClick={() => fileInputRef.current?.click()}>Open</button>
-          <button className="tp-btn tp-btn--secondary" onClick={handleSave}>Save</button>
-          <button className="tp-btn tp-btn--ghost" onClick={handleExport}>Export</button>
+          <button className="tp-btn tp-btn--outline" onClick={handleNew}>New</button>
+          <button className="tp-btn tp-btn--primary" onClick={handleSave}>Save</button>
           <input ref={fileInputRef} type="file" accept=".json" style={{ display: 'none' }} onChange={handleImportFile} />
         </div>
       </div>
 
-      {status && (
-        <div className={`tp-status tp-status--${statusKind}`}>{status}</div>
-      )}
-
       <div className="tp-workspace">
         <div className="tp-profiles-sidebar">
-          <div className="tp-sidebar-title">Saved Profiles</div>
-          <div className="tp-sidebar-count">{savedProfiles.length} loaded</div>
+          <div className="tp-sidebar-title">Profiles</div>
           {savedProfiles.length === 0
-            ? <div className="tp-sidebar-empty">No saved profiles</div>
+            ? <div className="tp-sidebar-empty">None</div>
             : savedProfiles.map(pid => (
               <div key={pid} className={`tp-profile-item${profile.tag_id === pid ? ' active' : ''}`}>
-                <button className="tp-profile-name" onClick={() => handleLoadById(pid)}>{pid}</button>
-                <button className="tp-profile-del" onClick={() => handleDelete(pid)} title="Delete">x</button>
+                <button
+                  className="tp-profile-name"
+                  onClick={() => handleLoadById(pid)}
+                  style={{ color: getTagColor(pid), fontWeight: profile.tag_id === pid ? 700 : 400 }}
+                >
+                  {pid}
+                </button>
+                <button className="tp-profile-del" onClick={() => handleDelete(pid)} title="Delete">×</button>
               </div>
             ))
           }

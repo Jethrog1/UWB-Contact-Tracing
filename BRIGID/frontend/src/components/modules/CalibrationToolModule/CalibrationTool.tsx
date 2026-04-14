@@ -14,8 +14,39 @@ import './CalibrationTool.css'
 const API = 'http://localhost:8765'
 const FIT_MODES = ['Linear', 'Polynomial', 'Logarithmic', 'Power Series', 'Exponential', 'Moving Average']
 
+const RIGHT_INSET = 352
+const GRAPH_INSET_VISIBLE = 290
+const GRAPH_INSET_COLLAPSED = 50
+
+const TAG_PALETTE = ['#3498db', '#e67e22', '#9b59b6', '#27ae60', '#e74c3c', '#f1c40f', '#1abc9c', '#d16cff']
+
+const ANCHOR_COLORS: Record<string, string> = {
+  A0: '#ff5b4d',
+  A1: '#42d17e',
+  A2: '#ae62ff',
+  A3: '#ffb11f',
+}
+
+const statusColor = (status: string): string => {
+  const s = status.toLowerCase()
+  if (s.includes('connected') && !s.includes('disconnect')) return '#42d17e'
+  if (s.includes('connecting')) return '#ffb11f'
+  return '#ff5b4d'
+}
+
+// ── Point log parser ────────────────────────────────────────────────
+interface ParsedPoint { anchor: string; index: number; raw: number; trueDist: number }
+function parsePointLog(lines: string[]): ParsedPoint[] {
+  return lines.flatMap(line => {
+    const m = line.match(/^(A\d)\s+\[(\d+)\]\s+Raw:([\d.]+)\s+[→>]\s+True:([\d.]+)/)
+    if (!m) return []
+    return [{ anchor: m[1], index: parseInt(m[2], 10), raw: parseFloat(m[3]), trueDist: parseFloat(m[4]) }]
+  })
+}
+
 interface CalibrationToolProps {
   workspaceId: string
+  workspaceName: string
 }
 
 const emptySnapshot = (): CalibrationRuntimeSnapshot => ({
@@ -49,10 +80,55 @@ const toMapState = (map: CalibrationMapRuntime): CalibrationMapRuntime => ({
   height_offset: map.height_offset,
 })
 
-const CalibrationTool: React.FC<CalibrationToolProps> = ({ workspaceId: _workspaceId }) => {
+// ── Controlled number input (avoids reset while typing) ─────────────
+interface NumInputProps {
+  value: number
+  className?: string
+  step?: string
+  onChange: (value: number) => void
+}
+const NumInput: React.FC<NumInputProps> = ({ value, className, step, onChange }) => {
+  const [draft, setDraft] = useState(String(value))
+  const focusedRef = useRef(false)
+  useEffect(() => {
+    if (!focusedRef.current) setDraft(String(value))
+  }, [value])
+  return (
+    <input
+      className={className}
+      type="text"
+      inputMode="decimal"
+      value={draft}
+      step={step}
+      onChange={e => setDraft(e.target.value)}
+      onFocus={() => { focusedRef.current = true }}
+      onBlur={() => {
+        focusedRef.current = false
+        const parsed = Number.parseFloat(draft)
+        const val = Number.isFinite(parsed) ? parsed : value
+        setDraft(String(val))
+        onChange(val)
+      }}
+      onKeyDown={e => {
+        if (e.key === 'Enter') {
+          (e.target as HTMLInputElement).blur()
+          e.preventDefault()
+        }
+      }}
+    />
+  )
+}
+
+// ── Inline canvas editor overlay ────────────────────────────────────
+type InlineEdit =
+  | { kind: 'anchor'; anchorId: AnchorId; screenX: number; screenY: number; value: string }
+  | { kind: 'refdot'; screenX: number; screenY: number; value: string }
+
+const CalibrationTool: React.FC<CalibrationToolProps> = ({ workspaceId, workspaceName }) => {
   const mapCanvasRef = useRef<CalibrationMapCanvasHandle>(null)
   const mapSyncBlockedRef = useRef(false)
   const statusTimerRef = useRef<number | null>(null)
+  const graphCollapsedRef = useRef(false)
 
   const [runtime, setRuntime] = useState<CalibrationRuntimeSnapshot>(emptySnapshot)
   const [transportMode, setTransportMode] = useState<CalibrationTransportMode>('ble')
@@ -62,6 +138,8 @@ const CalibrationTool: React.FC<CalibrationToolProps> = ({ workspaceId: _workspa
   const [mapState, setMapState] = useState<CalibrationMapRuntime>(toMapState(emptySnapshot().map))
   const [placingReference, setPlacingReference] = useState(false)
   const [referenceDot, setReferenceDot] = useState<{ x: number; y: number } | null>(null)
+  const [referenceDotSelected, setReferenceDotSelected] = useState(false)
+  const [linePickerMode, setLinePickerMode] = useState(false)
   const [linePicker, setLinePicker] = useState<AnchorId[]>([])
   const [graphCollapsed, setGraphCollapsed] = useState(false)
   const [sampleCount, setSampleCount] = useState('20')
@@ -70,10 +148,20 @@ const CalibrationTool: React.FC<CalibrationToolProps> = ({ workspaceId: _workspa
   const [equationDrafts, setEquationDrafts] = useState<Record<AnchorId, string>>({ A0: '', A1: '', A2: '', A3: '' })
   const [status, setStatus] = useState<{ text: string; kind: 'ok' | 'error' } | null>(null)
   const [busy, setBusy] = useState<{ transport: boolean; save: boolean; capture: boolean }>({
-    transport: false,
-    save: false,
-    capture: false,
+    transport: false, save: false, capture: false,
   })
+  const [inlineEdit, setInlineEdit] = useState<InlineEdit | null>(null)
+  const persistTimerRef = useRef<number | null>(null)
+
+  graphCollapsedRef.current = graphCollapsed
+
+  // ── Tag color palette ─────────────────────────────────────────────
+  const tagIds = runtime.tags.map(t => t.tag_id).join('|')
+  const tagColors = useMemo(() => {
+    const map: Record<string, string> = {}
+    runtime.tags.forEach((tag, i) => { map[tag.tag_id] = TAG_PALETTE[i % TAG_PALETTE.length] })
+    return map
+  }, [tagIds]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const selectedTag = useMemo(
     () => runtime.tags.find(tag => tag.tag_id === selectedTagId) ?? null,
@@ -81,19 +169,10 @@ const CalibrationTool: React.FC<CalibrationToolProps> = ({ workspaceId: _workspa
   )
   const mapSignature = JSON.stringify(runtime.map)
   const referenceSignature = JSON.stringify(selectedTag ? {
-    distances: selectedTag.reference_floor,
-    height: selectedTag.reference_height,
+    distances: selectedTag.reference_floor, height: selectedTag.reference_height,
   } : null)
   const equationSignature = JSON.stringify(selectedTag?.equations ?? null)
   const activeFit = selectedTag?.fit_options[activeAnchorId] ?? null
-  const transportSummary = runtime.mode === 'serial'
-    ? (runtime.selected_port || serialPort || 'Serial Port')
-    : runtime.mode === 'ble'
-      ? 'Bluetooth (BLE)'
-      : 'Disconnected'
-  const captureSummary = runtime.capture.active
-    ? `${runtime.capture.phase}${runtime.capture.tag_id ? ` · ${runtime.capture.tag_id}` : ''}`
-    : 'Idle'
 
   const showStatus = (text: string, kind: 'ok' | 'error') => {
     setStatus({ text, kind })
@@ -106,18 +185,24 @@ const CalibrationTool: React.FC<CalibrationToolProps> = ({ workspaceId: _workspa
     if (snapshot.mode === 'ble' || snapshot.mode === 'serial') setTransportMode(snapshot.mode)
     if (snapshot.selected_port) setSerialPort(snapshot.selected_port)
     else if (!serialPort && snapshot.auto_detect_port) setSerialPort(snapshot.auto_detect_port)
-    setSelectedTagId(current => (current && snapshot.tags.some(tag => tag.tag_id === current) ? current : snapshot.tags[0]?.tag_id ?? null))
+    setSelectedTagId(current => {
+      // Keep the current tag selected if it still exists — prevents panel glitch
+      if (current && snapshot.tags.some(tag => tag.tag_id === current)) return current
+      // If current tag is gone, pick the first one or keep the current (sticky)
+      if (snapshot.tags.length > 0) return current ?? snapshot.tags[0].tag_id
+      return current
+    })
     if (!mapSyncBlockedRef.current) setMapState(toMapState(snapshot.map))
   }
 
   const loadRuntime = async () => {
     try {
-      const response = await fetch(`${API}/api/calibration/runtime`)
+      const response = await fetch(
+        `${API}/api/calibration/runtime?workspace_id=${encodeURIComponent(workspaceId)}&workspace_name=${encodeURIComponent(workspaceName)}`,
+      )
       const data = await response.json() as CalibrationRuntimeSnapshot
       if (data.success) applySnapshot(data)
-    } catch {
-      // Silent while backend boots.
-    }
+    } catch { /* silent while backend boots */ }
   }
 
   useEffect(() => {
@@ -127,7 +212,30 @@ const CalibrationTool: React.FC<CalibrationToolProps> = ({ workspaceId: _workspa
       window.clearInterval(intervalId)
       if (statusTimerRef.current) window.clearTimeout(statusTimerRef.current)
     }
-  }, [])
+  }, [workspaceId, workspaceName]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // View commands from top TabStrip
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent).detail as { cmd: string; workspaceId: string }
+      if (detail.workspaceId !== workspaceId) return
+      if (detail.cmd === 'refresh') { void loadRuntime(); return }
+      const canvas = mapCanvasRef.current
+      if (!canvas) return
+      if (detail.cmd === 'zoom_reset') {
+        canvas.resetView({
+          rightInset: RIGHT_INSET,
+          bottomInset: graphCollapsedRef.current ? GRAPH_INSET_COLLAPSED : GRAPH_INSET_VISIBLE,
+        })
+      } else if (detail.cmd === 'zoom_in') {
+        canvas.zoomIn()
+      } else if (detail.cmd === 'zoom_out') {
+        canvas.zoomOut()
+      }
+    }
+    window.addEventListener('calibration-view-command', handler)
+    return () => window.removeEventListener('calibration-view-command', handler)
+  }, [workspaceId])
 
   useEffect(() => {
     if (!mapSyncBlockedRef.current) setMapState(toMapState(runtime.map))
@@ -172,16 +280,10 @@ const CalibrationTool: React.FC<CalibrationToolProps> = ({ workspaceId: _workspa
         lines: nextMap.lines,
         height_offset: nextMap.height_offset,
       })
-      if (!data.success) {
-        showStatus(data.error ?? 'Could not update calibration map.', 'error')
-        return
-      }
+      if (!data.success) { showStatus(data.error ?? 'Could not update map.', 'error'); return }
       applySnapshot(data)
-    } catch {
-      showStatus('Could not reach backend.', 'error')
-    } finally {
-      mapSyncBlockedRef.current = false
-    }
+    } catch { showStatus('Could not reach backend.', 'error') }
+    finally { mapSyncBlockedRef.current = false }
   }
 
   const saveReferenceDrafts = async () => {
@@ -194,85 +296,57 @@ const CalibrationTool: React.FC<CalibrationToolProps> = ({ workspaceId: _workspa
     }))
     try {
       const data = await postJson<CalibrationRuntimeSnapshot & { success: boolean; error?: string }>('/api/calibration/reference', {
-        tag_id: selectedTagId,
-        distances,
-        height: Number.parseFloat(referenceHeight || '0') || 0,
+        tag_id: selectedTagId, distances, height: Number.parseFloat(referenceHeight || '0') || 0,
       })
-      if (!data.success) {
-        showStatus(data.error ?? 'Could not update reference distances.', 'error')
-        return
-      }
+      if (!data.success) { showStatus(data.error ?? 'Could not update reference.', 'error'); return }
       applySnapshot(data)
-    } catch {
-      showStatus('Could not reach backend.', 'error')
-    }
+    } catch { showStatus('Could not reach backend.', 'error') }
   }
 
   const saveEquation = async (anchorId: AnchorId) => {
     if (!selectedTagId) return
     try {
       const data = await postJson<CalibrationRuntimeSnapshot & { success: boolean; error?: string }>('/api/calibration/equation', {
-        tag_id: selectedTagId,
-        anchor_id: anchorId,
-        equation: equationDrafts[anchorId],
+        tag_id: selectedTagId, anchor_id: anchorId, equation: equationDrafts[anchorId],
       })
-      if (!data.success) {
-        showStatus(data.error ?? 'Equation is invalid.', 'error')
-        return
-      }
+      if (!data.success) { showStatus(data.error ?? 'Equation is invalid.', 'error'); return }
       applySnapshot(data)
-    } catch {
-      showStatus('Could not reach backend.', 'error')
-    }
+    } catch { showStatus('Could not reach backend.', 'error') }
   }
 
   const updateFitOption = async (anchorId: AnchorId, patch: Record<string, unknown>) => {
     if (!selectedTagId) return
     try {
       const data = await postJson<CalibrationRuntimeSnapshot & { success: boolean; error?: string }>('/api/calibration/fit', {
-        tag_id: selectedTagId,
-        anchor_id: anchorId,
-        ...patch,
+        tag_id: selectedTagId, anchor_id: anchorId, ...patch,
       })
-      if (!data.success) {
-        showStatus(data.error ?? 'Could not update fit settings.', 'error')
-        return
-      }
+      if (!data.success) { showStatus(data.error ?? 'Could not update fit.', 'error'); return }
       applySnapshot(data)
-    } catch {
-      showStatus('Could not reach backend.', 'error')
-    }
+    } catch { showStatus('Could not reach backend.', 'error') }
   }
 
   const handleTransportConnect = async () => {
-    setBusy(current => ({ ...current, transport: true }))
+    setBusy(c => ({ ...c, transport: true }))
     try {
-      const data = await postJson<CalibrationRuntimeSnapshot & { success: boolean; error?: string; detail?: string }>('/api/calibration/transport/connect', {
-        mode: transportMode,
-        port: transportMode === 'serial' ? serialPort : '',
-      })
-      if (!data.success) {
-        showStatus(data.error ?? 'Could not connect transport.', 'error')
-        return
-      }
+      const data = await postJson<CalibrationRuntimeSnapshot & { success: boolean; error?: string }>(
+        `/api/calibration/transport/connect?workspace_id=${encodeURIComponent(workspaceId)}&workspace_name=${encodeURIComponent(workspaceName)}`,
+        { mode: transportMode, port: transportMode === 'serial' ? serialPort : '' },
+      )
+      if (!data.success) { showStatus(data.error ?? 'Could not connect.', 'error'); return }
       applySnapshot(data)
-    } catch {
-      showStatus('Could not reach backend.', 'error')
-    } finally {
-      setBusy(current => ({ ...current, transport: false }))
-    }
+    } catch { showStatus('Could not reach backend.', 'error') }
+    finally { setBusy(c => ({ ...c, transport: false })) }
   }
 
   const handleTransportDisconnect = async () => {
-    setBusy(current => ({ ...current, transport: true }))
+    setBusy(c => ({ ...c, transport: true }))
     try {
-      const data = await postJson<CalibrationRuntimeSnapshot & { success: boolean }>('/api/calibration/transport/disconnect')
+      const data = await postJson<CalibrationRuntimeSnapshot & { success: boolean }>(
+        `/api/calibration/transport/disconnect?workspace_id=${encodeURIComponent(workspaceId)}&workspace_name=${encodeURIComponent(workspaceName)}`,
+      )
       applySnapshot(data)
-    } catch {
-      showStatus('Could not reach backend.', 'error')
-    } finally {
-      setBusy(current => ({ ...current, transport: false }))
-    }
+    } catch { showStatus('Could not reach backend.', 'error') }
+    finally { setBusy(c => ({ ...c, transport: false })) }
   }
 
   const handleReferencePlacement = async (x: number, y: number) => {
@@ -280,58 +354,96 @@ const CalibrationTool: React.FC<CalibrationToolProps> = ({ workspaceId: _workspa
     setReferenceDot({ x, y })
     setPlacingReference(false)
     try {
-      const data = await postJson<CalibrationRuntimeSnapshot & { success: boolean; error?: string }>('/api/calibration/reference/place', {
-        tag_id: selectedTagId,
-        x,
-        y,
+      const data = await postJson<CalibrationRuntimeSnapshot & { success: boolean; error?: string; distances?: Record<string, number> }>('/api/calibration/reference/place', {
+        tag_id: selectedTagId, x, y,
       })
-      if (!data.success) {
-        showStatus(data.error ?? 'Could not place reference point.', 'error')
-        return
+      if (!data.success) { showStatus(data.error ?? 'Could not place reference.', 'error'); return }
+      if (data.distances) {
+        setReferenceDistances(prev => ({
+          A0: data.distances?.A0 != null ? String(data.distances.A0) : prev.A0,
+          A1: data.distances?.A1 != null ? String(data.distances.A1) : prev.A1,
+          A2: data.distances?.A2 != null ? String(data.distances.A2) : prev.A2,
+          A3: data.distances?.A3 != null ? String(data.distances.A3) : prev.A3,
+        }))
       }
       applySnapshot(data)
-    } catch {
-      showStatus('Could not reach backend.', 'error')
-    }
+    } catch { showStatus('Could not reach backend.', 'error') }
   }
 
   const handleCaptureStart = async () => {
     if (!selectedTagId) return
-    setBusy(current => ({ ...current, capture: true }))
+    setBusy(c => ({ ...c, capture: true }))
     try {
       const data = await postJson<CalibrationRuntimeSnapshot & { success: boolean; error?: string }>('/api/calibration/capture/start', {
-        tag_id: selectedTagId,
-        sample_count: Number.parseInt(sampleCount, 10) || 20,
+        tag_id: selectedTagId, sample_count: Number.parseInt(sampleCount, 10) || 20,
       })
-      if (!data.success) {
-        showStatus(data.error ?? 'Could not start capture.', 'error')
-        return
-      }
+      if (!data.success) { showStatus(data.error ?? 'Could not start capture.', 'error'); return }
       applySnapshot(data)
-    } catch {
-      showStatus('Could not reach backend.', 'error')
-    } finally {
-      setBusy(current => ({ ...current, capture: false }))
-    }
+    } catch { showStatus('Could not reach backend.', 'error') }
+    finally { setBusy(c => ({ ...c, capture: false })) }
   }
 
   const handleSaveTag = async () => {
     if (!selectedTagId) return
-    setBusy(current => ({ ...current, save: true }))
+    setBusy(c => ({ ...c, save: true }))
     try {
-      const data = await postJson<CalibrationRuntimeSnapshot & { success: boolean; error?: string }>(`/api/calibration/tag/save/${encodeURIComponent(selectedTagId)}`)
-      if (!data.success) {
-        showStatus(data.error ?? 'Could not save tag equations.', 'error')
-        return
-      }
+      const data = await postJson<CalibrationRuntimeSnapshot & { success: boolean; error?: string }>(`/api/calibration/tag/save/${encodeURIComponent(selectedTagId)}?workspace_id=${encodeURIComponent(workspaceId)}`)
+      if (!data.success) { showStatus(data.error ?? 'Could not save tag.', 'error'); return }
       applySnapshot(data)
       showStatus(`Saved calibration for ${selectedTagId}.`, 'ok')
-    } catch {
-      showStatus('Could not reach backend.', 'error')
-    } finally {
-      setBusy(current => ({ ...current, save: false }))
-    }
+    } catch { showStatus('Could not reach backend.', 'error') }
+    finally { setBusy(c => ({ ...c, save: false })) }
   }
+
+  const updateFilter = async (patch: Record<string, unknown>) => {
+    try {
+      const data = await postJson<CalibrationRuntimeSnapshot & { success: boolean; error?: string }>('/api/calibration/filter', {
+        mode: runtime.filter.mode, ...patch,
+      })
+      if (!data.success) showStatus(data.error ?? 'Could not update filter.', 'error')
+      else applySnapshot(data)
+    } catch { showStatus('Could not reach backend.', 'error') }
+  }
+
+  // ── Inline editor commit ─────────────────────────────────────────
+  const commitInlineEdit = (edit: InlineEdit) => {
+    const parts = edit.value.split(',').map(s => s.trim())
+    const x = Number.parseFloat(parts[0])
+    const y = Number.parseFloat(parts[1])
+    if (!Number.isFinite(x) || !Number.isFinite(y)) { setInlineEdit(null); return }
+    if (edit.kind === 'anchor') {
+      const next = { ...mapState, anchors: { ...mapState.anchors, [edit.anchorId]: [x, y] as [number, number] } }
+      void persistMap(next)
+    } else {
+      void handleReferencePlacement(x, y)
+    }
+    setInlineEdit(null)
+  }
+
+  // ── Anchor coordinate drafts (prevent reset while typing) ─────────
+  const anchorDraftRef = useRef<Record<AnchorId, string>>({ A0: '', A1: '', A2: '', A3: '' })
+  const anchorFocusedRef = useRef<Record<AnchorId, boolean>>({ A0: false, A1: false, A2: false, A3: false })
+  const [, setForceRender] = useState(0)
+
+  // Sync anchor drafts from mapState when not focused
+  const getAnchorDraft = (anchorId: AnchorId) => {
+    if (!anchorFocusedRef.current[anchorId]) {
+      anchorDraftRef.current[anchorId] = `${mapState.anchors[anchorId][0]}, ${mapState.anchors[anchorId][1]}`
+    }
+    return anchorDraftRef.current[anchorId]
+  }
+
+  // Debounced persist for anchor coordinate editing
+  const debouncedPersistMap = (nextMap: CalibrationMapRuntime) => {
+    if (persistTimerRef.current) window.clearTimeout(persistTimerRef.current)
+    persistTimerRef.current = window.setTimeout(() => { void persistMap(nextMap) }, 600)
+  }
+
+  // ── Parsed captured points ────────────────────────────────────────
+  const parsedPoints = useMemo(
+    () => selectedTag ? parsePointLog(selectedTag.captured_points_log) : [],
+    [selectedTag?.captured_points_log],
+  )
 
   return (
     <div className="ct-root">
@@ -343,55 +455,75 @@ const CalibrationTool: React.FC<CalibrationToolProps> = ({ workspaceId: _workspa
             tags={runtime.tags}
             selectedTagId={selectedTagId}
             referenceDot={referenceDot}
+            referenceDotSelected={referenceDotSelected}
             placingReference={placingReference}
             onReferencePlaced={handleReferencePlacement}
             onCancelReferencePlacement={() => setPlacingReference(false)}
             onMapChange={setMapState}
             onMapCommit={persistMap}
+            onReferenceDotSelect={setReferenceDotSelected}
+            onReferenceDotDelete={() => { setReferenceDot(null); setReferenceDotSelected(false) }}
+            onAnchorDoubleClick={(anchorId, screenX, screenY) => {
+              const [x, y] = mapState.anchors[anchorId]
+              setInlineEdit({ kind: 'anchor', anchorId, screenX, screenY, value: `${x}, ${y}` })
+            }}
+            onReferenceDotDoubleClick={(screenX, screenY) => {
+              if (!referenceDot) return
+              setInlineEdit({ kind: 'refdot', screenX, screenY, value: `${referenceDot.x}, ${referenceDot.y}` })
+            }}
           />
-          <div className="ct-overview-card">
-            <div className="ct-overview-kicker">Calibration Workspace</div>
-            <div className="ct-overview-title">RTLS Calibration Software</div>
-            <div className="ct-overview-subtitle">
-              {selectedTagId ? `Editing ${selectedTagId}` : 'No profiled tags available yet'}
+
+          {/* Inline canvas coordinate editor */}
+          {inlineEdit && (
+            <div
+              className="ct-inline-editor"
+              style={{ left: inlineEdit.screenX - 64, top: inlineEdit.screenY - 36 }}
+            >
+              <div className="ct-inline-editor-label">
+                {inlineEdit.kind === 'anchor' ? inlineEdit.anchorId : 'Ref'}
+              </div>
+              <input
+                autoFocus
+                className="ct-inline-editor-input"
+                value={inlineEdit.value}
+                onChange={e => setInlineEdit(prev => prev ? { ...prev, value: e.target.value } : null)}
+                onKeyDown={e => {
+                  if (e.key === 'Enter') { commitInlineEdit(inlineEdit); e.preventDefault() }
+                  if (e.key === 'Escape') { setInlineEdit(null); e.preventDefault() }
+                }}
+                onBlur={() => commitInlineEdit(inlineEdit)}
+              />
             </div>
-            <div className="ct-overview-grid">
-              <div>
-                <label>Transport</label>
-                <span>{transportSummary}</span>
-              </div>
-              <div>
-                <label>Status</label>
-                <span>{runtime.transport_status}</span>
-              </div>
-              <div>
-                <label>Tags</label>
-                <span>{runtime.tags.length}</span>
-              </div>
-              <div>
-                <label>Capture</label>
-                <span>{captureSummary}</span>
-              </div>
-            </div>
-          </div>
+          )}
+
           {status && <div className={`ct-status ct-status--${status.kind}`}>{status.text}</div>}
-          <button className="ct-reset-btn" onClick={() => mapCanvasRef.current?.resetView()}>Reset View</button>
-          <div className="ct-canvas-hint">Drag to pan, scroll to zoom, and drag anchors to tune the map.</div>
+          <div className="ct-canvas-hint">Drag to pan · Scroll to zoom · Drag anchors · Double-click to edit</div>
         </div>
 
+        {/* ── Right panel ────────────────────────────────────────────── */}
         <div className="ct-right-panel">
           <div className="ct-panel-header">
-            <div>
-              <div className="ct-panel-title">Calibration Controls</div>
+            <div className="ct-panel-header-left">
+              <div className="ct-panel-title-row">
+                <div className="ct-panel-title">Calibration Controls</div>
+                {selectedTagId && tagColors[selectedTagId] && (
+                  <span className="ct-tag-chip" style={{ background: tagColors[selectedTagId] }}>
+                    {selectedTagId}
+                  </span>
+                )}
+              </div>
               <div className="ct-panel-subtitle">
-                {selectedTagId ? `Editing ${selectedTagId}` : `${runtime.tags.length} profiled tags available`}
+                {`${runtime.tags.length} profiled tags`}
               </div>
             </div>
             <button className="ct-btn ct-btn--secondary" onClick={handleSaveTag} disabled={!selectedTagId || busy.save}>
-              {busy.save ? 'Saving...' : 'Save Tag'}
+              {busy.save ? 'Saving…' : 'Save Tag'}
             </button>
           </div>
+
           <div className="ct-panel-scroll">
+
+            {/* CONNECTIVITY */}
             <section className="ct-section">
               <div className="ct-section-title">Connectivity</div>
               <div className="ct-transport-toggle">
@@ -399,7 +531,7 @@ const CalibrationTool: React.FC<CalibrationToolProps> = ({ workspaceId: _workspa
                 <button className={`ct-toggle${transportMode === 'serial' ? ' active' : ''}`} onClick={() => setTransportMode('serial')}>Serial Port</button>
               </div>
               {transportMode === 'serial' && (
-                <select className="ct-input" value={serialPort} onChange={event => setSerialPort(event.target.value)}>
+                <select className="ct-input" value={serialPort} onChange={e => setSerialPort(e.target.value)}>
                   <option value="">Select a COM port</option>
                   {runtime.ports.map(port => <option key={port} value={port}>{port}</option>)}
                 </select>
@@ -409,8 +541,11 @@ const CalibrationTool: React.FC<CalibrationToolProps> = ({ workspaceId: _workspa
                 <div className="ct-rows">
                   {runtime.tags.map(tag => (
                     <div key={tag.tag_id} className="ct-ble-row">
-                      <span>{tag.tag_id}</span>
-                      <span>{tag.status}</span>
+                      <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <span className="ct-tag-dot" style={{ background: tagColors[tag.tag_id] ?? '#666' }} />
+                        {tag.tag_id}
+                      </span>
+                      <span style={{ color: statusColor(tag.status), fontWeight: 600 }}>{tag.status}</span>
                     </div>
                   ))}
                 </div>
@@ -423,72 +558,130 @@ const CalibrationTool: React.FC<CalibrationToolProps> = ({ workspaceId: _workspa
               </div>
             </section>
 
+            {/* MAP GEOMETRY */}
             <section className="ct-section">
               <div className="ct-section-title">Map Geometry</div>
               {ANCHOR_IDS.map(anchorId => (
-                <div key={anchorId} className="ct-field">
-                  <label>{anchorId}</label>
+                <div key={anchorId} className="ct-field-inline">
+                  <label className="ct-field-inline-label" style={{ color: ANCHOR_COLORS[anchorId], fontWeight: 600 }}>{anchorId}</label>
                   <input
                     className="ct-input ct-input--mono"
-                    value={`${mapState.anchors[anchorId][0]}, ${mapState.anchors[anchorId][1]}`}
+                    value={getAnchorDraft(anchorId)}
                     onChange={event => {
-                      const [xRaw, yRaw] = event.target.value.split(',').map(part => part.trim())
+                      anchorDraftRef.current[anchorId] = event.target.value
+                      setForceRender(c => c + 1)
+                      const [xRaw, yRaw] = event.target.value.split(',').map(s => s.trim())
                       const x = Number.parseFloat(xRaw)
                       const y = Number.parseFloat(yRaw)
-                      if (!Number.isFinite(x) || !Number.isFinite(y)) return
-                      setMapState(current => ({ ...current, anchors: { ...current.anchors, [anchorId]: [x, y] } }))
+                      if (Number.isFinite(x) && Number.isFinite(y)) {
+                        const next = { ...mapState, anchors: { ...mapState.anchors, [anchorId]: [x, y] as [number, number] } }
+                        setMapState(next)
+                        debouncedPersistMap(next)
+                      }
                     }}
-                    onBlur={() => void persistMap(mapState)}
+                    onFocus={() => { anchorFocusedRef.current[anchorId] = true }}
+                    onBlur={() => {
+                      anchorFocusedRef.current[anchorId] = false
+                      if (persistTimerRef.current) window.clearTimeout(persistTimerRef.current)
+                      void persistMap(mapState)
+                    }}
+                    onKeyDown={e => {
+                      if (e.key === 'Enter') {
+                        (e.target as HTMLInputElement).blur()
+                        e.preventDefault()
+                      }
+                    }}
                   />
                 </div>
               ))}
+
+              {/* Line list */}
               <div className="ct-lines-list">
-                {mapState.lines.map(line => (
-                    <button key={line.join('-')} className="ct-line-row" onClick={() => void persistMap({ ...mapState, lines: mapState.lines.filter(item => item.join('-') !== line.join('-')) })}>
-                      <span>{line[0]} {'->'} {line[1]}</span>
-                    <span>x</span>
-                  </button>
-                ))}
+                {mapState.lines.map(line => {
+                  const key = line.join('-')
+                  return (
+                    <div key={key} className="ct-line-row">
+                      <span>
+                        <span style={{ color: ANCHOR_COLORS[line[0]] || '#8c96a5', fontWeight: 600 }}>{line[0]}</span>
+                        {' → '}
+                        <span style={{ color: ANCHOR_COLORS[line[1]] || '#8c96a5', fontWeight: 600 }}>{line[1]}</span>
+                      </span>
+                      <button
+                        className="ct-line-row-delete"
+                        onClick={() => void persistMap({ ...mapState, lines: mapState.lines.filter(item => item.join('-') !== key) })}
+                        title="Delete line"
+                      >✕</button>
+                    </div>
+                  )
+                })}
               </div>
-              <div className="ct-anchor-picker">
-                {ANCHOR_IDS.map(anchorId => (
-                  <button
-                    key={anchorId}
-                    className={`ct-pill${linePicker.includes(anchorId) ? ' active' : ''}`}
-                    onClick={() => {
-                      const next = linePicker.includes(anchorId) ? linePicker.filter(item => item !== anchorId) : [...linePicker, anchorId]
-                      if (next.length === 2) {
-                        const newLine = [next[0], next[1]]
-                        const exists = mapState.lines.some(line => (line[0] === newLine[0] && line[1] === newLine[1]) || (line[0] === newLine[1] && line[1] === newLine[0]))
-                        if (!exists) void persistMap({ ...mapState, lines: [...mapState.lines, newLine] })
-                        setLinePicker([])
-                      } else {
-                        setLinePicker(next)
-                      }
-                    }}
-                  >
-                    {anchorId}
+
+              {/* Create new line */}
+              {!linePickerMode ? (
+                <button className="ct-btn ct-btn--ghost ct-btn--full" onClick={() => setLinePickerMode(true)}>
+                  + Create Line
+                </button>
+              ) : (
+                <div className="ct-line-creator">
+                  <div className="ct-line-creator-hint">
+                    {linePicker.length === 0 ? 'Select first anchor' : `${linePicker[0]} → select second`}
+                  </div>
+                  <div className="ct-anchor-picker">
+                    {ANCHOR_IDS.map(anchorId => (
+                      <button
+                        key={anchorId}
+                        className={`ct-pill${linePicker.includes(anchorId) ? ' active' : ''}`}
+                        onClick={() => {
+                          const next = linePicker.includes(anchorId)
+                            ? linePicker.filter(item => item !== anchorId)
+                            : [...linePicker, anchorId]
+                          if (next.length === 2) {
+                            const newLine = [next[0], next[1]]
+                            const exists = mapState.lines.some(l =>
+                              (l[0] === newLine[0] && l[1] === newLine[1]) ||
+                              (l[0] === newLine[1] && l[1] === newLine[0])
+                            )
+                            if (!exists) void persistMap({ ...mapState, lines: [...mapState.lines, newLine] })
+                            setLinePicker([])
+                            setLinePickerMode(false)
+                          } else {
+                            setLinePicker(next)
+                          }
+                        }}
+                      >
+                        {anchorId}
+                      </button>
+                    ))}
+                  </div>
+                  <button className="ct-btn ct-btn--ghost" onClick={() => { setLinePickerMode(false); setLinePicker([]) }}>
+                    Cancel
                   </button>
-                ))}
-              </div>
-              <div className="ct-field">
-                <label>Anchor to Tag height (ft)</label>
-                <input
+                </div>
+              )}
+
+              {/* Height offset */}
+              <div className="ct-field-inline" style={{ marginTop: 10 }}>
+                <label className="ct-field-inline-label" style={{ fontSize: 9.5, whiteSpace: 'nowrap', minWidth: 60 }}>Height (ft)</label>
+                <NumInput
                   className="ct-input"
-                  type="number"
-                  step="0.01"
                   value={mapState.height_offset}
-                  onChange={event => setMapState(current => ({ ...current, height_offset: Number.parseFloat(event.target.value) || 0 }))}
-                  onBlur={() => void persistMap(mapState)}
+                  step="0.01"
+                  onChange={val => void persistMap({ ...mapState, height_offset: val })}
                 />
               </div>
             </section>
 
+            {/* SELECTED TAG */}
             <section className="ct-section">
               <div className="ct-section-title">Selected Tag</div>
               <div className="ct-tag-tabs">
                 {runtime.tags.map(tag => (
-                  <button key={tag.tag_id} className={`ct-pill${selectedTagId === tag.tag_id ? ' active' : ''}`} onClick={() => setSelectedTagId(tag.tag_id)}>
+                  <button
+                    key={tag.tag_id}
+                    className={`ct-pill${selectedTagId === tag.tag_id ? ' active' : ''}`}
+                    style={selectedTagId === tag.tag_id ? { borderColor: tagColors[tag.tag_id], background: tagColors[tag.tag_id] + '22' } : {}}
+                    onClick={() => setSelectedTagId(tag.tag_id)}
+                  >
                     {tag.tag_id}
                   </button>
                 ))}
@@ -499,12 +692,12 @@ const CalibrationTool: React.FC<CalibrationToolProps> = ({ workspaceId: _workspa
                     <div>MAC<span>{selectedTag.mac_address || 'Not set'}</span></div>
                     <div>Device<span>{selectedTag.device_type || 'Unknown'}</span></div>
                   </div>
-                  <table className="ct-table">
+                    <table className="ct-table">
                     <thead><tr><th>Anchor</th><th>Raw</th><th>Cal</th></tr></thead>
                     <tbody>
                       {ANCHOR_IDS.map(anchorId => (
                         <tr key={anchorId}>
-                          <td>{anchorId}</td>
+                          <td style={{ color: ANCHOR_COLORS[anchorId], fontWeight: 600 }}>{anchorId}</td>
                           <td>{selectedTag.raw_distances[anchorId] > 0 ? selectedTag.raw_distances[anchorId].toFixed(2) : '---'}</td>
                           <td>{selectedTag.calibrated_distances[anchorId] > 0 ? selectedTag.calibrated_distances[anchorId].toFixed(2) : '---'}</td>
                         </tr>
@@ -521,117 +714,277 @@ const CalibrationTool: React.FC<CalibrationToolProps> = ({ workspaceId: _workspa
 
             {selectedTag && (
               <>
+                {/* REFERENCE DISTANCES */}
                 <section className="ct-section">
                   <div className="ct-section-title">Reference Distances</div>
                   {ANCHOR_IDS.map(anchorId => (
-                    <div key={anchorId} className="ct-field">
-                      <label>{anchorId} Distance (X)</label>
-                      <input className="ct-input" value={referenceDistances[anchorId]} onChange={event => setReferenceDistances(current => ({ ...current, [anchorId]: event.target.value }))} onBlur={() => void saveReferenceDrafts()} />
+                    <div key={anchorId} className="ct-field-inline">
+                      <label className="ct-field-inline-label" style={{ color: ANCHOR_COLORS[anchorId], fontWeight: 600, minWidth: 30 }}>{anchorId}</label>
+                      <input
+                        className="ct-input"
+                        value={referenceDistances[anchorId]}
+                        placeholder="ft"
+                        onChange={e => setReferenceDistances(c => ({ ...c, [anchorId]: e.target.value }))}
+                        onBlur={() => void saveReferenceDrafts()}
+                        onKeyDown={e => { if (e.key === 'Enter') { (e.target as HTMLInputElement).blur(); e.preventDefault() } }}
+                      />
                     </div>
                   ))}
-                  <div className="ct-field">
-                    <label>Height (Y) ft</label>
-                    <input className="ct-input" value={referenceHeight} onChange={event => setReferenceHeight(event.target.value)} onBlur={() => void saveReferenceDrafts()} />
+                  <div className="ct-field-inline">
+                    <label className="ct-field-inline-label" style={{ minWidth: 50, whiteSpace: 'nowrap' }}>Height</label>
+                    <input
+                      className="ct-input"
+                      value={referenceHeight}
+                      placeholder="ft"
+                      onChange={e => setReferenceHeight(e.target.value)}
+                      onBlur={() => void saveReferenceDrafts()}
+                      onKeyDown={e => { if (e.key === 'Enter') { (e.target as HTMLInputElement).blur(); e.preventDefault() } }}
+                    />
                   </div>
                   <div className="ct-actions">
-                    <button className={`ct-btn ${placingReference ? 'ct-btn--primary' : 'ct-btn--secondary'}`} onClick={() => setPlacingReference(current => !current)}>Place on Map</button>
+                    <button
+                      className={`ct-btn ${placingReference ? 'ct-btn--primary' : 'ct-btn--secondary'}`}
+                      onClick={() => setPlacingReference(c => !c)}
+                    >
+                      {placingReference ? 'Click map to place' : 'Place on Map'}
+                    </button>
                     <button className="ct-btn ct-btn--ghost" onClick={async () => {
                       const data = await postJson<CalibrationRuntimeSnapshot & { success: boolean; error?: string }>('/api/calibration/reference/calculate', { tag_id: selectedTag.tag_id })
-                      if (!data.success) showStatus(data.error ?? 'Could not calculate reference.', 'error')
+                      if (!data.success) showStatus(data.error ?? 'Could not calculate.', 'error')
                       else applySnapshot(data)
-                    }}>Calculate Reference</button>
+                    }}>Calculate</button>
                   </div>
                 </section>
 
+                {/* CALIBRATION FIT (collection controls only) */}
                 <section className="ct-section">
                   <div className="ct-section-title">Calibration Fit</div>
                   <div className="ct-lock-grid">
-                    {ANCHOR_IDS.map(anchorId => <div key={anchorId}>{anchorId}<span>{selectedTag.locked_reference[anchorId] != null ? selectedTag.locked_reference[anchorId]?.toFixed(3) : '---'}</span></div>)}
+                    {ANCHOR_IDS.map(anchorId => (
+                      <div key={anchorId}>
+                        <span style={{ color: ANCHOR_COLORS[anchorId], fontWeight: 600 }}>{anchorId}</span>
+                        <span>{selectedTag.locked_reference[anchorId] != null ? selectedTag.locked_reference[anchorId]?.toFixed(3) : '---'}</span>
+                      </div>
+                    ))}
                   </div>
                   <div className="ct-actions">
-                    <input className="ct-input ct-input--small" value={sampleCount} onChange={event => setSampleCount(event.target.value)} />
-                    <button className="ct-btn ct-btn--primary" onClick={handleCaptureStart} disabled={busy.capture || runtime.capture.active}>
-                      {runtime.capture.active ? runtime.capture.phase : 'Capture'}
+                    <input className="ct-input ct-input--small" value={sampleCount} onChange={e => setSampleCount(e.target.value)} placeholder="N" />
+                    <button
+                      className="ct-btn ct-btn--primary"
+                      onClick={handleCaptureStart}
+                      disabled={busy.capture || runtime.capture.active}
+                    >
+                      {runtime.capture.active ? runtime.capture.phase : 'Collect'}
                     </button>
                   </div>
                   {ANCHOR_IDS.map(anchorId => (
                     <div key={anchorId} className="ct-progress-row">
-                      <span>{anchorId}</span>
-                      <div className="ct-progress"><div style={{ width: `${Math.min(100, ((runtime.capture.counts[anchorId] ?? 0) / Math.max(runtime.capture.target, 1)) * 100)}%` }} /></div>
+                      <span style={{ color: ANCHOR_COLORS[anchorId], fontWeight: 600 }}>{anchorId}</span>
+                      <div className="ct-progress">
+                        <div style={{ width: `${Math.min(100, ((runtime.capture.counts[anchorId] ?? 0) / Math.max(runtime.capture.target, 1)) * 100)}%` }} />
+                      </div>
                       <span>{runtime.capture.counts[anchorId] ?? 0}/{runtime.capture.target || 0}</span>
                     </div>
                   ))}
-                  <div className="ct-tag-tabs">
-                    {ANCHOR_IDS.map(anchorId => <button key={anchorId} className={`ct-pill${activeAnchorId === anchorId ? ' active' : ''}`} onClick={() => setActiveAnchorId(anchorId)}>{anchorId}</button>)}
-                  </div>
-                  {activeFit && (
-                    <>
-                      <label className="ct-check"><input type="checkbox" checked={activeFit.auto} onChange={event => void updateFitOption(activeAnchorId, { auto: event.target.checked })} /> Auto Calibrate</label>
-                      <select className="ct-input" value={activeFit.fit_mode} onChange={event => void updateFitOption(activeAnchorId, { fit_mode: event.target.value })}>
-                        {FIT_MODES.map(mode => <option key={mode} value={mode}>{mode}</option>)}
-                      </select>
-                      {activeFit.fit_mode === 'Polynomial' && <input className="ct-input" type="number" min={1} max={10} value={activeFit.poly_deg} onChange={event => void updateFitOption(activeAnchorId, { poly_deg: Number.parseInt(event.target.value, 10) || 4 })} />}
-                      {activeFit.fit_mode === 'Moving Average' && (
-                        <div className="ct-inline-fields">
-                          <input className="ct-input" type="number" min={2} max={10} value={activeFit.ma_period} onChange={event => void updateFitOption(activeAnchorId, { ma_period: Number.parseInt(event.target.value, 10) || 4 })} />
-                          <select className="ct-input" value={activeFit.ma_type} onChange={event => void updateFitOption(activeAnchorId, { ma_type: event.target.value })}>
-                            <option value="Trailing">Trailing</option>
-                            <option value="Centered">Centered</option>
-                          </select>
-                        </div>
-                      )}
-                    </>
-                  )}
-                  {ANCHOR_IDS.map(anchorId => (
-                    <div key={anchorId} className="ct-field">
-                      <label>{anchorId} Equation</label>
-                      <input className="ct-input ct-input--mono" value={equationDrafts[anchorId]} onChange={event => setEquationDrafts(current => ({ ...current, [anchorId]: event.target.value }))} onBlur={() => void saveEquation(anchorId)} />
-                      <div className="ct-runtime-note">Saved: {selectedTag.saved_profile_equations[anchorId] || 'Raw distance'}</div>
-                    </div>
-                  ))}
                 </section>
 
+                {/* CAPTURED POINTS */}
                 <section className="ct-section">
                   <div className="ct-section-title">Captured Points</div>
-                  <div className="ct-points-log">{selectedTag.captured_points_log.length > 0 ? selectedTag.captured_points_log.join('\n') : 'No data captured yet.'}</div>
-                  <button className="ct-btn ct-btn--ghost" onClick={async () => {
+                  {parsedPoints.length > 0 ? (
+                    <div className="ct-capture-table-wrap">
+                      <table className="ct-capture-table">
+                        <thead>
+                          <tr><th>#</th><th>Anchor</th><th>Raw (ft)</th><th>True (ft)</th></tr>
+                        </thead>
+                        <tbody>
+                          {parsedPoints.map((pt, i) => (
+                            <tr key={i}>
+                              <td>{pt.index}</td>
+                              <td>{pt.anchor}</td>
+                              <td>{pt.raw.toFixed(3)}</td>
+                              <td>{pt.trueDist.toFixed(3)}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  ) : (
+                    <div className="ct-runtime-note">No data captured yet.</div>
+                  )}
+                  <button className="ct-btn ct-btn--ghost" style={{ marginTop: 8 }} onClick={async () => {
                     const data = await postJson<CalibrationRuntimeSnapshot & { success: boolean }>(`/api/calibration/points/clear/${encodeURIComponent(selectedTag.tag_id)}`)
                     applySnapshot(data)
-                  }}>Clear Captured Data</button>
+                  }}>Clear Data</button>
                 </section>
 
+                {/* EQUATIONS */}
+                <section className="ct-section">
+                  <div className="ct-section-title">Equations</div>
+
+                  {/* Anchor selector */}
+                  <div className="ct-tag-tabs">
+                    {ANCHOR_IDS.map(anchorId => (
+                      <button
+                        key={anchorId}
+                        className={`ct-pill${activeAnchorId === anchorId ? ' active' : ''}`}
+                        onClick={() => setActiveAnchorId(anchorId)}
+                      >
+                        {anchorId}
+                      </button>
+                    ))}
+                  </div>
+
+                  {/* Active anchor controls */}
+                  {activeFit && (
+                    <div className="ct-eq-detail">
+                      <div className="ct-field-inline" style={{ marginBottom: 8 }}>
+                        <label className="ct-field-inline-label">Type</label>
+                        <select
+                          className="ct-input"
+                          value={activeFit.fit_mode}
+                          onChange={e => void updateFitOption(activeAnchorId, { fit_mode: e.target.value })}
+                        >
+                          {FIT_MODES.map(mode => <option key={mode} value={mode}>{mode}</option>)}
+                        </select>
+                      </div>
+                      <label className="ct-check">
+                        <input
+                          type="checkbox"
+                          checked={activeFit.auto}
+                          onChange={e => void updateFitOption(activeAnchorId, { auto: e.target.checked })}
+                        />
+                        Auto Calibrate
+                      </label>
+                      {activeFit.fit_mode === 'Polynomial' && (
+                        <div className="ct-field-inline" style={{ marginTop: 6 }}>
+                          <label className="ct-field-inline-label">Degree</label>
+                          <input
+                            className="ct-input"
+                            type="number"
+                            min={1} max={10}
+                            value={activeFit.poly_deg}
+                            onChange={e => void updateFitOption(activeAnchorId, { poly_deg: Number.parseInt(e.target.value, 10) || 4 })}
+                          />
+                        </div>
+                      )}
+                      {activeFit.fit_mode === 'Moving Average' && (
+                        <div className="ct-inline-fields" style={{ marginTop: 6 }}>
+                          <div className="ct-field-inline" style={{ flex: 1 }}>
+                            <label className="ct-field-inline-label">Period</label>
+                            <input
+                              className="ct-input"
+                              type="number" min={2} max={10}
+                              value={activeFit.ma_period}
+                              onChange={e => void updateFitOption(activeAnchorId, { ma_period: Number.parseInt(e.target.value, 10) || 4 })}
+                            />
+                          </div>
+                          <div className="ct-field-inline" style={{ flex: 1 }}>
+                            <label className="ct-field-inline-label">Type</label>
+                            <select
+                              className="ct-input"
+                              value={activeFit.ma_type}
+                              onChange={e => void updateFitOption(activeAnchorId, { ma_type: e.target.value })}
+                            >
+                              <option value="Trailing">Trailing</option>
+                              <option value="Centered">Centered</option>
+                            </select>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Equations summary table */}
+                  <div className="ct-eq-table">
+                    {ANCHOR_IDS.map(anchorId => (
+                      <div
+                        key={anchorId}
+                        className={`ct-eq-row${activeAnchorId === anchorId ? ' active' : ''}`}
+                        onClick={() => setActiveAnchorId(anchorId)}
+                      >
+                        <span className="ct-eq-anchor" style={{ color: ANCHOR_COLORS[anchorId], fontWeight: 600 }}>{anchorId}</span>
+                        <input
+                          className="ct-eq-input"
+                          value={equationDrafts[anchorId]}
+                          placeholder="Raw distance"
+                          onChange={e => setEquationDrafts(c => ({ ...c, [anchorId]: e.target.value }))}
+                          onBlur={() => void saveEquation(anchorId)}
+                          onClick={e => e.stopPropagation()}
+                        />
+                      </div>
+                    ))}
+                  </div>
+                  <div className="ct-runtime-note" style={{ marginTop: 4 }}>
+                    Saved: {selectedTag.saved_profile_equations[activeAnchorId] || 'Raw distance'}
+                  </div>
+                </section>
+
+                {/* SMOOTHING FILTER */}
                 <section className="ct-section">
                   <div className="ct-section-title">Smoothing Filter</div>
                   <div className="ct-tag-tabs">
-                    {['EMA', 'Rolling', 'Kalman'].map(mode => <button key={mode} className={`ct-pill${runtime.filter.mode === mode ? ' active' : ''}`} onClick={async () => {
-                      const data = await postJson<CalibrationRuntimeSnapshot & { success: boolean; error?: string }>('/api/calibration/filter', { mode })
-                      if (!data.success) showStatus(data.error ?? 'Could not update filter.', 'error')
-                      else applySnapshot(data)
-                    }}>{mode}</button>)}
+                    {(['EMA', 'Rolling', 'Kalman'] as const).map(mode => (
+                      <button
+                        key={mode}
+                        className={`ct-pill${runtime.filter.mode === mode ? ' active' : ''}`}
+                        onClick={async () => {
+                          const data = await postJson<CalibrationRuntimeSnapshot & { success: boolean; error?: string }>('/api/calibration/filter', { mode })
+                          if (!data.success) showStatus(data.error ?? 'Could not update filter.', 'error')
+                          else applySnapshot(data)
+                        }}
+                      >
+                        {mode}
+                      </button>
+                    ))}
                   </div>
-                  <div className="ct-slider-row"><label>EMA a</label><input className="ct-input" type="number" step="0.01" value={runtime.filter.ema_alpha} onChange={async event => {
-                    const data = await postJson<CalibrationRuntimeSnapshot & { success: boolean }>('/api/calibration/filter', { mode: runtime.filter.mode, ema_alpha: Number.parseFloat(event.target.value) || 0.2 })
-                    applySnapshot(data)
-                  }} /></div>
-                  <div className="ct-slider-row"><label>Rolling</label><input className="ct-input" type="number" step="1" value={runtime.filter.roll_n} onChange={async event => {
-                    const data = await postJson<CalibrationRuntimeSnapshot & { success: boolean }>('/api/calibration/filter', { mode: runtime.filter.mode, roll_n: Number.parseInt(event.target.value, 10) || 8 })
-                    applySnapshot(data)
-                  }} /></div>
-                  <div className="ct-slider-row"><label>Kalman Q</label><input className="ct-input" type="number" step="0.01" value={runtime.filter.kal_q} onChange={async event => {
-                    const data = await postJson<CalibrationRuntimeSnapshot & { success: boolean }>('/api/calibration/filter', { mode: runtime.filter.mode, kal_q: Number.parseFloat(event.target.value) || 0.1 })
-                    applySnapshot(data)
-                  }} /></div>
-                  <div className="ct-slider-row"><label>Kalman R</label><input className="ct-input" type="number" step="0.1" value={runtime.filter.kal_r} onChange={async event => {
-                    const data = await postJson<CalibrationRuntimeSnapshot & { success: boolean }>('/api/calibration/filter', { mode: runtime.filter.mode, kal_r: Number.parseFloat(event.target.value) || 2 })
-                    applySnapshot(data)
-                  }} /></div>
+
+                  <div className="ct-slider-row">
+                    <div className="ct-slider-header">
+                      <label>EMA α</label>
+                      <span className="ct-slider-val">{runtime.filter.ema_alpha.toFixed(2)}</span>
+                    </div>
+                    <input className="ct-range" type="range" min="0.01" max="0.99" step="0.01" value={runtime.filter.ema_alpha}
+                      onChange={async e => { await updateFilter({ ema_alpha: Number.parseFloat(e.target.value) }) }} />
+                  </div>
+
+                  <div className="ct-slider-row">
+                    <div className="ct-slider-header">
+                      <label>Rolling N</label>
+                      <span className="ct-slider-val">{runtime.filter.roll_n}</span>
+                    </div>
+                    <input className="ct-range" type="range" min="2" max="30" step="1" value={runtime.filter.roll_n}
+                      onChange={async e => { await updateFilter({ roll_n: Number.parseInt(e.target.value, 10) }) }} />
+                  </div>
+
+                  <div className="ct-slider-row">
+                    <div className="ct-slider-header">
+                      <label>Kalman Q</label>
+                      <span className="ct-slider-val">{runtime.filter.kal_q.toFixed(3)}</span>
+                    </div>
+                    <input className="ct-range" type="range" min="0.001" max="1" step="0.001" value={runtime.filter.kal_q}
+                      onChange={async e => { await updateFilter({ kal_q: Number.parseFloat(e.target.value) }) }} />
+                  </div>
+
+                  <div className="ct-slider-row">
+                    <div className="ct-slider-header">
+                      <label>Kalman R</label>
+                      <span className="ct-slider-val">{runtime.filter.kal_r.toFixed(1)}</span>
+                    </div>
+                    <input className="ct-range" type="range" min="0.1" max="20" step="0.1" value={runtime.filter.kal_r}
+                      onChange={async e => { await updateFilter({ kal_r: Number.parseFloat(e.target.value) }) }} />
+                  </div>
                 </section>
               </>
             )}
           </div>
         </div>
 
-        <CalibrationGraphPanel tag={selectedTag} collapsed={graphCollapsed} onToggle={() => setGraphCollapsed(current => !current)} />
+        <CalibrationGraphPanel
+          tag={selectedTag}
+          collapsed={graphCollapsed}
+          onToggle={() => setGraphCollapsed(c => !c)}
+        />
       </div>
     </div>
   )

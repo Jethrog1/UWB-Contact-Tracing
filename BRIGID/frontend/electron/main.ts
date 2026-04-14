@@ -186,6 +186,7 @@ const brigidRoot = is.dev
 ipcMain.handle('app:get-paths', () => ({
   svg: join(brigidRoot, 'svg'),
   pdf: join(brigidRoot, 'pdf'),
+  profile: join(brigidRoot, 'Profile'),
 }))
 
 // ── File dialogs ───────────────────────────────────────────────────────
@@ -201,6 +202,22 @@ ipcMain.handle('dialog:open-file', async (_event, options: Electron.OpenDialogOp
 ipcMain.handle('dialog:save-file', async (_event, options: Electron.SaveDialogOptions) => {
   if (!mainWindow) return { canceled: true, filePath: undefined }
   return dialog.showSaveDialog(mainWindow, options)
+})
+
+ipcMain.handle('dialog:open-folder', async (_event, options: { defaultPath?: string }) => {
+  if (!mainWindow) return { canceled: true, folderPath: undefined }
+  const result = await dialog.showOpenDialog(mainWindow, {
+    properties: ['openDirectory'],
+    defaultPath: options?.defaultPath,
+  })
+  return {
+    canceled: result.canceled,
+    folderPath: result.canceled ? undefined : result.filePaths[0],
+  }
+})
+
+ipcMain.handle('shell:open-path', async (_event, path: string) => {
+  await shell.openPath(path)
 })
 
 ipcMain.handle('cad:status', async () => {
@@ -222,12 +239,12 @@ function createWindow(): void {
     minWidth: 1200,
     minHeight: 800,
     show: false,
-    backgroundColor: '#060a0f',
+    backgroundColor: '#0a0b0d',
     titleBarStyle: 'hidden',
     titleBarOverlay: {
-      color: '#060a0f',
-      symbolColor: '#4a5a74',
-      height: 32,
+      color: '#0a0b0d',
+      symbolColor: '#8c96a5',
+      height: 28,
     },
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),

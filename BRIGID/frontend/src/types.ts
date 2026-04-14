@@ -87,6 +87,7 @@ export interface RoomData {
   anchors: AnchorData[]
   segments_ft: SegmentData[]
   interior_segments_ft: SegmentData[]
+  edges?: [string, string][]
 }
 
 export interface FloorplanManifest {

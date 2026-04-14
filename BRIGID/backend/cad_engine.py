@@ -129,7 +129,8 @@ class CADEngine:
             elif kind == "context_close":
                 self.doc.dropdown.close_menu()
             elif kind == "open_cad":
-                self._handle_import(str(cmd.get("filepath", "")))  # SVG with metadata → perfect roundtrip
+                self.doc.lines.clear()  # Replace existing design
+                self._handle_import(str(cmd.get("filepath", "")))
             elif kind == "import_file":
                 self._handle_import(str(cmd.get("filepath", "")))
             elif kind == "export_svg":

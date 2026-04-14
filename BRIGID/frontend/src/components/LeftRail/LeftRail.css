@@ -1,126 +1,101 @@
-/* ── Left Rail — Module Selector ────────────────────────────────── */
+/* ── LeftRail: Pure floating button column, no background bar ── */
 .left-rail {
-  grid-area: rail;
+  grid-area: 3 / 1 / 4 / 2;
   display: flex;
   flex-direction: column;
   align-items: center;
-  width: 52px;
-  background: #080c14;
-  border-right: 1px solid rgba(56, 68, 94, 0.35);
-  padding: 6px 0;
-  z-index: 50;
-  overflow: hidden;
-  user-select: none;
+  /* Transparent background — buttons float over app-bg */
+  background: transparent;
+  padding: 8px 0;
+  z-index: 10;
+  width: 46px;
+  pointer-events: none;
 }
 
-/* ── Logo / App Icon ───────────────────────────────────────────── */
-.left-rail__logo {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 36px;
-  height: 36px;
-  border-radius: 8px;
-  background: rgba(90, 144, 200, 0.08);
+/* Logo / Home button */
+.left-rail__logo-btn {
+  width: 30px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
   margin-bottom: 4px;
-  flex-shrink: 0;
+  transition: background var(--transition-fast), border-color var(--transition-fast);
+  color: var(--accent-primary);
+  pointer-events: auto;
 }
 
-/* ── Divider ─────────────────────────────────────────────────── */
+.left-rail__logo-btn:hover {
+  background: rgba(90, 144, 200, 0.08);
+  border-color: rgba(90, 144, 200, 0.2);
+}
+
 .left-rail__divider {
-  width: 28px;
+  width: 22px;
   height: 1px;
-  background: rgba(56, 68, 94, 0.4);
-  margin: 6px 0;
-  flex-shrink: 0;
+  background: var(--border-default);
+  margin: 4px 0 10px 0;
 }
 
-/* ── Navigation ──────────────────────────────────────────────── */
 .left-rail__nav {
   display: flex;
   flex-direction: column;
+  gap: 4px;
   align-items: center;
-  gap: 2px;
-  flex: 1;
-  width: 100%;
-  padding: 4px 6px;
 }
 
-/* ── Button ──────────────────────────────────────────────────── */
 .left-rail__btn {
   position: relative;
+  width: 30px;
+  height: 30px;
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 40px;
-  height: 40px;
   background: transparent;
-  border: none;
-  border-radius: 8px;
-  color: #3d4d60;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  color: var(--text-muted);
   cursor: pointer;
-  transition: color 150ms, background 150ms;
-  flex-shrink: 0;
+  transition: color var(--transition-fast), background var(--transition-fast), border-color var(--transition-fast);
+  outline: none;
+  pointer-events: auto;
 }
 
-.left-rail__btn:disabled {
-  opacity: 0.35;
-  cursor: default;
-}
-
-.left-rail__btn:hover {
-  color: #8a9ab8;
-  background: rgba(56, 68, 94, 0.2);
-}
-
-.left-rail__btn:disabled:hover {
-  color: #3d4d60;
-  background: transparent;
+.left-rail__btn:hover:not(:disabled) {
+  color: var(--text-primary);
+  background: rgba(255, 255, 255, 0.05);
+  border-color: rgba(255, 255, 255, 0.1);
 }
 
 .left-rail__btn--active {
-  color: #7aaccc;
-  background: rgba(90, 144, 200, 0.12);
+  color: var(--accent-primary) !important;
 }
 
-.left-rail__btn--active:hover {
-  background: rgba(90, 144, 200, 0.18);
+/* Animated highlight behind active button */
+.left-rail__active-bg {
+  position: absolute;
+  inset: 0;
+  background: rgba(90, 144, 200, 0.1);
+  border: 1px solid rgba(90, 144, 200, 0.35);
+  border-radius: var(--radius-sm);
+  z-index: 0;
 }
 
-/* ── Icon container ──────────────────────────────────────────── */
 .left-rail__btn-icon {
   position: relative;
   z-index: 1;
-  display: flex;
-  align-items: center;
-  justify-content: center;
 }
 
-/* ── Active indicator bar (left edge) ─────────────────────────── */
-.left-rail__active-bar {
-  position: absolute;
-  left: -6px;
-  top: 8px;
-  bottom: 8px;
-  width: 3px;
-  background: #5a90c8;
-  border-radius: 0 2px 2px 0;
-  box-shadow: 0 0 8px rgba(90, 144, 200, 0.35);
+.left-rail__btn:disabled {
+  opacity: 0.28;
+  cursor: not-allowed;
 }
 
-/* ── Bottom button ───────────────────────────────────────────── */
+/* Settings at bottom */
 .left-rail__bottom {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  width: 100%;
-  padding: 4px 6px 4px;
-}
-
-.left-rail__btn--bottom {
-  color: #2d3d50;
-}
-
-.left-rail__btn--bottom:hover {
-  color: #5a6a82;
+  margin-top: auto;
+  margin-bottom: 4px;
 }

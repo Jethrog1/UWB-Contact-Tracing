@@ -1,16 +1,19 @@
 # Integrations
 
-Across the UWB-Contact-Tracing project, integrations span between hardware layers and local network applications, currently migrating from a monolithic integration (2DLCAD) to a decoupled integration (BRIGID).
+Across the UWB-Contact-Tracing project, integrations span between hardware layers and local network applications. The system focuses entirely on hardware and local IO integration.
 
-## Hardware Integrations
-- **UWB Hardware:** The system interacts natively with UWB tags and anchors via serial lines. The `2DLCAD/serial_reader.py` directly handles byte streams from hardware devices to read RTLS coordinates or contact-tracing distances.
+## UWB Hardware Integration
+- **Legacy (2DLCAD):** The `serial_reader.py` directly handles byte streams from hardware devices to read RTLS coordinates or contact-tracing distances, pushing directly into PyQt variables.
+- **Future (BRIGID):** The Python backend uses `utilities/calibration/runtime.py` and `RTLSDashboard/rtls_runtime.py` to stream serial data. This data is fed through filtering algorithms (Kalman, EMA) and piped to the React Frontend either via WebSocket streams or REST polling methods.
 
-## Desktop Integrations
-- **Electron API (BRIGID):** The new frontend connects deeply with OS-level integrations via `@electron-toolkit/utils` and standard `electron` IPC capabilities.
-- **PyQt Web Integration (Legacy):** `PyQt6-WebEngine` was used within 2DLCAD to embed chromium-based web-view components.
+## Data Workflows & Workspaces
+- **Workspace Integration:** BRIGID integrates deeply with the local filesystem. Every new tab creates a discrete `Workspace N` folder on disc containing `tags/`, `rooms/`, `svg/`, and `pdf/`. The backend acts as a file server interface mapping the frontend UI interactions seamlessly to local disc persistence.
+  
+## Module IPC Integrations (BRIGID)
+- **Profile Manager:** Integrates with `tags/` JSON payloads via `/api/profile/*`.
+- **Calibration Tool:** Direct serial integration converting raw anchor feeds to polynomial regression models via `/api/calibration/*`.
+- **2D CAD Modeling:** Live memory mirroring via `/cad/ws/{workspace_id}` to sync engine plot commands.
+- **Anchor Manager:** Integrates with `.rooms.json` parsing.
+- **RTLS Dashboard:** Stream consumption via `rtls_runtime.py`.
 
-## Local Services & IPC (BRIGID Rebuild)
-- **Websockets Base:** FastAPI WebSockets is leveraged in the new BRIGID backend to push high-frequency RTLS data to the React UI in real-time.
-- **REST APIs:** FastAPI acts as the primary boundary interface between the python engine (migrated from legacy) and the modern React application.
-
-The primary integrations are internal (between React frontend and FastAPI backend), and physical (between the UWB hardware tags and python serial reading daemons). There are currently no apparent third-party cloud service integrations.
+There are no apparent third-party cloud service endpoints involved in this system; it is purely an offline desktop tool integration flow.

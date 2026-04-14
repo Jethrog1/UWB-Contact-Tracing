@@ -1,0 +1,83 @@
+{
+    "project_name": "floor-plan",
+    "svg_file": "floor-plan.svg",
+    "saved_at": "2026-04-13T23:14:35",
+    "units": "ft",
+    "rooms": [
+        {
+            "room_name": "Room_1",
+            "units": "ft",
+            "rtls_settings": {
+                "tag_height_ft": 0,
+                "filter_mode": "None",
+                "ble_module_port": ""
+            },
+            "reference_anchor_id": "R1A0",
+            "room_bounds_ft": {
+                "min_x": -1.833,
+                "min_y": 0.167,
+                "max_x": 4.151,
+                "max_y": 3.8,
+                "width": 5.984,
+                "height": 3.633
+            },
+            "anchors": [
+                {
+                    "id": "R1A0",
+                    "hw_id": "",
+                    "x_ft": -0.0,
+                    "y_ft": -0.0,
+                    "z_ft": 0.0
+                },
+                {
+                    "id": "R1A1",
+                    "hw_id": "",
+                    "x_ft": 5.984,
+                    "y_ft": -0.0,
+                    "z_ft": 0.0
+                },
+                {
+                    "id": "R1A2",
+                    "hw_id": "",
+                    "x_ft": 5.984,
+                    "y_ft": 3.633,
+                    "z_ft": 0.0
+                },
+                {
+                    "id": "R1A3",
+                    "hw_id": "",
+                    "x_ft": -0.0,
+                    "y_ft": 3.633,
+                    "z_ft": 0.0
+                }
+            ],
+            "segments_ft": [
+                {
+                    "x1": -1.833,
+                    "y1": 0.167,
+                    "x2": -1.833,
+                    "y2": 3.8
+                },
+                {
+                    "x1": -1.833,
+                    "y1": 0.167,
+                    "x2": 4.151,
+                    "y2": 0.167
+                },
+                {
+                    "x1": 4.151,
+                    "y1": 3.8,
+                    "x2": 4.151,
+                    "y2": 0.167
+                },
+                {
+                    "x1": -1.833,
+                    "y1": 3.8,
+                    "x2": 4.151,
+                    "y2": 3.8
+                }
+            ],
+            "interior_segments_ft": []
+        }
+    ]
+}
