@@ -62,10 +62,10 @@ const FeatureManager: React.FC<Props> = ({ state }) => {
       transition={{ duration: 0.3, ease: 'easeOut' }}
     >
       <div className="fm-header" onClick={() => setCollapsed(v => !v)}>
-        <Icon icon="diagram-tree" size={12} color="#38bdf8" />
-        <span className="fm-title">Feature Manager</span>
-        <span className="fm-summary">{nodes.length ? `${nodes.length} root` : 'empty'}</span>
-        <Icon icon={collapsed ? 'chevron-right' : 'chevron-down'} size={11} color="#3d4d60" className="fm-chevron" />
+        <Icon icon="diagram-tree" size={11} color="#3d4d60" />
+        <span className="fm-title">Features</span>
+        <span className="fm-summary">{nodes.length ? `${nodes.length}` : '—'}</span>
+        <Icon icon={collapsed ? 'chevron-right' : 'chevron-down'} size={10} color="#2d3d50" className="fm-chevron" />
       </div>
 
       <AnimatePresence initial={false}>

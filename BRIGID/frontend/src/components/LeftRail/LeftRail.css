@@ -21,7 +21,7 @@
   width: 36px;
   height: 36px;
   border-radius: 8px;
-  background: rgba(56, 189, 248, 0.08);
+  background: rgba(90, 144, 200, 0.08);
   margin-bottom: 4px;
   flex-shrink: 0;
 }
@@ -79,12 +79,12 @@
 }
 
 .left-rail__btn--active {
-  color: #38bdf8;
-  background: rgba(56, 189, 248, 0.1);
+  color: #7aaccc;
+  background: rgba(90, 144, 200, 0.12);
 }
 
 .left-rail__btn--active:hover {
-  background: rgba(56, 189, 248, 0.15);
+  background: rgba(90, 144, 200, 0.18);
 }
 
 /* ── Icon container ──────────────────────────────────────────── */
@@ -103,9 +103,9 @@
   top: 8px;
   bottom: 8px;
   width: 3px;
-  background: #38bdf8;
+  background: #5a90c8;
   border-radius: 0 2px 2px 0;
-  box-shadow: 0 0 8px rgba(56, 189, 248, 0.4);
+  box-shadow: 0 0 8px rgba(90, 144, 200, 0.35);
 }
 
 /* ── Bottom button ───────────────────────────────────────────── */

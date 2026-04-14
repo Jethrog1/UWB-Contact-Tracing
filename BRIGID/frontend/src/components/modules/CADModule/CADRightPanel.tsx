@@ -1,5 +1,5 @@
-import React from 'react'
-import { Icon, Tooltip } from '@blueprintjs/core'
+import React, { useEffect, useState } from 'react'
+import { Tooltip } from '@blueprintjs/core'
 import { CADCommand, CADState, ToolMode } from './types'
 import './CADRightPanel.css'
 
@@ -10,14 +10,106 @@ interface Props {
 }
 
 const TOOLS: { mode: ToolMode; icon: string; label: string; shortcut: string }[] = [
-  { mode: 'cursor', icon: 'cursor', label: 'Select / Move', shortcut: 'V' },
-  { mode: 'line', icon: 'slash', label: 'Draw Line', shortcut: 'L' },
-  { mode: 'vertex', icon: 'dot', label: 'Vertex Mode', shortcut: 'N' },
-  { mode: 'dim', icon: 'arrows-horizontal', label: 'Dimension Tool', shortcut: 'D' },
+  { mode: 'cursor', icon: '↖', label: 'Select / Move', shortcut: 'V' },
+  { mode: 'line', icon: '╱', label: 'Draw Line', shortcut: 'L' },
+  { mode: 'vertex', icon: '◦', label: 'Vertex Mode', shortcut: 'N' },
+  { mode: 'dim', icon: '↔', label: 'Dimension Tool', shortcut: 'D' },
 ]
 
 const CADRightPanel: React.FC<Props> = ({ state, onCommand, status }) => {
+  const [iobusy, setIoBusy] = useState(false)
+  const [paths, setPaths] = useState<{ svg: string; pdf: string } | null>(null)
   const tool = state?.tool_mode ?? 'cursor'
+
+  const getPaths = window.api?.getPaths
+  const openFile = window.api?.openFile
+  const saveFile = window.api?.saveFile
+
+  useEffect(() => {
+    let cancelled = false
+    if (!getPaths) return
+
+    getPaths()
+      .then((nextPaths) => {
+        if (!cancelled) setPaths(nextPaths)
+      })
+      .catch(() => {
+        if (!cancelled) setPaths(null)
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [getPaths])
+
+  const handleOpen = async () => {
+    if (!openFile || iobusy) return
+    setIoBusy(true)
+    try {
+      const result = await openFile(
+        [{ name: 'CAD Designs', extensions: ['svg'] }],
+        paths?.svg,
+      )
+      if (!result.canceled && result.filePaths.length > 0) {
+        onCommand({ type: 'open_cad', filepath: result.filePaths[0] })
+      }
+    } finally {
+      setIoBusy(false)
+    }
+  }
+
+  const handleImport = async () => {
+    if (!openFile || iobusy) return
+    setIoBusy(true)
+    try {
+      const result = await openFile([
+        { name: 'Floor Plans', extensions: ['pdf', 'svg', 'png', 'jpg', 'jpeg'] },
+        { name: 'PDF Files', extensions: ['pdf'] },
+        { name: 'SVG Files', extensions: ['svg'] },
+        { name: 'Images', extensions: ['png', 'jpg', 'jpeg'] },
+      ])
+      if (!result.canceled && result.filePaths.length > 0) {
+        onCommand({ type: 'import_file', filepath: result.filePaths[0] })
+      }
+    } finally {
+      setIoBusy(false)
+    }
+  }
+
+  const handleSaveSVG = async () => {
+    if (!saveFile || iobusy) return
+    setIoBusy(true)
+    try {
+      const defaultPath = paths?.svg ? `${paths.svg}\\floor-plan.svg` : 'floor-plan.svg'
+      const result = await saveFile(
+        [{ name: 'SVG Files', extensions: ['svg'] }],
+        defaultPath,
+      )
+      if (!result.canceled && result.filePath) {
+        onCommand({ type: 'export_svg', filepath: result.filePath })
+      }
+    } finally {
+      setIoBusy(false)
+    }
+  }
+
+  const handleSavePDF = async () => {
+    if (!saveFile || iobusy) return
+    setIoBusy(true)
+    try {
+      const defaultPath = paths?.pdf ? `${paths.pdf}\\floor-plan.pdf` : 'floor-plan.pdf'
+      const result = await saveFile(
+        [{ name: 'PDF Files', extensions: ['pdf'] }],
+        defaultPath,
+      )
+      if (!result.canceled && result.filePath) {
+        onCommand({ type: 'export_pdf', filepath: result.filePath })
+      }
+    } finally {
+      setIoBusy(false)
+    }
+  }
+
   const flags = {
     manipulate_line: state?.manipulate_line ?? false,
     snap_axis: state?.snap_axis ?? false,
@@ -31,173 +123,110 @@ const CADRightPanel: React.FC<Props> = ({ state, onCommand, status }) => {
   return (
     <aside className="cad-right-panel">
       <div className={`crp-status crp-status--${status}`}>
-        <span className="crp-status-dot" />
+        <span className="crp-status-dot" title={status} />
         <span className="crp-status-label">
-          {status === 'connected'
-            ? 'Backend connected'
-            : status === 'connecting'
-              ? 'Connecting...'
-              : status === 'error'
-                ? 'Connection error'
-                : 'Disconnected'}
+          {status === 'connected' ? 'Connected' : status === 'connecting' ? 'Connecting...' : status === 'error' ? 'Error' : 'Offline'}
         </span>
       </div>
 
-      <Section title="Tools">
+      <div className="crp-section">
+        <div className="crp-section-label">Tools</div>
         <div className="crp-tool-grid">
-          {TOOLS.map(entry => (
-            <Tooltip key={entry.mode} content={`${entry.label} (${entry.shortcut})`} placement="left">
+          {TOOLS.map((entry) => (
+            <Tooltip key={entry.mode} content={`${entry.label} · ${entry.shortcut}`} placement="left">
               <button
                 className={`crp-tool-btn${tool === entry.mode ? ' crp-tool-btn--active' : ''}`}
                 onClick={() => setTool(entry.mode)}
               >
-                <Icon icon={entry.icon as any} size={14} />
-                <span>{entry.label}</span>
+                <span className="crp-tool-icon">{entry.icon}</span>
+                <span className="crp-tool-label">{entry.label}</span>
               </button>
             </Tooltip>
           ))}
         </div>
-      </Section>
+      </div>
 
-      <Section title="Edit">
-        <div className="crp-btn-row">
-          <ActionBtn icon="undo" label="Undo" shortcut="Ctrl+Z" onClick={() => onCommand({ type: 'undo' })} />
-          <ActionBtn icon="redo" label="Redo" shortcut="Ctrl+Y / Ctrl+Shift+Z" onClick={() => onCommand({ type: 'redo' })} />
+      <div className="crp-section">
+        <div className="crp-section-label">Edit</div>
+        <div className="crp-icon-row">
+          <Tooltip content="Copy · Ctrl+C" placement="left">
+            <button className="crp-icon-btn" onClick={() => onCommand({ type: 'copy' })}>⎘</button>
+          </Tooltip>
+          <Tooltip content="Paste · Ctrl+V" placement="left">
+            <button className="crp-icon-btn" onClick={() => onCommand({ type: 'paste' })}>⎗</button>
+          </Tooltip>
+          <Tooltip content="Delete · Del" placement="left">
+            <button className="crp-icon-btn crp-icon-btn--danger" onClick={() => onCommand({ type: 'delete' })}>⌫</button>
+          </Tooltip>
+          <Tooltip content="Escape · Esc" placement="left">
+            <button className="crp-icon-btn" onClick={() => onCommand({ type: 'escape' })}>
+              <span style={{ fontSize: 9, letterSpacing: '0.02em' }}>Esc</span>
+            </button>
+          </Tooltip>
         </div>
-        <div className="crp-btn-row">
-          <ActionBtn icon="duplicate" label="Copy" shortcut="Ctrl+C" onClick={() => onCommand({ type: 'copy' })} />
-          <ActionBtn icon="clipboard" label="Paste" shortcut="Ctrl+V" onClick={() => onCommand({ type: 'paste' })} />
-        </div>
-        <div className="crp-btn-row">
-          <ActionBtn icon="trash" label="Delete" shortcut="Del" onClick={() => onCommand({ type: 'delete' })} danger />
-          <ActionBtn icon="cross" label="Escape" shortcut="Esc" onClick={() => onCommand({ type: 'escape' })} />
-        </div>
-      </Section>
+      </div>
 
-      <Section title="View">
-        <div className="crp-btn-row">
-          <ActionBtn icon="zoom-in" label="Zoom In" shortcut="+" onClick={() => onCommand({ type: 'zoom_in' })} />
-          <ActionBtn icon="zoom-out" label="Zoom Out" shortcut="-" onClick={() => onCommand({ type: 'zoom_out' })} />
+      <div className="crp-section">
+        <div className="crp-section-label">Advanced</div>
+        <div className="crp-icon-row">
+          <Tooltip content="Rotate selection" placement="left">
+            <button className="crp-icon-btn" onClick={() => onCommand({ type: 'context_action', action: 'rotate' })}>↻</button>
+          </Tooltip>
+          <Tooltip content="Trim line" placement="left">
+            <button className="crp-icon-btn crp-icon-btn--trim" onClick={() => onCommand({ type: 'context_action', action: 'trim' })}>✂</button>
+          </Tooltip>
         </div>
-        <ActionBtn icon="zoom-to-fit" label="Reset View" shortcut="0" onClick={() => onCommand({ type: 'zoom_reset' })} wide />
-      </Section>
+      </div>
 
-      <Section title="Advanced Tools">
-        <div className="crp-btn-row">
-          <ActionBtn icon="repeat" label="Rotate" shortcut="Panel / menu" onClick={() => onCommand({ type: 'context_action', action: 'rotate' })} />
-          <ActionBtn icon="cut" label="Trim" shortcut="Panel / menu" onClick={() => onCommand({ type: 'context_action', action: 'trim' })} />
-        </div>
-      </Section>
-
-      <Section title="Snap & Behaviour">
+      <div className="crp-section">
+        <div className="crp-section-label">Behaviour</div>
         <ToggleRow label="Manipulate Line" active={flags.manipulate_line} onToggle={() => toggle('manipulate_line')} />
         <ToggleRow label="Axis Snap" active={flags.snap_axis} onToggle={() => toggle('snap_axis')} />
         <ToggleRow label="Line Match" active={flags.line_match} onToggle={() => toggle('line_match')} />
-        <ToggleRow label="Disable Vanishing Point" active={flags.disable_vpoint} onToggle={() => toggle('disable_vpoint')} />
-      </Section>
+        <ToggleRow label="Hide V-Points" active={flags.disable_vpoint} onToggle={() => toggle('disable_vpoint')} />
+      </div>
 
-      <Section title="Angle Snap Values">
+      <div className="crp-section">
+        <div className="crp-section-label">Angle Snap</div>
         <div className="crp-angle-grid">
           {(state?.angle_snap_values ?? ['', '', '', '']).map((value, index) => (
             <input
               key={index}
               className="crp-angle-input"
               value={value}
-              onChange={e => onCommand({ type: 'angle_snap_set', index, value: e.target.value })}
-              placeholder={`Angle ${index + 1}`}
+              onChange={(e) => onCommand({ type: 'angle_snap_set', index, value: e.target.value })}
+              placeholder={`∠${index + 1}`}
             />
           ))}
         </div>
-      </Section>
+      </div>
 
-      <Section title="Geometry">
-        <div className="crp-stats">
-          <StatRow label="Lines" value={state?.lines.length ?? 0} />
-          <StatRow label="Fixed Dims" value={state ? Object.keys(state.fixed_lengths).length : 0} />
-          <StatRow label="Distances" value={state?.distance_constraints.length ?? 0} />
-          <StatRow label="Angles" value={state?.angle_constraints.length ?? 0} />
-          <StatRow label="Clipboard" value={state?.clipboard.line_count ?? 0} />
-        </div>
-        {state?.selected_id && (
-          <div className="crp-selection-info">
-            <span className="crp-label">Selected</span>
-            <span className="crp-value">{state.selected_id.slice(0, 8)}</span>
-          </div>
-        )}
-        {(state?.multi_selected_ids.length ?? 0) > 1 && (
-          <div className="crp-selection-info">
-            <span className="crp-label">Multi</span>
-            <span className="crp-value">{state?.multi_selected_ids.length} lines</span>
-          </div>
-        )}
-      </Section>
-
-      {state?.rotate_state.active && (
-        <Section title="Rotate">
-          <div className="crp-helper-text">
-            {state.rotate_state.state === 'select_pivot' && 'Pick the pivot vertex on the selected geometry.'}
-            {state.rotate_state.state === 'select_axis' && 'Pick a second vertex to define the rotation axis.'}
-            {state.rotate_state.state === 'rotating' && `Rotation preview: ${state.rotate_state.current_angle_deg.toFixed(1)}°`}
-          </div>
-        </Section>
-      )}
-
-      {state?.trim_state.active && (
-        <Section title="Trim">
-          <div className="crp-angle-grid">
-            <input
-              className="crp-angle-input"
-              value={state.trim_state.trim1_text}
-              placeholder="Trim Point 1"
-              onChange={e => onCommand({ type: 'trim_value_set', point: 1, value: e.target.value })}
-            />
-            <input
-              className="crp-angle-input"
-              value={state.trim_state.trim2_text}
-              placeholder="Trim Point 2"
-              onChange={e => onCommand({ type: 'trim_value_set', point: 2, value: e.target.value })}
-            />
-          </div>
-          <div className="crp-helper-text">{state.trim_state.distance_text || 'Pick two trim points or type distances.'}</div>
-          <ActionBtn icon="endorsed" label="Apply Trim" shortcut="Enter" onClick={() => onCommand({ type: 'trim_apply' })} wide />
-        </Section>
-      )}
-
-      {state?.last_error && (
-        <div className="crp-error">
-          <Icon icon="warning-sign" size={12} />
-          <span>{state.last_error}</span>
-        </div>
-      )}
+      <div className="crp-section crp-section--io">
+        <div className="crp-section-label">File</div>
+        <Tooltip content="Open a previously saved CAD design (SVG)" placement="left">
+          <button className="crp-io-btn" onClick={handleOpen} disabled={iobusy || !openFile}>
+            ↗ Open
+          </button>
+        </Tooltip>
+        <Tooltip content="Import an external floor plan (PDF, SVG, PNG)" placement="left">
+          <button className="crp-io-btn" onClick={handleImport} disabled={iobusy || !openFile}>
+            ↥ Import
+          </button>
+        </Tooltip>
+        <Tooltip content="Save design to BRIGID/svg/" placement="left">
+          <button className="crp-io-btn" onClick={handleSaveSVG} disabled={iobusy || !state?.lines.length || !saveFile}>
+            ⬡ Save SVG
+          </button>
+        </Tooltip>
+        <Tooltip content="Export print-ready PDF to BRIGID/pdf/" placement="left">
+          <button className="crp-io-btn" onClick={handleSavePDF} disabled={iobusy || !state?.lines.length || !saveFile}>
+            ▣ Save PDF
+          </button>
+        </Tooltip>
+      </div>
     </aside>
   )
 }
-
-const Section: React.FC<{ title: string; children: React.ReactNode }> = ({ title, children }) => (
-  <div className="crp-section">
-    <div className="crp-section-title">{title}</div>
-    <div className="crp-section-body">{children}</div>
-  </div>
-)
-
-const ActionBtn: React.FC<{
-  icon: string
-  label: string
-  shortcut: string
-  onClick: () => void
-  danger?: boolean
-  wide?: boolean
-}> = ({ icon, label, shortcut, onClick, danger, wide }) => (
-  <Tooltip content={`${label} (${shortcut})`} placement="left">
-    <button
-      className={`crp-action-btn${danger ? ' crp-action-btn--danger' : ''}${wide ? ' crp-action-btn--wide' : ''}`}
-      onClick={onClick}
-    >
-      <Icon icon={icon as any} size={12} />
-      <span>{label}</span>
-    </button>
-  </Tooltip>
-)
 
 const ToggleRow: React.FC<{ label: string; active: boolean; onToggle: () => void }> = ({ label, active, onToggle }) => (
   <div className={`crp-toggle-row${active ? ' crp-toggle-row--active' : ''}`} onClick={onToggle}>
@@ -208,12 +237,4 @@ const ToggleRow: React.FC<{ label: string; active: boolean; onToggle: () => void
   </div>
 )
 
-const StatRow: React.FC<{ label: string; value: number }> = ({ label, value }) => (
-  <div className="crp-stat-row">
-    <span className="crp-label">{label}</span>
-    <span className="crp-value">{value}</span>
-  </div>
-)
-
 export default CADRightPanel
-

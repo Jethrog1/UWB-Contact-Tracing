@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { FocusStyleManager } from '@blueprintjs/core'
 import { motion } from 'motion/react'
 
@@ -6,24 +6,25 @@ import HotBar from './components/HotBar/HotBar'
 import LeftRail from './components/LeftRail/LeftRail'
 import TabStrip from './components/TabStrip/TabStrip'
 import CADModule from './components/modules/CADModule/CADModule'
+import TagProfiler from './components/modules/TagProfilerModule/TagProfiler'
+import AnchorManager from './components/modules/AnchorManagerModule/AnchorManager'
+import CalibrationTool from './components/modules/CalibrationToolModule/CalibrationTool'
 import { AppModule, WorkspaceTab } from './types'
 import './App.css'
 
 FocusStyleManager.onlyShowFocusOnTabs()
 
-let nextTabId = 1
-
 const MODULE_LABELS: Record<AppModule, { title: string; sub: string; icon: string }> = {
-  profile: { title: 'Profile Manager', sub: 'Workspace defaults land here so CAD is entered intentionally.', icon: '◎' },
-  calibration: { title: 'Calibration Tool', sub: 'Tag distance correction and fitting.', icon: '◇' },
-  cad: { title: '2D CAD Modeling', sub: 'Restored Python CAD backend inside the new shell.', icon: '□' },
-  anchors: { title: 'Anchor Manager', sub: 'UWB anchor configuration and layout.', icon: '⊕' },
-  rtls: { title: 'RTLS Dashboard', sub: 'Real-time location tracking monitor.', icon: '⊗' },
+  profile: { title: 'Profile Manager', sub: 'Workspace defaults land here so CAD is entered intentionally.', icon: 'P' },
+  calibration: { title: 'Calibration Tool', sub: 'Tag distance correction and fitting.', icon: 'C' },
+  cad: { title: '2D CAD Modeling', sub: 'Restored Python CAD backend inside the new shell.', icon: 'Q' },
+  anchors: { title: 'Anchor Manager', sub: 'UWB anchor configuration and layout.', icon: 'A' },
+  rtls: { title: 'RTLS Dashboard', sub: 'Real-time location tracking monitor.', icon: 'R' },
 }
 
 const EmptyWorkspacePanel: React.FC = () => (
   <div className="app-empty-state">
-    <div className="app-empty-icon">＋</div>
+    <div className="app-empty-icon">+</div>
     <div className="app-empty-title">No Workspace Open</div>
     <div className="app-empty-sub">Start from File / New Workspace or use the + button in the tab strip.</div>
   </div>
@@ -41,30 +42,59 @@ const EmptyModulePanel: React.FC<{ module: AppModule }> = ({ module }) => {
   )
 }
 
-const StubRightPanel: React.FC<{ title: string; body: string }> = ({ title, body }) => (
-  <motion.aside
-    initial={{ opacity: 0, x: 16 }}
-    animate={{ opacity: 1, x: 0 }}
-    transition={{ duration: 0.3 }}
-    style={{
-      gridArea: 'right',
-      width: 300,
-      background: '#0c1220',
-      borderLeft: '1px solid rgba(56,68,94,0.35)',
-      display: 'flex',
-      flexDirection: 'column',
-      justifyContent: 'center',
-      padding: 20,
-      color: '#5a6a82',
-      gap: 8,
-    }}
-  >
-    <div style={{ fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.08em', color: '#2d3d50' }}>{title}</div>
-    <div style={{ fontSize: 13, color: '#94a3b8', lineHeight: 1.5 }}>{body}</div>
-  </motion.aside>
-)
+const WorkspaceHost: React.FC<{
+  workspace: WorkspaceTab
+  isActive: boolean
+}> = ({ workspace, isActive }) => {
+  const [mountedModules, setMountedModules] = useState<Set<AppModule>>(() => new Set([workspace.module]))
+
+  useEffect(() => {
+    setMountedModules(current => {
+      if (current.has(workspace.module)) return current
+      return new Set([...current, workspace.module])
+    })
+  }, [workspace.module])
+
+  const showModule = (module: AppModule) => workspace.module === module
+  const shouldMountModule = (module: AppModule) => mountedModules.has(module)
+
+  return (
+    <div className={`app-workspace-host${isActive ? ' app-workspace-host--active' : ''}`}>
+      {shouldMountModule('cad') && (
+        <div className={`app-workspace-module${showModule('cad') ? ' app-workspace-module--visible' : ''}`}>
+          <CADModule workspaceId={workspace.id} />
+        </div>
+      )}
+
+      {shouldMountModule('profile') && (
+        <div className={`app-workspace-module${showModule('profile') ? ' app-workspace-module--visible' : ''}`}>
+          <TagProfiler workspaceId={workspace.id} />
+        </div>
+      )}
+
+      {shouldMountModule('anchors') && (
+        <div className={`app-workspace-module${showModule('anchors') ? ' app-workspace-module--visible' : ''}`}>
+          <AnchorManager workspaceId={workspace.id} />
+        </div>
+      )}
+
+      {shouldMountModule('calibration') && (
+        <div className={`app-workspace-module${showModule('calibration') ? ' app-workspace-module--visible' : ''}`}>
+          <CalibrationTool workspaceId={workspace.id} />
+        </div>
+      )}
+
+      {shouldMountModule('rtls') && (
+        <div className={`app-workspace-module${showModule('rtls') ? ' app-workspace-module--visible' : ''}`}>
+          <EmptyModulePanel module="rtls" />
+        </div>
+      )}
+    </div>
+  )
+}
 
 const App: React.FC = () => {
+  const nextTabIdRef = useRef(1)
   const [tabs, setTabs] = useState<WorkspaceTab[]>([])
   const [activeTabId, setActiveTabId] = useState<string | null>(null)
 
@@ -74,10 +104,10 @@ const App: React.FC = () => {
   )
 
   const handleNewTab = useCallback(() => {
-    const id = `ws-${nextTabId++}`
+    const id = `ws-${nextTabIdRef.current++}`
     const newTab: WorkspaceTab = {
       id,
-      name: `Workspace ${nextTabId - 1}`,
+      name: `Workspace ${nextTabIdRef.current - 1}`,
       module: 'profile',
       modified: false,
     }
@@ -129,6 +159,7 @@ const App: React.FC = () => {
         <TabStrip
           tabs={tabs}
           activeTabId={activeTabId}
+          activeModule={activeModule}
           onTabSelect={setActiveTabId}
           onTabClose={handleTabClose}
           onTabReorder={handleTabReorder}
@@ -137,25 +168,11 @@ const App: React.FC = () => {
 
         <LeftRail activeModule={activeModule} onModuleChange={handleModuleChange} disabled={!activeTab} />
 
-        {!activeTab ? (
-          <>
-            <EmptyWorkspacePanel />
-            <StubRightPanel
-              title="Workspace"
-              body="New workspaces start in Profiling by default. Open CAD only when you want to enter the restored drawing module."
-            />
-          </>
-        ) : activeTab.module === 'cad' ? (
-          <CADModule />
-        ) : (
-          <>
-            <EmptyModulePanel module={activeTab.module} />
-            <StubRightPanel
-              title={MODULE_LABELS[activeTab.module].title}
-              body={MODULE_LABELS[activeTab.module].sub}
-            />
-          </>
-        )}
+        {tabs.map(tab => (
+          <WorkspaceHost key={tab.id} workspace={tab} isActive={tab.id === activeTabId} />
+        ))}
+
+        {!activeTab && <EmptyWorkspacePanel />}
       </motion.div>
     </div>
   )

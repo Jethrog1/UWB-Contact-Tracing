@@ -144,6 +144,14 @@ class HeadlessCADDocument(main_cad.FloorPlanCAD):
         self._request_redraw()
         self.flush()
 
+    def draw_axes(self):
+        """Override: CAD canvas should render with no background grid or axis lines."""
+        return
+
+    def draw_origin_marker(self):
+        """Override: suppress the origin marker along with the axis lines."""
+        return
+
     def _request_redraw(self):
         self._redraw_pending = True
 
@@ -496,4 +504,3 @@ class HeadlessCADDocument(main_cad.FloorPlanCAD):
             state["last_notice"] = self.last_notice
 
         return state
-

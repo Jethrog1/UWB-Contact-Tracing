@@ -1,9 +1,16 @@
 from __future__ import annotations
 
+import math
 from typing import Any
 
 from CAD.headless_app import HeadlessCADDocument
+from CAD.main_cad import Line
 from CAD.runtime import KeyEvent, MouseEvent
+from utilities.importers.pdf_importer import extract_lines_from_pdf
+from utilities.importers.svg_importer import extract_styled_segments_from_svg
+from utilities.importers.image_importer import extract_lines_from_image
+from utilities.exporters.svg_exporter import export_lines_to_svg
+from utilities.exporters.pdf_exporter import export_lines_to_pdf
 
 
 CTRL_MASK = 0x0004
@@ -121,6 +128,14 @@ class CADEngine:
                     self.doc.trim._apply_trim()
             elif kind == "context_close":
                 self.doc.dropdown.close_menu()
+            elif kind == "open_cad":
+                self._handle_import(str(cmd.get("filepath", "")))  # SVG with metadata → perfect roundtrip
+            elif kind == "import_file":
+                self._handle_import(str(cmd.get("filepath", "")))
+            elif kind == "export_svg":
+                self._handle_export_svg(str(cmd.get("filepath", "")))
+            elif kind == "export_pdf":
+                self._handle_export_pdf(str(cmd.get("filepath", "")))
             else:
                 self.doc.post_error("CAD Command", f"Unsupported command: {kind}")
         except Exception as exc:
@@ -240,3 +255,76 @@ class CADEngine:
                 self.doc.trim.trim2_var = type(self.doc.snap_angle_vars[0])("")
             self.doc.trim.trim2_var.set(text)
             self.doc.trim._on_entry_change(2)
+
+    # ── Import / Export ────────────────────────────────────────────────
+
+    def _handle_import(self, filepath: str) -> None:
+        if not filepath:
+            self.doc.post_error("Import", "No file path provided.")
+            return
+
+        fp_lower = filepath.lower()
+        if fp_lower.endswith(".pdf"):
+            segments, error = extract_lines_from_pdf(filepath)
+            entries = [{"segment": s, "color": "#4a9eff"} for s in segments]
+        elif fp_lower.endswith(".svg"):
+            entries, error = extract_styled_segments_from_svg(filepath)
+        elif any(fp_lower.endswith(ext) for ext in (".png", ".jpg", ".jpeg", ".bmp", ".tiff", ".tif")):
+            segments, error = extract_lines_from_image(filepath)
+            entries = [{"segment": s, "color": "#4a9eff"} for s in segments]
+        else:
+            self.doc.post_error("Import", f"Unsupported file type. Use PDF, SVG, or PNG/JPG.")
+            return
+
+        if error:
+            self.doc.post_error("Import Failed", error)
+            return
+        if not entries:
+            self.doc.post_error("Import", "No geometry found in file.")
+            return
+
+        # Centre imported geometry on the current viewport
+        all_wx = [e["segment"][0] for e in entries] + [e["segment"][2] for e in entries]
+        all_wy = [e["segment"][1] for e in entries] + [e["segment"][3] for e in entries]
+        geo_cx = (min(all_wx) + max(all_wx)) / 2.0
+        geo_cy = (min(all_wy) + max(all_wy)) / 2.0
+
+        vp = self.doc.vp
+        vp_cx, vp_cy = vp.screen_to_world(
+            self.doc.canvas.winfo_width() / 2,
+            self.doc.canvas.winfo_height() / 2,
+        )
+        dx = vp_cx - geo_cx
+        dy = vp_cy - geo_cy
+
+        for entry in entries:
+            x1, y1, x2, y2 = entry["segment"]
+            color = entry.get("color", "#4a9eff") or "#4a9eff"
+            line = Line(x1 + dx, y1 + dy, x2 + dx, y2 + dy, color=color)
+            self.doc.lines.append(line)
+
+        self.doc._request_redraw()
+        fname = filepath.replace("\\", "/").split("/")[-1]
+        self.doc.post_info("Imported", f"{len(entries)} segments from {fname}")
+
+    def _handle_export_svg(self, filepath: str) -> None:
+        if not filepath:
+            self.doc.post_error("Export SVG", "No file path provided.")
+            return
+        success, error = export_lines_to_svg(self.doc.lines, filepath)
+        if success:
+            fname = filepath.replace("\\", "/").split("/")[-1]
+            self.doc.post_info("Saved SVG", fname)
+        else:
+            self.doc.post_error("Export SVG Failed", error)
+
+    def _handle_export_pdf(self, filepath: str) -> None:
+        if not filepath:
+            self.doc.post_error("Export PDF", "No file path provided.")
+            return
+        success, error = export_lines_to_pdf(self.doc.lines, filepath)
+        if success:
+            fname = filepath.replace("\\", "/").split("/")[-1]
+            self.doc.post_info("Saved PDF", fname)
+        else:
+            self.doc.post_error("Export PDF Failed", error)
