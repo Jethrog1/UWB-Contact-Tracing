@@ -387,10 +387,11 @@ const CalibrationTool: React.FC<CalibrationToolProps> = ({ workspaceId, workspac
     if (!selectedTagId) return
     setBusy(c => ({ ...c, save: true }))
     try {
-      const data = await postJson<CalibrationRuntimeSnapshot & { success: boolean; error?: string }>(`/api/calibration/tag/save/${encodeURIComponent(selectedTagId)}?workspace_id=${encodeURIComponent(workspaceId)}`)
+      const data = await postJson<CalibrationRuntimeSnapshot & { success: boolean; error?: string; calibration_date?: string }>(`/api/calibration/tag/save/${encodeURIComponent(selectedTagId)}?workspace_id=${encodeURIComponent(workspaceId)}`)
       if (!data.success) { showStatus(data.error ?? 'Could not save tag.', 'error'); return }
       applySnapshot(data)
-      showStatus(`Saved calibration for ${selectedTagId}.`, 'ok')
+      const dateStr = data.calibration_date ?? new Date().toISOString().split('T')[0]
+      showStatus(`Equations sent to profile "${selectedTagId}" — ${dateStr}`, 'ok')
     } catch { showStatus('Could not reach backend.', 'error') }
     finally { setBusy(c => ({ ...c, save: false })) }
   }
@@ -916,8 +917,18 @@ const CalibrationTool: React.FC<CalibrationToolProps> = ({ workspaceId, workspac
                     ))}
                   </div>
                   <div className="ct-runtime-note" style={{ marginTop: 4 }}>
-                    Saved: {selectedTag.saved_profile_equations[activeAnchorId] || 'Raw distance'}
+                    In profile: {selectedTag.saved_profile_equations[activeAnchorId] || 'Raw distance'}
                   </div>
+
+                  <button
+                    className="ct-btn ct-btn--primary ct-btn--full"
+                    style={{ marginTop: 8 }}
+                    onClick={handleSaveTag}
+                    disabled={!selectedTagId || busy.save}
+                    title={`Export all equations to the tag profile for ${selectedTagId}`}
+                  >
+                    {busy.save ? 'Sending…' : 'Send to Profile'}
+                  </button>
                 </section>
 
                 {/* SMOOTHING FILTER */}

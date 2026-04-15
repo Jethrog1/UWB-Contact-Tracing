@@ -40,8 +40,9 @@ const TabStrip: React.FC<TabStripProps> = ({
   onOpenFolder,
   onViewCommand,
 }) => {
-  // Show view controls (undo/redo/zoom) for CAD, Calibration, and RTLS modules
-  const showViewControls = activeModule === 'cad' || activeModule === 'calibration' || activeModule === 'rtls'
+  // Show view controls for all canvas-based modules; undo/redo only where supported
+  const showViewControls = activeModule === 'cad' || activeModule === 'calibration' || activeModule === 'rtls' || activeModule === 'anchors'
+  const showUndoRedo = activeModule === 'cad' || activeModule === 'anchors'
   const showWorkspaceActions = activeModule === 'rtls'
   const [searchVisible, setSearchVisible] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
@@ -206,18 +207,21 @@ const TabStrip: React.FC<TabStripProps> = ({
               <div className="tab-strip__view-sep" />
             </>
           )}
-          {VIEW_CONTROLS.map(vc => (
-            <button
-              key={vc.cmd}
-              className="tab-strip__view-btn"
-              title={vc.title}
-              onClick={() => handleViewCmd(vc.cmd)}
-              disabled={!activeTabId}
-            >
-              <Icon icon={vc.icon as any} size={11} />
-              {vc.label && <span className="tab-strip__view-label">{vc.label}</span>}
-            </button>
-          ))}
+          {VIEW_CONTROLS.map(vc => {
+            if ((vc.cmd === 'undo' || vc.cmd === 'redo') && !showUndoRedo) return null
+            return (
+              <button
+                key={vc.cmd}
+                className="tab-strip__view-btn"
+                title={vc.title}
+                onClick={() => handleViewCmd(vc.cmd)}
+                disabled={!activeTabId}
+              >
+                <Icon icon={vc.icon as any} size={11} />
+                {vc.label && <span className="tab-strip__view-label">{vc.label}</span>}
+              </button>
+            )
+          })}
           <div className="tab-strip__view-sep" />
         </div>
       )}

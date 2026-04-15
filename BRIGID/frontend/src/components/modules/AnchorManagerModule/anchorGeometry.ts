@@ -101,6 +101,34 @@ export const roomContainsWorldPoint = (room: RoomData, wx: number, wy: number, t
   return room.segments_ft.some(seg => pointToSegmentDistance(wx, wy, seg.x1, seg.y1, seg.x2, seg.y2) <= tolerance)
 }
 
+export const findConnectedSegments = (
+  start: SegmentData,
+  allSegments: SegmentData[],
+  eps = 1e-4,
+): SegmentData[] => {
+  const sharesEndpoint = (a: SegmentData, b: SegmentData): boolean => {
+    const ap: Point[] = [[a.x1, a.y1], [a.x2, a.y2]]
+    const bp: Point[] = [[b.x1, b.y1], [b.x2, b.y2]]
+    return ap.some(pa => bp.some(pb => pointsClose(pa, pb, eps)))
+  }
+
+  const connected = new Set<SegmentData>([start])
+  const queue: SegmentData[] = [start]
+
+  while (queue.length > 0) {
+    const current = queue.shift()!
+    for (const seg of allSegments) {
+      if (connected.has(seg)) continue
+      if (sharesEndpoint(current, seg)) {
+        connected.add(seg)
+        queue.push(seg)
+      }
+    }
+  }
+
+  return [...connected]
+}
+
 export const findSnapTarget = (
   x: number,
   y: number,
