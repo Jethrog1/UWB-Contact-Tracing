@@ -6,9 +6,9 @@ import FieldInput from './FieldInput'
 const ANCHOR_IDS = ['A0', 'A1', 'A2', 'A3']
 const DEVICE_TYPES = ['Wrist Band', 'Arm Band', 'Belt Clip-on', 'Breast Pocket']
 const HEIGHT_FIELDS: Record<string, string> = {
-  'Wrist Band':    'wrist_to_floor_ft',
-  'Arm Band':      'arm_to_floor_ft',
-  'Belt Clip-on':  'hip_to_floor_ft',
+  'Wrist Band': 'wrist_to_floor_ft',
+  'Arm Band': 'arm_to_floor_ft',
+  'Belt Clip-on': 'hip_to_floor_ft',
   'Breast Pocket': 'breast_to_floor_ft',
 }
 
@@ -37,14 +37,14 @@ const ProfileFormSection: React.FC<Props> = ({ profile, onChange }) => {
         <SectionCard title="Identity" subtitle="Profile identification">
           <FieldInput label="Tag ID *" value={profile.tag_id}
             onChange={v => set(['tag_id'], v)}
-            help="Unique identifier for this tag (used as filename). Required." />
+            help="Hardware ID. Required." />
           <FieldInput label="Profile ID" value={profile.identity.profile_id}
             onChange={v => set(['identity', 'profile_id'], v)}
             placeholder="e.g. TAG-001"
-            help="Human-readable profile code." />
+            help="Used as profile name when saving." />
           <FieldInput label="Name" value={profile.identity.name}
             onChange={v => set(['identity', 'name'], v)}
-            help="Display name for this tag profile." />
+            help="Person's name associated with this tag." />
           <FieldInput label="Description" value={profile.identity.description}
             onChange={v => set(['identity', 'description'], v)}
             type="textarea" help="Optional notes about the tag or wearer." />
