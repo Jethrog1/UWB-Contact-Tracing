@@ -1,5 +1,4 @@
 import React, { useEffect, useRef, useState } from 'react'
-import { Icon } from '@blueprintjs/core'
 import './HotBar.css'
 
 type MenuAction = 'new-workspace' | 'open-workspace' | 'save' | 'save-as' | 'close-tab' | null
@@ -126,7 +125,6 @@ const HotBar: React.FC<HotBarProps> = ({ hasWorkspace, onNewWorkspace, onOpenWor
   return (
     <div className="hot-bar electron-drag" ref={barRef}>
       <div className="hot-bar__brand electron-no-drag">
-        <Icon icon="locate" size={13} color="#38bdf8" />
         <span className="hot-bar__brand-name">BRIGID</span>
       </div>
 
