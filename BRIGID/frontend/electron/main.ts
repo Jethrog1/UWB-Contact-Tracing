@@ -16,6 +16,37 @@ const execFileAsync = promisify(execFile)
 
 const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms))
 
+function getBackendVenvPython(backendDir: string): string {
+  return process.platform === 'win32'
+    ? join(backendDir, '.venv', 'Scripts', 'python.exe')
+    : join(backendDir, '.venv', 'bin', 'python')
+}
+
+async function ensureCadPython(backendDir: string): Promise<{ pythonCmd: string; pythonArgs: string[] }> {
+  const venvPython = getBackendVenvPython(backendDir)
+  if (existsSync(venvPython)) {
+    return { pythonCmd: venvPython, pythonArgs: [] }
+  }
+
+  const fallbackPythonCmd = process.platform === 'win32' ? 'py' : 'python3'
+  const fallbackPythonArgs = process.platform === 'win32' ? ['-3'] : []
+
+  console.log('[main] Backend virtualenv missing or incomplete. Rebuilding...')
+  await execFileAsync(
+    fallbackPythonCmd,
+    [...fallbackPythonArgs, '-m', 'venv', '--clear', '.venv'],
+    { cwd: backendDir, env: { ...process.env, PYTHONUNBUFFERED: '1' } },
+  )
+
+  await execFileAsync(
+    getBackendVenvPython(backendDir),
+    ['-m', 'pip', 'install', '-r', 'requirements.txt'],
+    { cwd: backendDir, env: { ...process.env, PYTHONUNBUFFERED: '1' } },
+  )
+
+  return { pythonCmd: getBackendVenvPython(backendDir), pythonArgs: [] }
+}
+
 async function isCadServerReachable(): Promise<boolean> {
   const controller = new AbortController()
   const timeout = setTimeout(() => controller.abort(), 1200)
@@ -116,17 +147,7 @@ async function startCadServer(): Promise<void> {
     ? join(app.getAppPath(), '..', 'backend')
     : join(process.resourcesPath, 'backend')
 
-  const venvPython = process.platform === 'win32'
-    ? join(backendDir, '.venv', 'Scripts', 'python.exe')
-    : join(backendDir, '.venv', 'bin', 'python')
-
-  const pythonCmd = existsSync(venvPython)
-    ? venvPython
-    : (process.platform === 'win32' ? 'py' : 'python3')
-
-  const pythonArgs = existsSync(venvPython)
-    ? []
-    : (process.platform === 'win32' ? ['-3'] : [])
+  const { pythonCmd, pythonArgs } = await ensureCadPython(backendDir)
 
   console.log(`[main] Starting CAD server in ${backendDir}`)
   console.log(`[main] Using Python executable: ${pythonCmd}`)
