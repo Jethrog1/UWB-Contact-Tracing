@@ -2,10 +2,18 @@ import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { AnchorData, FloorplanManifest, RoomData, SegmentData } from '../../../types'
 import AnchorEditPanel from './AnchorEditPanel'
 import AnchorManagerCanvas, { AnchorManagerCanvasHandle, AnchorManagerViewport } from './AnchorManagerCanvas'
-import { roomContainsWorldPoint } from './anchorGeometry'
+import RoomView from './RoomView'
+import { findConnectedSegments, roomContainsWorldPoint } from './anchorGeometry'
 import './AnchorManager.css'
 
 const API = 'http://localhost:8765'
+
+type ActiveTool = 'cursor' | 'select' | 'smartSelect'
+
+interface RoomViewTab {
+  id: string
+  roomName: string
+}
 
 type LoadedSegment = SegmentData & { color?: string }
 
@@ -114,6 +122,10 @@ const AnchorManager: React.FC<AnchorManagerProps> = ({ workspaceId }) => {
   const [status, setStatus] = useState<string>('')
   const [statusKind, setStatusKind] = useState<'ok' | 'error' | ''>('')
   const [createDialog, setCreateDialog] = useState<CreateRoomDialog>({ open: false, name: '', segments: [] })
+  const [activeTool, setActiveTool] = useState<ActiveTool>('cursor')
+  const [hoverRoomName, setHoverRoomName] = useState<string | null>(null)
+  const [roomViewTabs, setRoomViewTabs] = useState<RoomViewTab[]>([])
+  const [activeInternalTab, setActiveInternalTab] = useState<string>('anchor-view')
 
   useEffect(() => {
     workspaceStateRef.current = workspaceState
@@ -293,17 +305,33 @@ const AnchorManager: React.FC<AnchorManagerProps> = ({ workspaceId }) => {
   }, [workspaceState.projectName, workspaceState.rooms, workspaceState.svgPath])
 
   const handleSegmentClick = useCallback((segment: SegmentData, shiftHeld: boolean) => {
-    updateWorkspaceState(current => {
-      const key = `${segment.x1},${segment.y1},${segment.x2},${segment.y2}`
-      const exists = current.selectedSegments.some(item => `${item.x1},${item.y1},${item.x2},${item.y2}` === key)
-      const nextSegments = shiftHeld
-        ? (exists
-          ? current.selectedSegments.filter(item => `${item.x1},${item.y1},${item.x2},${item.y2}` !== key)
-          : [...current.selectedSegments, segment])
-        : (exists && current.selectedSegments.length === 1 ? [] : [segment])
-      return { ...current, selectedSegments: nextSegments }
-    })
-  }, [updateWorkspaceState])
+    if (activeTool === 'smartSelect') {
+      updateWorkspaceState(current => {
+        const connected = findConnectedSegments(segment, current.allSegments)
+        if (shiftHeld) {
+          const existingKeys = new Set(current.selectedSegments.map(s => `${s.x1},${s.y1},${s.x2},${s.y2}`))
+          const merged = [...current.selectedSegments]
+          for (const seg of connected) {
+            const key = `${seg.x1},${seg.y1},${seg.x2},${seg.y2}`
+            if (!existingKeys.has(key)) merged.push(seg)
+          }
+          return { ...current, selectedSegments: merged }
+        }
+        return { ...current, selectedSegments: connected }
+      })
+    } else {
+      updateWorkspaceState(current => {
+        const key = `${segment.x1},${segment.y1},${segment.x2},${segment.y2}`
+        const exists = current.selectedSegments.some(item => `${item.x1},${item.y1},${item.x2},${item.y2}` === key)
+        const nextSegments = shiftHeld
+          ? (exists
+            ? current.selectedSegments.filter(item => `${item.x1},${item.y1},${item.x2},${item.y2}` !== key)
+            : [...current.selectedSegments, segment])
+          : (exists && current.selectedSegments.length === 1 ? [] : [segment])
+        return { ...current, selectedSegments: nextSegments }
+      })
+    }
+  }, [activeTool, updateWorkspaceState])
 
   const handleCreateRoom = useCallback(() => {
     if (workspaceState.selectedSegments.length === 0) {
@@ -515,6 +543,27 @@ const AnchorManager: React.FC<AnchorManagerProps> = ({ workspaceId }) => {
     canvasRef.current?.focusCanvas()
   }, [])
 
+  const handleRoomDoubleClick = useCallback((roomName: string) => {
+    const tabId = `room-view-${roomName}`
+    setRoomViewTabs(prev => {
+      if (prev.some(t => t.id === tabId)) return prev
+      return [...prev, { id: tabId, roomName }]
+    })
+    setActiveInternalTab(tabId)
+  }, [])
+
+  const handleCloseRoomTab = useCallback((tabId: string) => {
+    setRoomViewTabs(prev => {
+      const remaining = prev.filter(t => t.id !== tabId)
+      setActiveInternalTab(current => {
+        if (current !== tabId) return current
+        const idx = prev.findIndex(t => t.id === tabId)
+        return remaining[idx - 1]?.id ?? 'anchor-view'
+      })
+      return remaining
+    })
+  }, [])
+
   useEffect(() => {
     const handleViewCommand = (event: Event) => {
       const detail = (event as CustomEvent).detail as { cmd?: string; workspaceId?: string }
@@ -556,6 +605,28 @@ const AnchorManager: React.FC<AnchorManagerProps> = ({ workspaceId }) => {
           {workspaceState.allSegments.length > 0 && (
             <>
               <div className="am-toolbar-sep" />
+              <button
+                className={`am-btn am-btn--ghost${activeTool === 'cursor' ? ' am-btn--active' : ''}`}
+                onClick={() => setActiveTool('cursor')}
+                title="Cursor — pan and place anchors (Ctrl+Click)"
+              >
+                Cursor
+              </button>
+              <button
+                className={`am-btn am-btn--ghost${activeTool === 'select' ? ' am-btn--active' : ''}`}
+                onClick={() => setActiveTool('select')}
+                title="Select Lines — click or shift-click segments to select"
+              >
+                Select
+              </button>
+              <button
+                className={`am-btn am-btn--ghost${activeTool === 'smartSelect' ? ' am-btn--active' : ''}`}
+                onClick={() => setActiveTool('smartSelect')}
+                title="Smart Select — select connected wall segments automatically"
+              >
+                Smart Select
+              </button>
+              <div className="am-toolbar-sep" />
               <button className="am-btn am-btn--ghost" onClick={handleEscapeCanvas}>Esc</button>
             </>
           )}
@@ -565,6 +636,86 @@ const AnchorManager: React.FC<AnchorManagerProps> = ({ workspaceId }) => {
         {status && <div className={`am-status am-status--${statusKind}`}>{status}</div>}
       </div>
 
+      {roomViewTabs.length > 0 && (
+        <div className="am-inner-tabbar">
+          <button
+            className={`am-inner-tab${activeInternalTab === 'anchor-view' ? ' am-inner-tab--active' : ''}`}
+            onClick={() => setActiveInternalTab('anchor-view')}
+          >
+            Anchor View
+          </button>
+          {roomViewTabs.map(tab => (
+            <button
+              key={tab.id}
+              className={`am-inner-tab${activeInternalTab === tab.id ? ' am-inner-tab--active' : ''}`}
+              onClick={() => setActiveInternalTab(tab.id)}
+            >
+              {tab.roomName}
+              <span
+                className="am-inner-tab-close"
+                role="button"
+                onClick={e => { e.stopPropagation(); handleCloseRoomTab(tab.id) }}
+              >×</span>
+            </button>
+          ))}
+        </div>
+      )}
+
+      {activeInternalTab !== 'anchor-view' && roomViewTabs.length > 0 ? (
+        (() => {
+          const tab = roomViewTabs.find(t => t.id === activeInternalTab)
+          const room = tab ? workspaceState.rooms.find(r => r.room_name === tab.roomName) : null
+          return room ? (
+            <RoomView
+              key={tab!.id}
+              room={room}
+              workspaceId={workspaceId}
+              selectedAnchorId={workspaceState.selectedAnchorId}
+              onAnchorSelect={anchorId => updateWorkspaceState(current => ({ ...current, selectedAnchorId: anchorId }))}
+              onAnchorPlace={(localX, localY) => {
+                const roomIndex = workspaceStateRef.current.rooms.findIndex(r => r.room_name === room.room_name) + 1
+                const nextIdx = anchorCounter.current[room.room_name] ?? room.anchors.length
+                anchorCounter.current[room.room_name] = nextIdx + 1
+                const anchorId = `R${roomIndex}A${nextIdx}`
+                commitWorkspaceState(state => ({
+                  ...state,
+                  rooms: state.rooms.map(r => r.room_name !== room.room_name ? r : {
+                    ...r,
+                    anchors: [...r.anchors, { id: anchorId, hw_id: '', x_ft: localX, y_ft: localY, z_ft: 0 }],
+                    reference_anchor_id: r.reference_anchor_id ?? anchorId,
+                  }),
+                  selectedAnchorId: anchorId,
+                }))
+              }}
+              onAnchorUpdate={(anchorId, patch) => handleAnchorUpdate(room.room_name, anchorId, patch)}
+              onAnchorDelete={anchorId => handleAnchorDelete(room.room_name, anchorId)}
+              onAnchorMoveStart={(_anchorId) => { dragSnapshotRef.current = cloneState(workspaceStateRef.current) }}
+              onAnchorMove={(anchorId, localX, localY) => {
+                updateWorkspaceState(current => ({
+                  ...current,
+                  rooms: current.rooms.map(r => r.room_name !== room.room_name ? r : {
+                    ...r,
+                    anchors: r.anchors.map(a => a.id !== anchorId ? a : { ...a, x_ft: localX, y_ft: localY }),
+                  }),
+                  selectedAnchorId: anchorId,
+                }))
+              }}
+              onAnchorMoveEnd={() => {
+                const before = dragSnapshotRef.current
+                dragSnapshotRef.current = null
+                if (!before) return
+                if (roomStateSignature(before) === roomStateSignature(workspaceStateRef.current)) return
+                setUndoStack(stack => [...stack.slice(-49), before])
+                setRedoStack([])
+              }}
+            />
+          ) : (
+            <div className="am-room-view">
+              <div className="am-panel-empty">Room no longer exists. Close this tab.</div>
+            </div>
+          )
+        })()
+      ) : (
       <div className="am-workspace">
         <div className="am-canvas-wrap">
           {workspaceState.allSegments.length === 0 ? (
@@ -583,23 +734,32 @@ const AnchorManager: React.FC<AnchorManagerProps> = ({ workspaceId }) => {
                 selectedAnchorId={workspaceState.selectedAnchorId}
                 selectedSegments={workspaceState.selectedSegments}
                 viewport={workspaceState.viewport}
+                activeTool={activeTool}
+                hoverRoomName={hoverRoomName}
                 onViewportChange={viewport => updateWorkspaceState(current => ({ ...current, viewport }))}
                 onSegmentClick={handleSegmentClick}
                 onCanvasCtrlClick={handleCanvasCtrlClick}
+                onRoomClick={roomName => updateWorkspaceState(current => ({ ...current, selectedRoomName: roomName, selectedAnchorId: null }))}
+                onRoomHover={setHoverRoomName}
                 onAnchorClick={handleAnchorClick}
                 onAnchorMoveStart={handleAnchorMoveStart}
                 onAnchorMove={handleAnchorMove}
                 onAnchorMoveEnd={handleAnchorMoveEnd}
                 onNudgeAnchor={handleNudgeAnchor}
+                onCanvasContextMenu={handleCreateRoom}
+                onRoomDoubleClick={handleRoomDoubleClick}
               />
 
               <AnchorEditPanel
                 rooms={workspaceState.rooms}
                 selectedRoomName={workspaceState.selectedRoomName}
                 selectedAnchorId={workspaceState.selectedAnchorId}
+                hoverRoomName={hoverRoomName}
                 canUndo={undoStack.length > 0}
                 canRedo={redoStack.length > 0}
                 onRoomSelect={roomName => updateWorkspaceState(current => ({ ...current, selectedRoomName: roomName }))}
+                onRoomHover={setHoverRoomName}
+                onRoomDoubleClick={handleRoomDoubleClick}
                 onAnchorUpdate={handleAnchorUpdate}
                 onAnchorDelete={handleAnchorDelete}
                 onEdgesUpdate={handleEdgesUpdate}
@@ -630,6 +790,7 @@ const AnchorManager: React.FC<AnchorManagerProps> = ({ workspaceId }) => {
           )}
         </div>
       </div>
+      )}
 
       {createDialog.open && (
         <div className="am-dialog-overlay" onClick={() => setCreateDialog(dialog => ({ ...dialog, open: false }))}>

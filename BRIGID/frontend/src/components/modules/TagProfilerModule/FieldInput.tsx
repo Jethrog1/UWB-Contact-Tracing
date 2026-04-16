@@ -1,4 +1,5 @@
 import React from 'react'
+import { Tooltip } from '@blueprintjs/core'
 
 interface FieldInputProps {
   label: string
@@ -29,7 +30,14 @@ const FieldInput: React.FC<FieldInputProps> = ({
     <div className="tp-field-label-row">
       <label className="tp-field-label">{label}</label>
       {help && (
-        <span className="tp-field-help" title={help}>?</span>
+        <Tooltip
+          content={<span style={{ fontSize: 10, letterSpacing: '0.04em' }}>{help}</span>}
+          placement="right"
+          minimal
+          hoverOpenDelay={150}
+        >
+          <span className="tp-field-help">?</span>
+        </Tooltip>
       )}
     </div>
     {type === 'select' ? (

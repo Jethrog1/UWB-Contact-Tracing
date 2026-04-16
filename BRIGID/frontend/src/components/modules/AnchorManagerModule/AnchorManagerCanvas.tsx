@@ -8,8 +8,10 @@ import React, {
 } from 'react'
 import { RoomData, SegmentData } from '../../../types'
 import {
+  chainSegmentsToPolygon,
   findSnapTarget,
   getAnchorWorldPosition,
+  pointInPolygon,
   roomContainsWorldPoint,
 } from './anchorGeometry'
 
@@ -32,6 +34,8 @@ interface AnchorHit {
   roomName: string
 }
 
+type ActiveTool = 'cursor' | 'select' | 'smartSelect'
+
 interface AnchorManagerCanvasProps {
   allSegments: SegmentData[]
   rooms: RoomData[]
@@ -39,14 +43,20 @@ interface AnchorManagerCanvasProps {
   selectedAnchorId: string | null
   selectedSegments: SegmentData[]
   viewport: AnchorManagerViewport
+  activeTool: ActiveTool
+  hoverRoomName: string | null
   onViewportChange: (viewport: AnchorManagerViewport) => void
   onSegmentClick: (seg: SegmentData, shiftHeld: boolean) => void
   onCanvasCtrlClick: (worldX: number, worldY: number) => void
+  onRoomClick: (roomName: string) => void
+  onRoomHover: (roomName: string | null) => void
   onAnchorClick: (anchorId: string, roomName: string) => void
   onAnchorMoveStart: (roomName: string, anchorId: string) => void
   onAnchorMove: (roomName: string, anchorId: string, worldX: number, worldY: number) => void
   onAnchorMoveEnd: () => void
   onNudgeAnchor: (dx: number, dy: number) => void
+  onCanvasContextMenu?: () => void
+  onRoomDoubleClick?: (roomName: string) => void
 }
 
 const COLORS = {
@@ -56,8 +66,10 @@ const COLORS = {
   segmentSelected: '#4a9eff',
   roomBoundary: '#2060b0',
   roomBoundaryActive: '#4a9eff',
+  roomBoundaryHover: '#3a78c0',
   roomFill: 'rgba(74, 158, 255, 0.035)',
   roomFillActive: 'rgba(74, 158, 255, 0.08)',
+  roomFillHover: 'rgba(74, 158, 255, 0.055)',
   anchorPin: '#ff8c00',
   anchorPinActive: '#ffd700',
   anchorLabel: '#ffffff',
@@ -97,14 +109,20 @@ const AnchorManagerCanvas = forwardRef<AnchorManagerCanvasHandle, AnchorManagerC
   selectedAnchorId,
   selectedSegments,
   viewport,
+  activeTool,
+  hoverRoomName,
   onViewportChange,
   onSegmentClick,
   onCanvasCtrlClick,
+  onRoomClick,
+  onRoomHover,
   onAnchorClick,
   onAnchorMoveStart,
   onAnchorMove,
   onAnchorMoveEnd,
   onNudgeAnchor,
+  onCanvasContextMenu,
+  onRoomDoubleClick,
 }, ref) => {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const [hoverSeg, setHoverSeg] = useState<SegmentData | null>(null)
@@ -123,6 +141,7 @@ const AnchorManagerCanvas = forwardRef<AnchorManagerCanvasHandle, AnchorManagerC
     originalY: number
   } | null>(null)
   const spacePressedRef = useRef(false)
+  const hoverRoomNameRef = useRef<string | null>(null)
 
   const cancelInteraction = useCallback(() => {
     panRef.current.active = false
@@ -210,9 +229,10 @@ const AnchorManagerCanvas = forwardRef<AnchorManagerCanvasHandle, AnchorManagerC
     for (const room of rooms) {
       if (room.segments_ft.length === 0) continue
       const isActive = room.room_name === selectedRoomName
+      const isHovered = room.room_name === hoverRoomName && !isActive
       const points = room.segments_ft.map(seg => worldToScreen(viewport, seg.x1, seg.y1))
       if (points.length > 2) {
-        ctx.fillStyle = isActive ? COLORS.roomFillActive : COLORS.roomFill
+        ctx.fillStyle = isActive ? COLORS.roomFillActive : isHovered ? COLORS.roomFillHover : COLORS.roomFill
         ctx.beginPath()
         ctx.moveTo(points[0][0], points[0][1])
         for (let i = 1; i < points.length; i++) ctx.lineTo(points[i][0], points[i][1])
@@ -237,8 +257,9 @@ const AnchorManagerCanvas = forwardRef<AnchorManagerCanvasHandle, AnchorManagerC
 
     for (const room of rooms) {
       const isActive = room.room_name === selectedRoomName
-      ctx.strokeStyle = isActive ? COLORS.roomBoundaryActive : COLORS.roomBoundary
-      ctx.lineWidth = isActive ? 2.4 : 1.4
+      const isHovered = room.room_name === hoverRoomName && !isActive
+      ctx.strokeStyle = isActive ? COLORS.roomBoundaryActive : isHovered ? COLORS.roomBoundaryHover : COLORS.roomBoundary
+      ctx.lineWidth = isActive ? 2.4 : isHovered ? 1.8 : 1.4
       for (const seg of room.segments_ft) {
         const [x1, y1] = worldToScreen(viewport, seg.x1, seg.y1)
         const [x2, y2] = worldToScreen(viewport, seg.x2, seg.y2)
@@ -291,6 +312,7 @@ const AnchorManagerCanvas = forwardRef<AnchorManagerCanvasHandle, AnchorManagerC
     }
   }, [
     allSegments,
+    hoverRoomName,
     hoverSeg,
     hoverSnap,
     hoverWorld,
@@ -329,17 +351,32 @@ const AnchorManagerCanvas = forwardRef<AnchorManagerCanvasHandle, AnchorManagerC
     return null
   }, [rooms, viewport])
 
-  const updateHoverState = useCallback((clientX: number, clientY: number) => {
+  const updateHoverState = useCallback((clientX: number, clientY: number, currentRooms: RoomData[]) => {
     const canvas = canvasRef.current
     if (!canvas) return
     const rect = canvas.getBoundingClientRect()
     const mx = clientX - rect.left
     const my = clientY - rect.top
     const [worldX, worldY] = screenToWorld(viewport, mx, my)
-    setHoverSeg(getSegmentAt(mx, my))
+    setHoverSeg(activeTool !== 'cursor' ? getSegmentAt(mx, my) : null)
     setHoverWorld([worldX, worldY])
     setHoverSnap(selectedRoomName ? findSnapTarget(worldX, worldY, allSegments) : null)
-  }, [allSegments, getSegmentAt, selectedRoomName, viewport])
+
+    // Canvas → panel hover: find which room (if any) the cursor is inside
+    let nextHoverRoom: string | null = null
+    for (const room of currentRooms) {
+      if (room.segments_ft.length < 3) continue
+      const polygon = chainSegmentsToPolygon(room.segments_ft)
+      if (pointInPolygon(worldX, worldY, polygon)) {
+        nextHoverRoom = room.room_name
+        break
+      }
+    }
+    if (nextHoverRoom !== hoverRoomNameRef.current) {
+      hoverRoomNameRef.current = nextHoverRoom
+      onRoomHover(nextHoverRoom)
+    }
+  }, [activeTool, allSegments, getSegmentAt, onRoomHover, selectedRoomName, viewport])
 
   const handleMouseDown = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
     e.currentTarget.focus()
@@ -383,20 +420,33 @@ const AnchorManagerCanvas = forwardRef<AnchorManagerCanvasHandle, AnchorManagerC
       return
     }
 
-    const segment = getSegmentAt(mx, my)
+    const segment = activeTool !== 'cursor' ? getSegmentAt(mx, my) : null
     if (segment) {
       onSegmentClick(segment, e.shiftKey)
       return
     }
 
+    // Cursor mode: clicking inside a room selects it
+    if (activeTool === 'cursor') {
+      const [worldX, worldY] = screenToWorld(viewport, mx, my)
+      for (const room of rooms) {
+        if (roomContainsWorldPoint(room, worldX, worldY, 0)) {
+          onRoomClick(room.room_name)
+          return
+        }
+      }
+    }
+
     panRef.current = { active: true, lastX: e.clientX, lastY: e.clientY }
   }, [
+    activeTool,
     allSegments,
     getAnchorAt,
     getSegmentAt,
     onAnchorClick,
     onAnchorMoveStart,
     onCanvasCtrlClick,
+    onRoomClick,
     onSegmentClick,
     rooms,
     selectedRoomName,
@@ -448,7 +498,7 @@ const AnchorManagerCanvas = forwardRef<AnchorManagerCanvasHandle, AnchorManagerC
       return
     }
 
-    updateHoverState(e.clientX, e.clientY)
+    updateHoverState(e.clientX, e.clientY, rooms)
   }, [allSegments, onAnchorMove, onViewportChange, rooms, updateHoverState, viewport])
 
   const handleMouseUp = useCallback(() => {
@@ -494,6 +544,24 @@ const AnchorManagerCanvas = forwardRef<AnchorManagerCanvasHandle, AnchorManagerC
     if (e.key === ' ') spacePressedRef.current = false
   }, [])
 
+  const handleContextMenu = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
+    e.preventDefault()
+    if (activeTool !== 'cursor') onCanvasContextMenu?.()
+  }, [activeTool, onCanvasContextMenu])
+
+  const handleDoubleClick = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
+    const canvas = canvasRef.current
+    if (!canvas) return
+    const rect = canvas.getBoundingClientRect()
+    const [worldX, worldY] = screenToWorld(viewport, e.clientX - rect.left, e.clientY - rect.top)
+    for (const room of rooms) {
+      if (roomContainsWorldPoint(room, worldX, worldY, 0)) {
+        onRoomDoubleClick?.(room.room_name)
+        return
+      }
+    }
+  }, [onRoomDoubleClick, rooms, viewport])
+
   return (
     <canvas
       ref={canvasRef}
@@ -502,12 +570,22 @@ const AnchorManagerCanvas = forwardRef<AnchorManagerCanvasHandle, AnchorManagerC
       onMouseDown={handleMouseDown}
       onMouseMove={handleMouseMove}
       onMouseUp={handleMouseUp}
-      onMouseLeave={handleMouseUp}
+      onMouseLeave={() => { handleMouseUp(); hoverRoomNameRef.current = null; onRoomHover(null) }}
       onWheel={handleWheel}
       onKeyDown={handleKeyDown}
       onKeyUp={handleKeyUp}
+      onContextMenu={handleContextMenu}
+      onDoubleClick={handleDoubleClick}
       style={{
-        cursor: dragRef.current?.active ? 'grabbing' : panRef.current.active ? 'grabbing' : hoverSeg ? 'pointer' : 'grab',
+        cursor: dragRef.current?.active
+          ? 'grabbing'
+          : panRef.current.active
+            ? 'grabbing'
+            : hoverSeg
+              ? 'pointer'
+              : activeTool !== 'cursor'
+                ? 'crosshair'
+                : 'grab',
       }}
     />
   )

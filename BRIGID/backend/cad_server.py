@@ -473,11 +473,17 @@ async def api_calibration_tag_save(tag_id: str, workspace_id: Optional[str] = No
     if profile is None or error:
         return {"success": False, "error": error or f"Profile not found: {tag_id}"}
 
-    profile["calibration"] = _calibration_runtime.export_profile_equations(tag_id)
+    calibration_data = _calibration_runtime.export_profile_equations(tag_id)
+    profile["calibration"] = calibration_data
     ok, result = save_profile(profile, tags_dir)
     if not ok:
         return {"success": False, "error": result}
-    return {"success": True, "path": result, **_calibration_runtime.snapshot(_load_all_profiles())}
+    return {
+        "success": True,
+        "path": result,
+        "calibration_date": calibration_data.get("last_calibration_date", ""),
+        **_calibration_runtime.snapshot(_load_all_profiles(workspace_id)),
+    }
 
 
 # ===========================================================================

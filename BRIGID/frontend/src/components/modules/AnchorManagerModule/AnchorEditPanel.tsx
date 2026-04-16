@@ -6,9 +6,12 @@ interface Props {
   rooms: RoomData[]
   selectedRoomName: string | null
   selectedAnchorId: string | null
+  hoverRoomName: string | null
   canUndo: boolean
   canRedo: boolean
   onRoomSelect: (roomName: string | null) => void
+  onRoomHover: (roomName: string | null) => void
+  onRoomDoubleClick: (roomName: string) => void
   onAnchorUpdate: (roomName: string, anchorId: string, patch: Partial<AnchorData>) => void
   onAnchorDelete: (roomName: string, anchorId: string) => void
   onAnchorSelect: (anchorId: string | null) => void
@@ -23,9 +26,12 @@ const AnchorEditPanel: React.FC<Props> = ({
   rooms,
   selectedRoomName,
   selectedAnchorId,
+  hoverRoomName,
   canUndo,
   canRedo,
   onRoomSelect,
+  onRoomHover,
+  onRoomDoubleClick,
   onAnchorUpdate,
   onAnchorDelete,
   onAnchorSelect,
@@ -62,7 +68,7 @@ const AnchorEditPanel: React.FC<Props> = ({
     <div className="am-floating-panel">
       <div className="am-floating-header">
         <div>
-          <div className="am-floating-title">Anchor Workspace</div>
+          <div className="am-floating-title">Room Manager</div>
         </div>
         <div className="am-floating-actions">
           <button className="am-mini-btn" onClick={onEscapeCanvas}>Esc</button>
@@ -78,11 +84,14 @@ const AnchorEditPanel: React.FC<Props> = ({
           {rooms.map(room => (
             <button
               key={room.room_name}
-              className={`am-room-chip${room.room_name === selectedRoomName ? ' active' : ''}`}
+              className={`am-room-chip${room.room_name === selectedRoomName ? ' active' : room.room_name === hoverRoomName ? ' hovered' : ''}`}
               onClick={() => {
                 onRoomSelect(room.room_name === selectedRoomName ? null : room.room_name)
                 onAnchorSelect(null)
               }}
+              onMouseEnter={() => onRoomHover(room.room_name)}
+              onMouseLeave={() => onRoomHover(null)}
+              onDoubleClick={() => onRoomDoubleClick(room.room_name)}
             >
               <span>{room.room_name}</span>
               <span>{room.anchors.length}</span>

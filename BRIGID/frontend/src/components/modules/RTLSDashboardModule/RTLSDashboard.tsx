@@ -408,8 +408,8 @@ const RTLSDashboard: React.FC<RTLSDashboardProps> = ({ workspaceId, workspaceNam
             <div className="rtls-section">
               <div className="rtls-section-title">Connectivity</div>
               <div className="rtls-transport-tabs">
-                <button className={`rtls-transport-tab${transportMode === 'Bluetooth (BLE)' ? ' active' : ''}`} onClick={() => setTransportMode('Bluetooth (BLE)')}>Bluetooth (BLE)</button>
                 <button className={`rtls-transport-tab${transportMode === 'Serial Port' ? ' active' : ''}`} onClick={() => setTransportMode('Serial Port')}>Serial Port</button>
+                <button className={`rtls-transport-tab${transportMode === 'Bluetooth (BLE)' ? ' active' : ''}`} onClick={() => setTransportMode('Bluetooth (BLE)')}>Bluetooth (BLE)</button>
               </div>
               {transportMode === 'Serial Port' && (
                 <select className="rtls-input" value={snap.selected_port || snap.auto_detect_port || ''} onChange={e => setSnap(p => ({ ...p, selected_port: e.target.value }))}>

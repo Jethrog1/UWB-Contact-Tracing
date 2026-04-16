@@ -205,6 +205,7 @@ const TagProfiler: React.FC<TagProfilerProps> = ({ workspaceId }) => {
         </div>
         <div className="tp-header-actions">
           <button className="tp-btn tp-btn--outline" onClick={handleNew}>New</button>
+          <button className="tp-btn tp-btn--outline" onClick={() => fileInputRef.current?.click()}>Open</button>
           <button className="tp-btn tp-btn--primary" onClick={handleSave}>Save</button>
           <input ref={fileInputRef} type="file" accept=".json" style={{ display: 'none' }} onChange={handleImportFile} />
         </div>
