@@ -41,7 +41,7 @@
   justify-content: center;
   background: var(--bg-primary);
   color: var(--text-muted);
-  gap: 12px;
+  gap: 10px;
   text-align: center;
   padding: 40px;
 }
@@ -59,14 +59,32 @@
   font-size: 20px;
 }
 
+/* Home page logo image */
+.app-empty-logo {
+  width: 240px;
+  height: 240px;
+  object-fit: contain;
+  margin-bottom: -10px;
+}
+
 .app-empty-title,
 .app-module-title {
-  font-size: var(--text-lg);
-  font-weight: 500;
+  font-size: 22px;
+  font-weight: 600;
   color: var(--text-primary);
-  letter-spacing: 0.04em;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
-  margin-top: 8px;
+  margin-top: 0;
+}
+
+/* Centered fixed-width home column */
+.home-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 520px;
+  text-align: center;
+  gap: 10px;
 }
 
 .app-empty-sub,
@@ -74,6 +92,21 @@
   max-width: 400px;
   font-size: var(--text-base);
   color: var(--text-secondary);
+}
+
+/* Acronym expansion line */
+.app-empty-acro {
+  color: #ffffff;
+  font-size: var(--text-base);
+  max-width: 480px;
+  line-height: 1.6;
+  margin-bottom: 4px;
+}
+
+.app-empty-acro strong {
+  font-size: var(--text-lg);
+  font-weight: 700;
+  color: #ffffff;
 }
 
 .app-module-pill {
@@ -125,20 +158,50 @@
 
 /* ── Workspace Explorer ────────────────────────────────────────────── */
 .workspace-explorer {
-  margin-top: 32px;
+  margin-top: 20px;
   width: 100%;
-  max-width: 460px;
   text-align: left;
   border-top: 1px solid var(--border-default);
-  padding-top: 24px;
+  padding-top: 20px;
 }
 
 .workspace-explorer-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
   font-size: var(--text-xs);
   color: var(--text-muted);
   text-transform: uppercase;
   letter-spacing: 0.08em;
   margin-bottom: 12px;
+}
+
+.workspace-create-btn {
+  display: flex;
+  align-items: center;
+  padding: 4px 10px;
+  background: transparent;
+  border: 1px solid var(--border-default);
+  color: var(--text-secondary);
+  font-family: var(--font-primary);
+  font-size: var(--text-xs);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: background var(--transition-fast), border-color var(--transition-fast), color var(--transition-fast);
+}
+
+.workspace-create-btn:hover {
+  background: var(--bg-hover);
+  border-color: var(--border-active);
+  color: var(--text-primary);
+}
+
+.workspace-explorer-empty {
+  padding: 12px;
+  font-size: var(--text-base);
+  color: var(--text-muted);
+  font-style: italic;
 }
 
 .workspace-explorer-list {
@@ -155,7 +218,7 @@
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 6px 12px;
+  padding: 6px 12px 6px 0;
   background: transparent;
   border: 1px solid transparent;
   border-left: 2px solid transparent;
@@ -168,8 +231,9 @@
 
 .workspace-explorer-item:hover {
   background: var(--bg-hover);
-  border: 1px solid var(--border-default);
+  border: 1px solid transparent;
   border-left: 2px solid var(--accent-primary);
+  padding-left: 8px;
   color: var(--text-primary);
 }
 

@@ -1,3 +1,8 @@
+declare module '*.png' {
+  const src: string
+  export default src
+}
+
 interface FileDialogFilter {
   name: string
   extensions: string[]

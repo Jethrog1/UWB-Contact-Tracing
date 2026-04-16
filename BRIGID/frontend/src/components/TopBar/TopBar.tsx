@@ -28,7 +28,6 @@ const TopBar: React.FC<TopBarProps> = ({ activeModule, onModuleChange }) => {
       {/* ---- Left: App Brand + Search ---- */}
       <div className="topbar__left electron-no-drag">
         <div className="topbar__brand-mark">
-          <Icon icon="locate" size={14} />
           <span className="topbar__brand-name">BRIGID</span>
         </div>
         <div className="topbar__search">
