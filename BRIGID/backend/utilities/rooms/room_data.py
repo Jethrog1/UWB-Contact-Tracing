@@ -64,7 +64,7 @@ class Room:
     anchors: List[Anchor] = field(default_factory=list)
     edges: List[Tuple[str, str]] = field(default_factory=list)
     rtls_settings: dict = field(default_factory=dict)
-    reference_anchor_id: str | None = None
+    reference_anchor_id: Optional[str] = None
 
     # Bounding box in world coordinates (auto-computed)
     min_x: float = 0.0

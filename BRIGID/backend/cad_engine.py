@@ -44,7 +44,7 @@ class CADEngine:
             state |= BUTTON1_MASK
         return state
 
-    def _mouse_event(self, cmd: dict[str, Any], *, delta: int = 0, num: int | None = None) -> MouseEvent:
+    def _mouse_event(self, cmd: dict[str, Any], *, delta: int = 0, num: Optional[int] = None) -> MouseEvent:
         x = float(cmd.get("x", 0.0))
         y = float(cmd.get("y", 0.0))
         return MouseEvent(

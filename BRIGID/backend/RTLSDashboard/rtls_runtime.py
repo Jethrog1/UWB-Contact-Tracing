@@ -46,7 +46,7 @@ ESP32_C6_IDENTIFIERS = [
 ]
 
 
-def auto_detect_esp32_port() -> str | None:
+def auto_detect_esp32_port() -> Optional[str]:
     """Scan COM ports for ESP32-C6. Returns device path or None."""
     ports = serial.tools.list_ports.comports()
     for p in ports:
@@ -65,9 +65,9 @@ def auto_detect_esp32_port() -> str | None:
 def calc_pos_multi(
     distances_dict: dict[str, float],
     anchors: dict[str, tuple[float, float]],
-    anchor_z: dict[str, float] | None = None,
+    anchor_z: dict[str, Optional[float]] = None,
     tag_z: float = 0.0,
-) -> tuple[float | None, float | None]:
+) -> Optional[tuple[float], Optional[float]]:
     """
     Calculate 2-D position from anchor distances using bi/tri/multi-lateration.
 
@@ -172,7 +172,7 @@ class RTLSRuntime:
         # Runtime distance & status stores (keyed by canonical tag_id e.g. "T0")
         self._tag_data: dict[str, dict[str, float]] = {}   # tag_id → anchor_id → dist
         self._tag_status: dict[str, str] = {}              # tag_id → Connected/Disconnected/…
-        self._tag_positions: dict[str, tuple[float, float] | None] = {}
+        self._tag_positions: dict[str, tuple[float, Optional[float]]] = {}
 
         # MAC → canonical tag_id (for dongle status parsing)
         self._mac_to_tag: dict[str, str] = {}
@@ -195,31 +195,31 @@ class RTLSRuntime:
         self._kal_q: float = 0.10
         self._kal_r: float = 2.00
 
-        self._ema_pos: dict[str, tuple[float, float] | None] = {}
+        self._ema_pos: dict[str, tuple[float, Optional[float]]] = {}
         self._roll_buf: dict[str, deque] = {}
-        self._kal_state: dict[str, list | None] = {}
-        self._kal_P: dict[str, list | None] = {}
+        self._kal_state: dict[str, Optional[list]] = {}
+        self._kal_P: dict[str, Optional[list]] = {}
 
         # ── Tag elevation ──────────────────────────────────────────────────────
         self._global_elevation_override: bool = False
         self._global_elevation_ft: float = 3.0   # used only when override=True
 
         # ── Serial / BLE transport ─────────────────────────────────────────────
-        self._serial_port_obj: serial.Serial | None = None
+        self._serial_port_obj: serial.Optional[Serial] = None
         self._serial_running: bool = False
-        self._serial_thread: threading.Thread | None = None
+        self._serial_thread: threading.Optional[Thread] = None
         self._selected_port: str = ""
         self._transport_status: str = "idle"   # idle | connecting | connected | error
         self._transport_detail: str = "Disconnected."
 
         # ── CSV distance logging (ported from home_rtls.py) ───────────────────
         self._csv_enabled: bool = False
-        self._csv_path: str | None = None
+        self._csv_path: Optional[str] = None
         self._csv_rtls_dir: str = ""           # workspace RTLS/ folder
         self._csv_last_ts: float = 0.0
 
         # ── Loop ──────────────────────────────────────────────────────────────
-        self._loop_thread: threading.Thread | None = None
+        self._loop_thread: threading.Optional[Thread] = None
         self._loop_running: bool = False
         self._start_loop()
 
@@ -240,8 +240,8 @@ class RTLSRuntime:
 
     def update_from_workspace(
         self,
-        room_data: dict | None,
-        tag_profiles: list[dict] | None,
+        room_data: Optional[dict],
+        tag_profiles: Optional[list[dict]],
     ) -> None:
         """
         Called by the API whenever the RTLS session loads or refreshes workspace data.
@@ -340,7 +340,7 @@ class RTLSRuntime:
 
     # ── Data parsing (preserved from rtls_main_official.py) ───────────────────
 
-    def _resolve_tag_id(self, raw_id: str) -> str | None:
+    def _resolve_tag_id(self, raw_id: str) -> Optional[str]:
         """
         Map incoming data tag prefix (T0, t0, T1, t1…) to profile tag_id.
         Case-insensitive match: 't0' → 'T0', 'T1' → 'T1', etc.
@@ -387,7 +387,7 @@ class RTLSRuntime:
         except Exception:
             pass
 
-    _last_attempting: str | None = None
+    _last_attempting: Optional[str] = None
 
     def parse_dongle_status(self, line: str) -> None:
         """
@@ -720,11 +720,11 @@ class RTLSRuntime:
 
     def set_filter(
         self,
-        mode: str | None = None,
-        ema_alpha: float | None = None,
-        roll_n: int | None = None,
-        kal_q: float | None = None,
-        kal_r: float | None = None,
+        mode: Optional[str] = None,
+        ema_alpha: Optional[float] = None,
+        roll_n: Optional[int] = None,
+        kal_q: Optional[float] = None,
+        kal_r: Optional[float] = None,
     ) -> None:
         if mode is not None:
             self._filter_mode = mode
@@ -737,7 +737,7 @@ class RTLSRuntime:
         if kal_r is not None:
             self._kal_r = kal_r
 
-    def set_elevation(self, override: bool, value_ft: float | None = None) -> None:
+    def set_elevation(self, override: bool, value_ft: Optional[float] = None) -> None:
         self._global_elevation_override = override
         if value_ft is not None:
             self._global_elevation_ft = value_ft
