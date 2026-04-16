@@ -6,11 +6,12 @@ Pure Python — no Qt dependency.
 
 import xml.etree.ElementTree as ET
 import re
+from typing import Optional
 
 NON_WALL_STROKE = "#8e949c"
 
 
-def _normalize_stroke_color(value: str | None) -> str:
+def _normalize_stroke_color(value: Optional[str]) -> str:
     if not value:
         return ""
     stroke = value.strip().lower()

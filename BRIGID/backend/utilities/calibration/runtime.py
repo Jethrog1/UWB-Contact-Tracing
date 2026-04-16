@@ -70,7 +70,7 @@ def _anchor_measurements(default: float = -1.0) -> dict[str, float]:
     return {anchor_id: float(default) for anchor_id in ANCHOR_IDS}
 
 
-def _anchor_optional_map() -> dict[str, float | None]:
+def _anchor_optional_map() -> dict[str, Optional[float]]:
     return {anchor_id: None for anchor_id in ANCHOR_IDS}
 
 
@@ -84,7 +84,7 @@ def _fit_config() -> dict[str, Any]:
     }
 
 
-def calc_pos(anchor_positions: dict[str, list[float]], distances_dict: dict[str, float]) -> tuple[float | None, float | None]:
+def calc_pos(anchor_positions: dict[str, list[float]], distances_dict: dict[str, float]) -> Optional[tuple[float], Optional[float]]:
     valid = [
         (anchor_positions[a][0], anchor_positions[a][1], r)
         for a, r in distances_dict.items()
@@ -146,22 +146,22 @@ class CalibrationRuntime:
     def __init__(self) -> None:
         self._lock = threading.Lock()
 
-        self._mode: str | None = None
+        self._mode: Optional[str] = None
         self._transport_status = "idle"
         self._transport_detail = "Disconnected."
         self._selected_port = ""
-        self._last_attempting_tag: str | None = None
+        self._last_attempting_tag: Optional[str] = None
         self._profile_macs: dict[str, str] = {}
         self._mac_to_tag: dict[str, str] = {}
         self._tag_values: dict[str, dict[str, float]] = {}
         self._tag_status: dict[str, str] = {}
         self._tag_seen_at: dict[str, float] = {}
 
-        self._serial_thread: threading.Thread | None = None
+        self._serial_thread: threading.Optional[Thread] = None
         self._serial_stop = threading.Event()
         self._serial_port_handle: Any = None
 
-        self._ble_thread: threading.Thread | None = None
+        self._ble_thread: threading.Optional[Thread] = None
         self._ble_stop = threading.Event()
 
         self._reset_session_locked()
@@ -173,31 +173,31 @@ class CalibrationRuntime:
 
         self._profile_cache: dict[str, dict[str, Any]] = {}
         self._tag_order: list[str] = []
-        self._reference_floor: dict[str, dict[str, float | None]] = {}
+        self._reference_floor: dict[str, dict[str, Optional[float]]] = {}
         self._reference_height: dict[str, float] = {}
-        self._locked_reference: dict[str, dict[str, float | None]] = {}
+        self._locked_reference: dict[str, dict[str, Optional[float]]] = {}
         self._cal_points: dict[str, dict[str, list[tuple[float, float]]]] = {}
         self._cal_funcs: dict[str, dict[str, Callable[[float], float]]] = {}
         self._equations: dict[str, dict[str, str]] = {}
         self._fit_options: dict[str, dict[str, dict[str, Any]]] = {}
         self._raw_floor: dict[str, dict[str, float]] = {}
         self._calibrated: dict[str, dict[str, float]] = {}
-        self._raw_xy: dict[str, tuple[float, float] | None] = {}
-        self._cal_xy: dict[str, tuple[float, float] | None] = {}
+        self._raw_xy: dict[str, tuple[float, Optional[float]]] = {}
+        self._cal_xy: dict[str, tuple[float, Optional[float]]] = {}
 
         self._filter_mode = "EMA"
         self._filt_ema_alpha = 0.2
         self._filt_roll_n = 8
         self._filt_kal_q = 0.1
         self._filt_kal_r = 2.0
-        self._ema_pos: dict[str, tuple[float, float] | None] = {}
+        self._ema_pos: dict[str, tuple[float, Optional[float]]] = {}
         self._roll_buf: dict[str, deque[tuple[float, float]]] = {}
-        self._kal_state: dict[str, list[list[float]] | None] = {}
-        self._kal_p: dict[str, list[list[float]] | None] = {}
+        self._kal_state: dict[str, Optional[list[list[float]]]] = {}
+        self._kal_p: dict[str, Optional[list[list[float]]]] = {}
 
         self._capture_active = False
         self._capture_phase = "idle"
-        self._capture_tid: str | None = None
+        self._capture_tid: Optional[str] = None
         self._capture_target = 0
         self._capture_true: dict[str, float] = {}
         self._capture_buf: dict[str, list[float]] = {}
@@ -426,7 +426,7 @@ class CalibrationRuntime:
     def set_reference_distances(
         self,
         tag_id: str,
-        distances: dict[str, float | None],
+        distances: dict[str, Optional[float]],
         height: float,
     ) -> tuple[bool, str]:
         with self._lock:
@@ -469,11 +469,11 @@ class CalibrationRuntime:
         tag_id: str,
         anchor_id: str,
         *,
-        auto: bool | None = None,
-        fit_mode: str | None = None,
-        poly_deg: int | None = None,
-        ma_period: int | None = None,
-        ma_type: str | None = None,
+        auto: Optional[bool] = None,
+        fit_mode: Optional[str] = None,
+        poly_deg: Optional[int] = None,
+        ma_period: Optional[int] = None,
+        ma_type: Optional[str] = None,
     ) -> tuple[bool, str]:
         if anchor_id not in ANCHOR_IDS:
             return False, f"Unknown anchor: {anchor_id}"
@@ -559,10 +559,10 @@ class CalibrationRuntime:
         self,
         mode: str,
         *,
-        ema_alpha: float | None = None,
-        roll_n: int | None = None,
-        kal_q: float | None = None,
-        kal_r: float | None = None,
+        ema_alpha: Optional[float] = None,
+        roll_n: Optional[int] = None,
+        kal_q: Optional[float] = None,
+        kal_r: Optional[float] = None,
     ) -> tuple[bool, str]:
         if mode not in {"EMA", "Rolling", "Kalman"}:
             return False, f"Unsupported filter mode: {mode}"
@@ -1039,7 +1039,7 @@ class CalibrationRuntime:
                     self._transport_status = "idle"
                     self._transport_detail = "Disconnected."
 
-    def _parse_measurement_payload(self, payload: str, fallback_tag_id: str | None = None) -> None:
+    def _parse_measurement_payload(self, payload: str, fallback_tag_id: Optional[str] = None) -> None:
         parts = [part.strip() for part in payload.split("|") if part.strip()]
         if not parts:
             return
