@@ -1,6 +1,7 @@
 import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron'
 import { spawn, ChildProcess, execFile } from 'child_process'
 import { join } from 'path'
+import { existsSync } from 'fs'
 import { promisify } from 'util'
 import { is } from '@electron-toolkit/utils'
 
@@ -115,10 +116,20 @@ async function startCadServer(): Promise<void> {
     ? join(app.getAppPath(), '..', 'backend')
     : join(process.resourcesPath, 'backend')
 
-  const pythonCmd = process.platform === 'win32' ? 'py' : 'python3'
-  const pythonArgs = process.platform === 'win32' ? ['-3'] : []
+  const venvPython = process.platform === 'win32'
+    ? join(backendDir, '.venv', 'Scripts', 'python.exe')
+    : join(backendDir, '.venv', 'bin', 'python')
+
+  const pythonCmd = existsSync(venvPython)
+    ? venvPython
+    : (process.platform === 'win32' ? 'py' : 'python3')
+
+  const pythonArgs = existsSync(venvPython)
+    ? []
+    : (process.platform === 'win32' ? ['-3'] : [])
 
   console.log(`[main] Starting CAD server in ${backendDir}`)
+  console.log(`[main] Using Python executable: ${pythonCmd}`)
 
   cadServer = spawn(
     pythonCmd,
