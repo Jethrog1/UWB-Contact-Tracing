@@ -1,21 +1,27 @@
 import React from 'react'
-import { Icon, IconName, Tooltip } from '@blueprintjs/core'
+import { Icon, Tooltip } from '@blueprintjs/core'
 import { motion } from 'motion/react'
 import { AppModule } from '../../types'
+import homeLogo from '../../assets/icons/home-logo.png'
+import profileManagerIcon from '../../assets/icons/profile-manager.png'
+import calibrationToolIcon from '../../assets/icons/calibration-tool.png'
+import cadModelingIcon from '../../assets/icons/cad-modeling.png'
+import anchorManagerIcon from '../../assets/icons/anchor-manager.png'
+import rtlsDashboardIcon from '../../assets/icons/rtls-dashboard.png'
 import './LeftRail.css'
 
 interface ModuleItem {
   id: AppModule
-  icon: IconName
+  iconSrc: string
   label: string
 }
 
 const MODULE_ITEMS: ModuleItem[] = [
-  { id: 'profile',     icon: 'person',           label: 'Profile Manager' },
-  { id: 'calibration', icon: 'regression-chart',  label: 'Calibration Tool' },
-  { id: 'cad',         icon: 'draw',              label: '2D CAD Modeling' },
-  { id: 'anchors',     icon: 'cell-tower',        label: 'Anchor Manager' },
-  { id: 'rtls',        icon: 'pulse',             label: 'RTLS Dashboard' },
+  { id: 'profile',     iconSrc: profileManagerIcon,  label: 'Profile Manager' },
+  { id: 'calibration', iconSrc: calibrationToolIcon, label: 'Calibration Tool' },
+  { id: 'cad',         iconSrc: cadModelingIcon,      label: '2D CAD Modeling' },
+  { id: 'anchors',     iconSrc: anchorManagerIcon,    label: 'Anchor Manager' },
+  { id: 'rtls',        iconSrc: rtlsDashboardIcon,    label: 'RTLS Dashboard' },
 ]
 
 interface LeftRailProps {
@@ -41,7 +47,7 @@ const LeftRail: React.FC<LeftRailProps> = ({ activeModule, onModuleChange, onHom
         hoverOpenDelay={200}
       >
         <button className="left-rail__logo-btn" onClick={onHomeClick}>
-          <Icon icon="locate" size={18} color="#5a90c8" />
+          <img src={homeLogo} className="left-rail__icon-img left-rail__icon-img--home" alt="Home" />
         </button>
       </Tooltip>
 
@@ -75,7 +81,11 @@ const LeftRail: React.FC<LeftRailProps> = ({ activeModule, onModuleChange, onHom
                   />
                 )}
                 <span className="left-rail__btn-icon">
-                  <Icon icon={item.icon} size={16} />
+                  <img
+                    src={item.iconSrc}
+                    className={`left-rail__icon-img${isActive ? ' left-rail__icon-img--active' : ''}`}
+                    alt={item.label}
+                  />
                 </span>
               </button>
             </Tooltip>

@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import logo4 from './assets/icons/logo4.png'
 import { FocusStyleManager, Spinner } from '@blueprintjs/core'
 import { motion, AnimatePresence } from 'motion/react'
 
@@ -25,20 +26,35 @@ interface WorkspaceInfo {
 const EmptyWorkspacePanel: React.FC<{
   workspaces: WorkspaceInfo[]
   onOpen: (name: string) => void
-}> = ({ workspaces, onOpen }) => (
+  onNew: () => void
+}> = ({ workspaces, onOpen, onNew }) => (
   <div className="app-empty-state">
-    <div className="app-empty-icon">+</div>
-    <div className="app-empty-title">Welcome to BRIGID</div>
-    <div className="app-empty-sub">Select a previous workspace or create new.</div>
-    
-    {workspaces.length > 0 && (
+    <div className="home-content">
+      <img src={logo4} className="app-empty-logo" alt="BRIGID" />
+      <div className="app-empty-title">Welcome to BRIGID</div>
+      <div className="app-empty-acro">
+        <span><strong>B</strong>ehavioral</span>{' '}
+        <span><strong>R</strong>eal-time</span>{' '}
+        <span><strong>I</strong>nteraction</span>{' '}
+        <span><strong>G</strong>raphing</span>{' '}
+        <span>for</span>{' '}
+        <span><strong>I</strong>nfectious</span>{' '}
+        <span><strong>D</strong>iseases</span>
+      </div>
+
       <div className="workspace-explorer">
-        <div className="workspace-explorer-header">Recent Workspaces</div>
+        <div className="workspace-explorer-header">
+          <span>Recent Workspaces</span>
+          <button className="workspace-create-btn" onClick={onNew}>
+            Create New
+          </button>
+        </div>
+      {workspaces.length > 0 ? (
         <div className="workspace-explorer-list">
           {workspaces.map(ws => (
-            <button 
-              key={ws.name} 
-              className="workspace-explorer-item" 
+            <button
+              key={ws.name}
+              className="workspace-explorer-item"
               onClick={() => onOpen(ws.name)}
             >
               <div className="workspace-item-name">{ws.name}</div>
@@ -56,8 +72,11 @@ const EmptyWorkspacePanel: React.FC<{
             </button>
           ))}
         </div>
+      ) : (
+        <div className="workspace-explorer-empty">No recent workspaces</div>
+      )}
       </div>
-    )}
+    </div>
   </div>
 )
 
@@ -391,7 +410,7 @@ const App: React.FC = () => {
 
           {(!activeTab || isHome) && (
             <div className="app-workspace-host app-workspace-host--active">
-               <EmptyWorkspacePanel workspaces={existingWorkspaces} onOpen={handleOpenWorkspace} />
+               <EmptyWorkspacePanel workspaces={existingWorkspaces} onOpen={handleOpenWorkspace} onNew={handleNewTab} />
             </div>
           )}
         </motion.div>
