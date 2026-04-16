@@ -5,6 +5,8 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")" && pwd)"
 BACKEND_DIR="$ROOT/backend"
 FRONTEND_DIR="$ROOT/frontend"
+BACKEND_VENV_DIR="$BACKEND_DIR/.venv"
+BACKEND_PYTHON="$BACKEND_VENV_DIR/bin/python"
 WITH_BACKEND=0
 BACKEND_PID=""
 
@@ -31,22 +33,30 @@ cleanup() {
 
 trap cleanup EXIT INT TERM
 
+ensure_backend_env() {
+    if [ -x "$BACKEND_PYTHON" ]; then
+        return
+    fi
+
+    echo "[*] Backend virtual environment missing or incomplete. Rebuilding..."
+    cd "$BACKEND_DIR"
+    rm -rf "$BACKEND_VENV_DIR"
+    python3 -m venv .venv
+    "$BACKEND_PYTHON" -m pip install -r requirements.txt
+}
+
 echo "====================================="
 echo "   BRIGID RTLS Desktop Platform"
 echo "====================================="
 echo
 
+ensure_backend_env
+
 if [ "$WITH_BACKEND" -eq 1 ]; then
     echo "[*] Starting Python backend..."
     cd "$BACKEND_DIR"
 
-    if [ ! -d ".venv" ]; then
-        echo "[*] Backend virtual environment not found. Creating one..."
-        python3 -m venv .venv
-        ./.venv/bin/pip install -r requirements.txt
-    fi
-
-    ./.venv/bin/python -m uvicorn main:app --reload --port 8000 &
+    "$BACKEND_PYTHON" -m uvicorn main:app --reload --port 8000 &
     BACKEND_PID=$!
     sleep 2
     echo "[+] Backend started on http://localhost:8000"
