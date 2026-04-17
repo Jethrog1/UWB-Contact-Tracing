@@ -223,6 +223,7 @@ class RTLSRuntime:
         self._tag_data: dict[str, dict[str, float]] = {}   # tag_id → anchor_id → dist
         self._tag_status: dict[str, str] = {}              # tag_id → Connected/Disconnected/…
         self._tag_positions: dict[str, tuple[float, Optional[float]]] = {}
+        self._tag_seen_at: dict[str, float] = {}
 
         # MAC → canonical tag_id (for dongle status parsing)
         self._mac_to_tag: dict[str, str] = {}
@@ -266,6 +267,7 @@ class RTLSRuntime:
         self._selected_port: str = ""
         self._transport_status: str = "idle"   # idle | connecting | connected | error
         self._transport_detail: str = "Disconnected."
+        self._serial_debug: deque[str] = deque(maxlen=80)
 
         # ── CSV distance logging (ported from home_rtls.py) ───────────────────
         self._csv_enabled: bool = False
@@ -398,6 +400,9 @@ class RTLSRuntime:
                 for tid in list(self._tag_data.keys()):
                     if tid not in new_registry:
                         del self._tag_data[tid]
+                        self._tag_status.pop(tid, None)
+                        self._tag_positions.pop(tid, None)
+                        self._tag_seen_at.pop(tid, None)
 
                 # Register new tags
                 for tag_id in new_registry:
@@ -439,10 +444,11 @@ class RTLSRuntime:
     def parse_and_store(self, data_str: str) -> None:
         """
         Parse distance line: T2 | A0:11.37 | A1:10.90 | A2:--- | A3:16.55
-        Profile-driven: resolves incoming tag prefix against registry.
+        Profile-driven: resolves incoming tag prefix against registry and mirrors
+        the calibration runtime by treating live measurements as proof of connection.
         """
         try:
-            parts = [p.strip() for p in data_str.split("|")]
+            parts = [p.strip() for p in data_str.split("|") if p.strip()]
             if len(parts) < 2:
                 return
             raw_tid = parts[0]
@@ -451,20 +457,21 @@ class RTLSRuntime:
                 return
             with self._lock:
                 if tag_id not in self._tag_data:
-                    self._tag_data[tag_id] = {}
-                for i in range(1, len(parts)):
-                    p_clean = parts[i].replace(":", " ").strip()
-                    tokens = p_clean.split()
-                    if len(tokens) >= 2:
-                        a_id = tokens[0]
-                        val_str = tokens[1]
-                        if val_str in ("---", "--", "nan"):
-                            self._tag_data[tag_id][a_id] = -1.0
-                        else:
-                            try:
-                                self._tag_data[tag_id][a_id] = float(val_str)
-                            except ValueError:
-                                self._tag_data[tag_id][a_id] = -1.0
+                    self._tag_data[tag_id] = {aid: -1.0 for aid in self._anchors}
+                self._tag_status[tag_id] = "Connected"
+                self._tag_seen_at[tag_id] = time.time()
+                for fragment in parts[1:]:
+                    tokens = fragment.replace(":", " ").split()
+                    if len(tokens) < 2:
+                        continue
+                    a_id, val_str = tokens[0], tokens[1]
+                    if val_str.lower() in {"---", "--", "nan"}:
+                        self._tag_data[tag_id][a_id] = -1.0
+                        continue
+                    try:
+                        self._tag_data[tag_id][a_id] = float(val_str)
+                    except ValueError:
+                        self._tag_data[tag_id][a_id] = -1.0
         except Exception:
             pass
 
@@ -503,8 +510,24 @@ class RTLSRuntime:
                 with self._lock:
                     self._tag_status[tag] = "Disconnected"
                     self._tag_data[tag] = {aid: -1.0 for aid in self._tag_data.get(tag, {})}
+                    self._tag_seen_at.pop(tag, None)
                 self._last_attempting = None
             return
+
+    def _effective_tag_status(self, tag_id: str, now: float) -> str:
+        status = self._tag_status.get(tag_id, "Disconnected")
+        if self._transport_status == "connected" and status == "Connected":
+            seen_at = self._tag_seen_at.get(tag_id)
+            if seen_at is None or (now - seen_at) > 4:
+                return "Waiting"
+        return status
+
+    def _append_serial_debug(self, message: str) -> None:
+        text = str(message or "").strip()
+        if not text:
+            return
+        stamp = datetime.now().strftime("%H:%M:%S")
+        self._serial_debug.append(f"[{stamp}] {text}")
 
     # ── Serial transport (preserved from rtls_main_official.py) ───────────────
 
@@ -513,9 +536,11 @@ class RTLSRuntime:
             self._serial_port_obj = serial.Serial(port, baud, timeout=1)
             self._transport_status = "connected"
             self._transport_detail = f"Connected: {port}"
+            self._append_serial_debug(f"Connected to {port}")
         except Exception as e:
             self._transport_status = "error"
             self._transport_detail = f"Could not open {port}: {e}"
+            self._append_serial_debug(f"Open failed on {port}: {e}")
             self._serial_running = False
             return
 
@@ -528,6 +553,7 @@ class RTLSRuntime:
                 line = raw.decode("utf-8", errors="replace").strip()
                 if not line:
                     continue
+                self._append_serial_debug(line)
 
                 stripped = line
                 if " -> " in line:
@@ -537,19 +563,22 @@ class RTLSRuntime:
                     self.parse_and_store(stripped)
                 else:
                     self.parse_dongle_status(line)
-            except Exception:
+            except Exception as exc:
+                self._append_serial_debug(f"Read error: {exc}")
                 time.sleep(0.2)
 
         if self._serial_port_obj and self._serial_port_obj.is_open:
             self._serial_port_obj.close()
         self._transport_status = "idle"
         self._transport_detail = "Disconnected."
+        self._append_serial_debug("Disconnected.")
 
     def start_serial(self, port: str) -> None:
         self.stop_serial()
         self._selected_port = port
         self._transport_status = "connecting"
         self._transport_detail = f"Connecting: {port}…"
+        self._append_serial_debug(f"Connecting to {port}...")
         t = threading.Thread(target=self._serial_reader, args=(port,), daemon=True)
         self._serial_thread = t
         t.start()
@@ -567,6 +596,7 @@ class RTLSRuntime:
         self._transport_status = "idle"
         self._transport_detail = "Disconnected."
         self._selected_port = ""
+        self._append_serial_debug("Transport stopped.")
 
     def get_serial_ports(self) -> list[str]:
         return [p.device for p in serial.tools.list_ports.comports()]
@@ -704,6 +734,7 @@ class RTLSRuntime:
 
     def _loop_body(self) -> None:
         """Core loop iteration — preserves rtls_main_official.py loop() logic."""
+        now = time.time()
         with self._lock:
             tag_ids = list(self._tag_registry.keys())
             anchors = dict(self._anchors)
@@ -711,7 +742,7 @@ class RTLSRuntime:
 
         for t_id in tag_ids:
             with self._lock:
-                status = self._tag_status.get(t_id, "Disconnected")
+                status = self._effective_tag_status(t_id, now)
 
             if status != "Connected":
                 if self._tag_positions.get(t_id) is not None:
@@ -867,9 +898,10 @@ class RTLSRuntime:
             tags_out: list[dict] = []
             for t_id in self._tag_registry:
                 pos = self._tag_positions.get(t_id)
+                status = self._effective_tag_status(t_id, time.time())
                 tags_out.append({
                     "tag_id": t_id,
-                    "status": self._tag_status.get(t_id, "Disconnected"),
+                    "status": status,
                     "position": {"x": pos[0], "y": pos[1]} if pos else None,
                     "distances": dict(self._tag_data.get(t_id, {})),
                 })
@@ -902,4 +934,5 @@ class RTLSRuntime:
                     "enabled": self._csv_enabled,
                     "path": self._csv_path or "",
                 },
+                "serial_debug": list(self._serial_debug),
             }
