@@ -18,7 +18,6 @@ interface Props {
   onReferenceAnchorChange: (roomName: string, referenceAnchorId: string | null) => void
   onUndo: () => void
   onRedo: () => void
-  onEscapeCanvas: () => void
 }
 
 const AnchorEditPanel: React.FC<Props> = ({
@@ -37,7 +36,6 @@ const AnchorEditPanel: React.FC<Props> = ({
   onReferenceAnchorChange,
   onUndo,
   onRedo,
-  onEscapeCanvas,
 }) => {
   const [editFields, setEditFields] = useState<Partial<AnchorData>>({})
   const selectedRoom = rooms.find(room => room.room_name === selectedRoomName) ?? null
@@ -68,7 +66,6 @@ const AnchorEditPanel: React.FC<Props> = ({
           <div className="am-floating-title">Room Manager</div>
         </div>
         <div className="am-floating-actions">
-          <button className="am-mini-btn" onClick={onEscapeCanvas}>Esc</button>
           <button className="am-mini-btn" onClick={onUndo} disabled={!canUndo}>Undo</button>
           <button className="am-mini-btn" onClick={onRedo} disabled={!canRedo}>Redo</button>
         </div>

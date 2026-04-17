@@ -351,6 +351,10 @@ const App: React.FC = () => {
   }, [activeTabId, activeTab, activeModule])
 
   const canCloseTab = tabs.length > 0 && activeTabId !== null
+  const handleAnchorToolSelect = useCallback((tool: 'cursor' | 'select' | 'smartSelect') => {
+    if (!activeTabId || activeModule !== 'anchors') return
+    window.dispatchEvent(new CustomEvent('anchor-view-command', { detail: { cmd: 'set_tool', tool, workspaceId: activeTabId } }))
+  }, [activeModule, activeTabId])
 
   return (
     <div className="bp5-dark app-root">
@@ -373,12 +377,14 @@ const App: React.FC = () => {
       {!isLoading && (
         <motion.div className="app-shell" initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.6 }}>
           <HotBar
+            activeModule={activeModule}
             hasWorkspace={canCloseTab}
             onNewWorkspace={handleNewTab}
             onOpenWorkspace={handleOpenWorkspaceDialog}
             onSave={handleSave}
             onSaveAs={handleSaveAs}
             onCloseTab={() => activeTabId && handleTabClose(activeTabId)}
+            onAnchorToolSelect={handleAnchorToolSelect}
           />
 
           <TabStrip

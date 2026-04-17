@@ -139,6 +139,7 @@ const findMatchingRoomName = (rooms: RoomData[], segments: SegmentData[]): strin
 }
 
 const AnchorManager: React.FC<AnchorManagerProps> = ({ workspaceId }) => {
+  const rootRef = useRef<HTMLDivElement>(null)
   const canvasRef = useRef<AnchorManagerCanvasHandle>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const manifestInputRef = useRef<HTMLInputElement>(null)
@@ -549,11 +550,6 @@ const AnchorManager: React.FC<AnchorManagerProps> = ({ workspaceId }) => {
     }))
   }, [commitWorkspaceState])
 
-  const handleEscapeCanvas = useCallback(() => {
-    canvasRef.current?.cancelInteraction()
-    canvasRef.current?.focusCanvas()
-  }, [])
-
   const handleRoomDoubleClick = useCallback((roomName: string) => {
     const tabId = `room-view-${roomName}`
     setRoomViewTabs(prev => {
@@ -577,7 +573,7 @@ const AnchorManager: React.FC<AnchorManagerProps> = ({ workspaceId }) => {
 
   useEffect(() => {
     const handleViewCommand = (event: Event) => {
-      const detail = (event as CustomEvent).detail as { cmd?: string; workspaceId?: string }
+      const detail = (event as CustomEvent).detail as { cmd?: string; tool?: ActiveTool; workspaceId?: string }
       if (detail.workspaceId !== workspaceId) return
 
       switch (detail.cmd) {
@@ -596,6 +592,12 @@ const AnchorManager: React.FC<AnchorManagerProps> = ({ workspaceId }) => {
         case 'zoom_reset':
           canvasRef.current?.fitView()
           break
+        case 'set_tool':
+          if (detail.tool === 'cursor' || detail.tool === 'select' || detail.tool === 'smartSelect') {
+            setActiveTool(detail.tool)
+            if (detail.tool === 'cursor') canvasRef.current?.focusCanvas()
+          }
+          break
         default:
           break
       }
@@ -605,42 +607,33 @@ const AnchorManager: React.FC<AnchorManagerProps> = ({ workspaceId }) => {
     return () => window.removeEventListener('anchor-view-command', handleViewCommand)
   }, [handleRedo, handleUndo, workspaceId])
 
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if ((event.key !== 'c' && event.key !== 'C') || event.ctrlKey || event.metaKey || event.altKey) return
+      const root = rootRef.current
+      if (!root || root.offsetParent === null) return
+      const target = event.target as HTMLElement | null
+      if (target) {
+        const tag = target.tagName
+        if (target.isContentEditable || tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return
+      }
+      setActiveTool('cursor')
+      canvasRef.current?.focusCanvas()
+      event.preventDefault()
+    }
+
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [])
+
   return (
-    <div className="am-root">
+    <div className="am-root" ref={rootRef}>
       <div className="am-toolbar">
         <span className="am-project-name">{workspaceState.projectName}</span>
         <div className="am-toolbar-actions">
           <button className="am-btn am-btn--ghost" onClick={() => fileInputRef.current?.click()}>Load SVG</button>
           <button className="am-btn am-btn--ghost" onClick={() => manifestInputRef.current?.click()}>Load Rooms</button>
           <button className="am-btn am-btn--secondary" onClick={handleSaveManifest}>Save Rooms</button>
-          {workspaceState.allSegments.length > 0 && (
-            <>
-              <div className="am-toolbar-sep" />
-              <button
-                className={`am-btn am-btn--ghost${activeTool === 'cursor' ? ' am-btn--active' : ''}`}
-                onClick={() => setActiveTool('cursor')}
-                title="Cursor — pan and place anchors (Ctrl+Click)"
-              >
-                Cursor
-              </button>
-              <button
-                className={`am-btn am-btn--ghost${activeTool === 'select' ? ' am-btn--active' : ''}`}
-                onClick={() => setActiveTool('select')}
-                title="Select Lines — click sub-segments to toggle them"
-              >
-                Select
-              </button>
-              <button
-                className={`am-btn am-btn--ghost${activeTool === 'smartSelect' ? ' am-btn--active' : ''}`}
-                onClick={() => setActiveTool('smartSelect')}
-                title="Smart Select — click inside a closed room to select its boundary"
-              >
-                Smart Select
-              </button>
-              <div className="am-toolbar-sep" />
-              <button className="am-btn am-btn--ghost" onClick={handleEscapeCanvas}>Esc</button>
-            </>
-          )}
           <input ref={fileInputRef} type="file" accept=".svg" style={{ display: 'none' }} onChange={handleLoadSVGFile} />
           <input ref={manifestInputRef} type="file" accept=".json,.rooms.json" style={{ display: 'none' }} onChange={handleLoadManifestFile} />
         </div>
@@ -749,6 +742,7 @@ const AnchorManager: React.FC<AnchorManagerProps> = ({ workspaceId }) => {
                 activeTool={activeTool}
                 hoverRoomName={hoverRoomName}
                 onViewportChange={viewport => updateWorkspaceState(current => ({ ...current, viewport }))}
+                onToolChange={setActiveTool}
                 onSegmentClick={handleSegmentClick}
                 onSmartSelectClick={handleSmartSelectClick}
                 onRoomClick={roomName => updateWorkspaceState(current => ({ ...current, selectedRoomName: roomName, selectedAnchorId: null }))}
@@ -775,7 +769,6 @@ const AnchorManager: React.FC<AnchorManagerProps> = ({ workspaceId }) => {
                 onReferenceAnchorChange={handleReferenceAnchorChange}
                 onUndo={handleUndo}
                 onRedo={handleRedo}
-                onEscapeCanvas={handleEscapeCanvas}
               />
 
               {workspaceState.selectedSegments.length > 0 && (

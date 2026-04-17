@@ -1,7 +1,17 @@
 import React, { useEffect, useRef, useState } from 'react'
+import { AppModule } from '../../types'
 import './HotBar.css'
 
-type MenuAction = 'new-workspace' | 'open-workspace' | 'save' | 'save-as' | 'close-tab' | null
+type MenuAction =
+  | 'new-workspace'
+  | 'open-workspace'
+  | 'save'
+  | 'save-as'
+  | 'close-tab'
+  | 'anchor-tool-cursor'
+  | 'anchor-tool-select'
+  | 'anchor-tool-smart-select'
+  | null
 
 interface MenuItem {
   label: string
@@ -17,15 +27,17 @@ interface MenuEntry {
 }
 
 interface HotBarProps {
+  activeModule: AppModule | null
   hasWorkspace: boolean
   onNewWorkspace: () => void
   onOpenWorkspace: () => void
   onSave: () => void
   onSaveAs: () => void
   onCloseTab: () => void
+  onAnchorToolSelect?: (tool: 'cursor' | 'select' | 'smartSelect') => void
 }
 
-const buildMenus = (hasWorkspace: boolean): MenuEntry[] => [
+const buildMenus = (hasWorkspace: boolean, activeModule: AppModule | null): MenuEntry[] => [
   {
     label: 'File',
     items: [
@@ -64,15 +76,21 @@ const buildMenus = (hasWorkspace: boolean): MenuEntry[] => [
   },
   {
     label: 'Tools',
-    items: [
-      { label: 'Cursor Tool', shortcut: 'V', disabled: true },
-      { label: 'Line Tool', shortcut: 'L', disabled: true },
-      { label: 'Dimension Tool', shortcut: 'D', disabled: true },
-      { label: 'Vertex Manipulate', shortcut: 'N', disabled: true },
-      { separator: true, label: '' },
-      { label: 'Rotate Selection', disabled: true },
-      { label: 'Trim Line', disabled: true },
-    ],
+    items: activeModule === 'anchors'
+      ? [
+          { label: 'Cursor', shortcut: 'C', action: 'anchor-tool-cursor', disabled: !hasWorkspace },
+          { label: 'Select', shortcut: 'Hold Shift+Click', action: 'anchor-tool-select', disabled: !hasWorkspace },
+          { label: 'Smart Select', shortcut: 'Hold Ctrl+Shift+Click', action: 'anchor-tool-smart-select', disabled: !hasWorkspace },
+        ]
+      : [
+          { label: 'Cursor Tool', shortcut: 'V', disabled: true },
+          { label: 'Line Tool', shortcut: 'L', disabled: true },
+          { label: 'Dimension Tool', shortcut: 'D', disabled: true },
+          { label: 'Vertex Manipulate', shortcut: 'N', disabled: true },
+          { separator: true, label: '' },
+          { label: 'Rotate Selection', disabled: true },
+          { label: 'Trim Line', disabled: true },
+        ],
   },
   {
     label: 'Window',
@@ -94,10 +112,19 @@ const buildMenus = (hasWorkspace: boolean): MenuEntry[] => [
   },
 ]
 
-const HotBar: React.FC<HotBarProps> = ({ hasWorkspace, onNewWorkspace, onOpenWorkspace, onSave, onSaveAs, onCloseTab }) => {
+const HotBar: React.FC<HotBarProps> = ({
+  activeModule,
+  hasWorkspace,
+  onNewWorkspace,
+  onOpenWorkspace,
+  onSave,
+  onSaveAs,
+  onCloseTab,
+  onAnchorToolSelect,
+}) => {
   const [openMenu, setOpenMenu] = useState<string | null>(null)
   const barRef = useRef<HTMLDivElement>(null)
-  const menus = buildMenus(hasWorkspace)
+  const menus = buildMenus(hasWorkspace, activeModule)
 
   useEffect(() => {
     const handleClick = (event: MouseEvent) => {
@@ -119,6 +146,9 @@ const HotBar: React.FC<HotBarProps> = ({ hasWorkspace, onNewWorkspace, onOpenWor
     if (action === 'save') onSave()
     if (action === 'save-as') onSaveAs()
     if (action === 'close-tab') onCloseTab()
+    if (action === 'anchor-tool-cursor') onAnchorToolSelect?.('cursor')
+    if (action === 'anchor-tool-select') onAnchorToolSelect?.('select')
+    if (action === 'anchor-tool-smart-select') onAnchorToolSelect?.('smartSelect')
     setOpenMenu(null)
   }
 
@@ -132,6 +162,7 @@ const HotBar: React.FC<HotBarProps> = ({ hasWorkspace, onNewWorkspace, onOpenWor
         {menus.map(menu => (
           <div key={menu.label} className="hot-bar__menu-root">
             <button
+              type="button"
               className={`hot-bar__menu-btn ${openMenu === menu.label ? 'hot-bar__menu-btn--open' : ''}`}
               onClick={() => toggleMenu(menu.label)}
               onMouseEnter={() => openMenu !== null && setOpenMenu(menu.label)}
@@ -139,15 +170,26 @@ const HotBar: React.FC<HotBarProps> = ({ hasWorkspace, onNewWorkspace, onOpenWor
               {menu.label}
             </button>
             {openMenu === menu.label && (
-              <div className="hot-bar__dropdown">
+              <div className="hot-bar__dropdown electron-no-drag" role="menu">
                 {menu.items.map((item, index) =>
                   item.separator ? (
                     <div key={index} className="hot-bar__dropdown-sep" />
                   ) : (
                     <button
+                      type="button"
                       key={index}
-                      className={`hot-bar__dropdown-item ${item.disabled ? 'hot-bar__dropdown-item--disabled' : ''}`}
-                      onClick={() => !item.disabled && runAction(item.action ?? null)}
+                      className={`hot-bar__dropdown-item electron-no-drag ${item.disabled ? 'hot-bar__dropdown-item--disabled' : ''}`}
+                      role="menuitem"
+                      onMouseDown={event => {
+                        event.preventDefault()
+                        if (!item.disabled) runAction(item.action ?? null)
+                      }}
+                      onKeyDown={event => {
+                        if ((event.key === 'Enter' || event.key === ' ') && !item.disabled) {
+                          event.preventDefault()
+                          runAction(item.action ?? null)
+                        }
+                      }}
                     >
                       <span className="hot-bar__dropdown-label">{item.label}</span>
                       {item.shortcut && <span className="hot-bar__dropdown-shortcut">{item.shortcut}</span>}
