@@ -14,6 +14,7 @@ switching tabs never resets CAD state.
 import json
 import logging
 import os
+import re
 from typing import List, Optional
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
@@ -24,6 +25,7 @@ from cad_engine import CADEngine
 from config import (
     TAGS_DIR, ROOMS_DIR, TEMP_EXTRACT_DIR, ensure_profile_dirs,
     workspace_tags_dir, workspace_rooms_dir, workspace_rtls_dir,
+    workspace_projects_dir,
     ensure_workspace_dirs, delete_workspace_if_empty,
     rename_workspace_folder, list_existing_workspaces,
 )
@@ -45,7 +47,7 @@ from utilities.rooms.room_io import (
     load_floorplan_manifest,
     list_room_profiles,
 )
-from utilities.rooms.project_io import save_project_package, load_project_package
+from utilities.rooms.project_io import PROJECT_EXTENSION, save_project_package, load_project_package
 from utilities.rooms.geometry_utils import (
     find_connected_segments as _find_connected,
     detect_room_boundary as _detect_boundary,
@@ -100,6 +102,23 @@ def _resolve_rooms_dir(workspace_id: Optional[str], workspace_name: Optional[str
     return str(ROOMS_DIR)
 
 
+def _resolve_projects_dir(workspace_id: Optional[str], workspace_name: Optional[str] = None) -> str:
+    """Resolve the workspace-local projects directory for packaged .rtls saves."""
+    name = workspace_name or (workspace_id and _workspace_names.get(workspace_id))
+    if name:
+        d = workspace_projects_dir(name)
+        d.mkdir(parents=True, exist_ok=True)
+        return str(d)
+    d = os.path.join(os.path.dirname(str(ROOMS_DIR)), "projects")
+    os.makedirs(d, exist_ok=True)
+    return d
+
+
+def _slugify_filename(name: str, fallback: str = "project") -> str:
+    slug = re.sub(r"[^A-Za-z0-9._-]+", "_", (name or "").strip())
+    return slug.strip("._-") or fallback
+
+
 @app.get("/api/workspace/paths/{workspace_id}")
 async def api_workspace_paths(workspace_id: str, workspace_name: Optional[str] = None):
     """Return workspace-specific file paths for a given workspace_id."""
@@ -117,6 +136,7 @@ async def api_workspace_paths(workspace_id: str, workspace_name: Optional[str] =
         "rooms": str(workspace_rooms_dir(name)),
         "svg": str(workspace_svg_dir(name)),
         "pdf": str(workspace_pdf_dir(name)),
+        "projects": str(workspace_projects_dir(name)),
         "rtls": str(workspace_rtls_dir(name)),
     }
 
@@ -512,10 +532,14 @@ class LoadManifestRequest(BaseModel):
 
 
 class SaveProjectRequest(BaseModel):
-    project_path: str
+    project_path: str = ""
     svg_path: str = ""
+    svg_content: str = ""
+    svg_filename: str = ""
     project_name: str
     rooms: List[dict]
+    workspace_id: Optional[str] = None
+    workspace_name: Optional[str] = None
 
 
 class LoadProjectRequest(BaseModel):
@@ -588,12 +612,18 @@ async def api_rooms_create(req: CreateRoomRequest):
 
 
 @app.post("/api/rooms/manifest/save")
-async def api_rooms_manifest_save(req: SaveManifestRequest, workspace_id: Optional[str] = None):
+async def api_rooms_manifest_save(
+    req: SaveManifestRequest,
+    workspace_id: Optional[str] = None,
+    workspace_name: Optional[str] = None,
+):
+    if workspace_id and workspace_name:
+        _workspace_names[workspace_id] = workspace_name
     try:
         rooms = [Room.from_dict(r) for r in req.rooms]
     except Exception as exc:
         return {"success": False, "error": f"Invalid room data: {exc}"}
-    rooms_dir = _resolve_rooms_dir(workspace_id)
+    rooms_dir = _resolve_rooms_dir(workspace_id, workspace_name)
     ok, result = save_floorplan_manifest(
         req.project_name, req.svg_path, rooms, rooms_dir
     )
@@ -616,12 +646,26 @@ async def api_rooms_manifest_load(req: LoadManifestRequest):
 
 @app.post("/api/rooms/project/save")
 async def api_rooms_project_save(req: SaveProjectRequest):
+    effective_workspace_id = req.workspace_id
+    effective_workspace_name = req.workspace_name
+    if effective_workspace_id and effective_workspace_name:
+        _workspace_names[effective_workspace_id] = effective_workspace_name
     try:
         rooms = [Room.from_dict(r) for r in req.rooms]
     except Exception as exc:
         return {"success": False, "error": f"Invalid room data: {exc}"}
+    project_path = req.project_path.strip()
+    if not project_path:
+        projects_dir = _resolve_projects_dir(effective_workspace_id, effective_workspace_name)
+        filename = f"{_slugify_filename(req.project_name, 'project')}{PROJECT_EXTENSION}"
+        project_path = os.path.join(projects_dir, filename)
     ok, result = save_project_package(
-        req.project_path, req.svg_path, req.project_name, rooms
+        project_path,
+        req.svg_path,
+        req.svg_content,
+        req.svg_filename,
+        req.project_name,
+        rooms,
     )
     if not ok:
         return {"success": False, "error": result}

@@ -6,6 +6,9 @@ interface RoomViewProps {
   room: RoomData
   workspaceId: string
   selectedAnchorId: string | null
+  serialPorts: string[]
+  autoDetectPort: string
+  serialPortsLoading: boolean
   onBack?: () => void
   onAnchorSelect: (anchorId: string | null) => void
   onAnchorPlace: (localX: number, localY: number) => void
@@ -14,11 +17,16 @@ interface RoomViewProps {
   onAnchorMoveStart: (anchorId: string) => void
   onAnchorMove: (anchorId: string, localX: number, localY: number) => void
   onAnchorMoveEnd: () => void
+  onRefreshSerialPorts: () => void
+  onRoomSettingsUpdate: (patch: Partial<RoomData['rtls_settings']>) => void
 }
 
 const RoomView: React.FC<RoomViewProps> = ({
   room,
   selectedAnchorId,
+  serialPorts,
+  autoDetectPort,
+  serialPortsLoading,
   onBack,
   onAnchorSelect,
   onAnchorPlace,
@@ -27,11 +35,20 @@ const RoomView: React.FC<RoomViewProps> = ({
   onAnchorMoveStart,
   onAnchorMove,
   onAnchorMoveEnd,
+  onRefreshSerialPorts,
+  onRoomSettingsUpdate,
 }) => {
   const canvasRef = useRef<RoomViewCanvasHandle>(null)
   const hwIdInputRef = useRef<HTMLInputElement>(null)
   const [editFields, setEditFields] = React.useState<Partial<AnchorData>>({})
   const selectedAnchor = room.anchors.find(a => a.id === selectedAnchorId) ?? null
+  const savedPort = room.rtls_settings?.ble_module_port ?? ''
+  const portOptions = React.useMemo(() => {
+    const values = new Set<string>(serialPorts.filter(Boolean))
+    if (autoDetectPort) values.add(autoDetectPort)
+    if (savedPort) values.add(savedPort)
+    return Array.from(values)
+  }, [autoDetectPort, savedPort, serialPorts])
 
   useEffect(() => {
     if (!selectedAnchor) { setEditFields({}); return }
@@ -81,6 +98,30 @@ const RoomView: React.FC<RoomViewProps> = ({
         />
       </div>
 
+      <div className="am-room-view-settings">
+        <div className="am-section-label">COM Port</div>
+        <div className="am-room-view-settings-row">
+          <select
+            className="am-input am-room-view-port-select"
+            value={savedPort}
+            onChange={event => onRoomSettingsUpdate({ ble_module_port: event.target.value })}
+          >
+            <option value="">No saved COM port</option>
+            {portOptions.map(port => (
+              <option key={port} value={port}>{port}</option>
+            ))}
+          </select>
+          <button className="am-mini-btn" onClick={onRefreshSerialPorts} disabled={serialPortsLoading}>
+            {serialPortsLoading ? 'Refreshing...' : 'Refresh'}
+          </button>
+        </div>
+        <div className="am-room-view-note">
+          {autoDetectPort
+            ? `Auto-detect available: ${autoDetectPort}`
+            : 'No auto-detected serial module found right now.'}
+        </div>
+      </div>
+
       {room.anchors.length > 0 && (
         <table className="am-anchor-table am-room-view-table">
           <thead>
@@ -120,7 +161,7 @@ const RoomView: React.FC<RoomViewProps> = ({
       {selectedAnchor && (
         <div className="am-room-view-edit">
           <div className="am-section-label" style={{ marginBottom: 8 }}>
-            Edit {selectedAnchor.hw_id || selectedAnchor.id}
+            Edit {selectedAnchor.id}
           </div>
           <div className="am-edit-field">
             <label>HW ID</label>

@@ -173,7 +173,7 @@ const RoomViewCanvas = forwardRef<RoomViewCanvasHandle, Props>(({
       ctx.font = `bold ${Math.max(9, Math.min(12, viewport.scale * 0.45))}px var(--font-mono, monospace)`
       ctx.textAlign = 'left'
       ctx.textBaseline = 'bottom'
-      ctx.fillText(anchor.hw_id || anchor.id, sx + 12, sy - 4)
+      ctx.fillText(anchor.id, sx + 12, sy - 4)
     }
 
     // Placement preview

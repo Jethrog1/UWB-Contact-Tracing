@@ -112,7 +112,7 @@ const WorkspaceHost: React.FC<{
 
       {shouldMountModule('anchors') && (
         <div className={`app-workspace-module${showModule('anchors') ? ' app-workspace-module--visible' : ''}`}>
-          <AnchorManager workspaceId={workspace.id} />
+          <AnchorManager workspaceId={workspace.id} workspaceName={workspace.name} />
         </div>
       )}
 

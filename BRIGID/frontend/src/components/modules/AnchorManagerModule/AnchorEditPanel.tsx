@@ -108,6 +108,7 @@ const AnchorEditPanel: React.FC<Props> = ({
             </div>
             <div className="am-panel-meta">Segments: {selectedRoom.segments_ft.length}</div>
             <div className="am-panel-meta">Anchors: {selectedRoom.anchors.length}</div>
+            <div className="am-panel-meta">COM Port: {selectedRoom.rtls_settings?.ble_module_port || '—'}</div>
           </div>
 
           <div className="am-panel-section">
@@ -120,7 +121,7 @@ const AnchorEditPanel: React.FC<Props> = ({
               {selectedRoom.anchors.length === 0 && <option value="">No anchors yet</option>}
               {selectedRoom.anchors.map(anchor => (
                 <option key={anchor.id} value={anchor.id}>
-                  {anchor.hw_id || anchor.id}
+                  {anchor.id}{anchor.hw_id ? ` (HW ${anchor.hw_id})` : ''}
                 </option>
               ))}
             </select>
@@ -168,7 +169,7 @@ const AnchorEditPanel: React.FC<Props> = ({
 
           {selectedAnchor && (
             <div className="am-panel-section">
-              <div className="am-section-label">Edit {selectedAnchor.hw_id || selectedAnchor.id}</div>
+              <div className="am-section-label">Edit {selectedAnchor.id}</div>
 
               <div className="am-edit-field">
                 <label>HW ID</label>

@@ -58,10 +58,14 @@ def workspace_pdf_dir(workspace_name: str) -> Path:
     return workspace_dir(workspace_name) / "pdf"
 
 
+def workspace_projects_dir(workspace_name: str) -> Path:
+    return workspace_dir(workspace_name) / "projects"
+
+
 def ensure_workspace_dirs(workspace_name: str) -> Path:
     """Create all sub-folders for a workspace and return the workspace root."""
     root = workspace_dir(workspace_name)
-    for sub in ("tags", "rooms", "RTLS", "svg", "pdf"):
+    for sub in ("tags", "rooms", "RTLS", "svg", "pdf", "projects"):
         (root / sub).mkdir(parents=True, exist_ok=True)
     return root
 

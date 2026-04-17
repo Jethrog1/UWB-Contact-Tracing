@@ -123,6 +123,8 @@ const AnchorManagerCanvas = forwardRef<AnchorManagerCanvasHandle, AnchorManagerC
   onRoomDoubleClick,
 }, ref) => {
   const canvasRef = useRef<HTMLCanvasElement>(null)
+  const canvasSizeRef = useRef<{ width: number; height: number }>({ width: 0, height: 0 })
+  const [canvasVersion, setCanvasVersion] = useState(0)
   const [hoverSeg, setHoverSeg] = useState<SegmentData | null>(null)
   const [transientTool, setTransientTool] = useState<ActiveTool | null>(null)
   const panRef = useRef<{ active: boolean; lastX: number; lastY: number }>({
@@ -189,8 +191,13 @@ const AnchorManagerCanvas = forwardRef<AnchorManagerCanvasHandle, AnchorManagerC
       const width = canvas.offsetWidth
       const height = canvas.offsetHeight
       if (width > 0 && height > 0) {
+        const prev = canvasSizeRef.current
         canvas.width = width
         canvas.height = height
+        if (prev.width !== width || prev.height !== height) {
+          canvasSizeRef.current = { width, height }
+          setCanvasVersion(version => version + 1)
+        }
       }
     }
     const observer = new ResizeObserver(resize)
@@ -286,6 +293,7 @@ const AnchorManagerCanvas = forwardRef<AnchorManagerCanvasHandle, AnchorManagerC
     selectedRoomName,
     selectedSegments,
     viewport,
+    canvasVersion,
   ])
 
   const getSegmentAt = useCallback((mx: number, my: number): SegmentData | null => {
