@@ -4,11 +4,42 @@ import React, {
   useEffect,
   useImperativeHandle,
   useRef,
-  useState,
 } from 'react'
 import { AnchorData, RoomData, SegmentData } from '../../../types'
-import { chainSegmentsToPolygon } from '../AnchorManagerModule/anchorGeometry'
+import { chainSegmentsToPolygon, pointInPolygon } from '../AnchorManagerModule/anchorGeometry'
 import { RTLSTagState } from './RTLSDashboardCanvas'
+
+const API_BASE = 'http://localhost:8765'
+const CELL_FT = 0.02
+const BASE_HEAT = 0.08
+const SPRITE_PX = 52
+const TAG_DOT_R = 7
+const FRAME_BASE_TIME = 0.35
+const STOP_ANIM_SPEED = 0.004
+const MIN_SPEED_FACING = 0.003
+const DIR_HISTORY = 8
+const DIR_SMOOTH = 0.18
+const ANIM_REF_SPEED = 0.1
+
+const COLORS = {
+  bg: '#0a0b0d',
+  segment: '#314052',
+  roomBoundary: '#4a9eff',
+  roomFill: 'rgba(74, 158, 255, 0.08)',
+  anchor: '#ff9b38',
+  anchorRef: '#ffd166',
+  anchorLabel: '#ffffff',
+}
+
+export type TagAppearance = 'invisible' | 'dots' | 'human'
+
+export interface RTLSVisualSettings {
+  heatMap: boolean
+  heatGradientRate: number
+  heatRange: number
+  heatPeak: number
+  tagAppearance: TagAppearance
+}
 
 export interface RTLSRoomViewHandle {
   resetView: () => void
@@ -21,6 +52,7 @@ interface Props {
   tags: RTLSTagState[]
   activeSolveRoomName: string | null
   referenceAnchorId?: string
+  visualSettings: RTLSVisualSettings
 }
 
 interface Viewport {
@@ -29,14 +61,38 @@ interface Viewport {
   scale: number
 }
 
-const COLORS = {
-  bg: '#0a0b0d',
-  segment: '#314052',
-  roomBoundary: '#4a9eff',
-  roomFill: 'rgba(74, 158, 255, 0.08)',
-  anchor: '#ff9b38',
-  anchorRef: '#ffd166',
-  anchorLabel: '#ffffff',
+interface LocalTag extends RTLSTagState {
+  localX: number
+  localY: number
+}
+
+interface RuntimeProps {
+  room: RoomData
+  localBoundary: SegmentData[]
+  localInterior: SegmentData[]
+  localPolygon: [number, number][]
+  localTags: LocalTag[]
+  activeReferenceAnchor: AnchorData | null
+  activeSolveRoomName: string | null
+  visualSettings: RTLSVisualSettings
+}
+
+interface TagRenderState {
+  tagId: string
+  color: string
+  x: number
+  y: number
+  sampleX: number
+  sampleY: number
+  speed: number
+  angle: number
+  targetAngle: number
+  isWalking: boolean
+  walkPhase: 0 | 1
+  animElapsed: number
+  lastSampleTs: number
+  lastMoveTs: number
+  directionSamples: [number, number][]
 }
 
 const worldToScreen = (vp: Viewport, wx: number, wy: number): [number, number] => (
@@ -60,16 +116,207 @@ const toLocalSegment = (room: RoomData, segment: SegmentData): SegmentData => {
 
 const polygonPoints = (segments: SegmentData[]): [number, number][] => chainSegmentsToPolygon(segments)
 
+function wrapAngle(angle: number): number {
+  let next = angle
+  while (next <= -Math.PI) next += Math.PI * 2
+  while (next > Math.PI) next -= Math.PI * 2
+  return next
+}
+
+function smoothAngle(current: number, target: number, factor: number): number {
+  return current + wrapAngle(target - current) * factor
+}
+
+function meanAngle(vectors: [number, number][]): number | null {
+  if (vectors.length === 0) return null
+  let sumX = 0
+  let sumY = 0
+  for (const [dx, dy] of vectors) {
+    sumX += dx
+    sumY += dy
+  }
+  if (Math.abs(sumX) < 1e-9 && Math.abs(sumY) < 1e-9) return null
+  return Math.atan2(sumY, sumX)
+}
+
+function animFrameTime(speed: number): number | null {
+  if (speed <= STOP_ANIM_SPEED) return null
+  const ratio = speed / ANIM_REF_SPEED
+  if (ratio < 0.15) return FRAME_BASE_TIME
+  if (ratio < 0.30) return FRAME_BASE_TIME * 0.85
+  if (ratio < 0.50) return FRAME_BASE_TIME * 0.70
+  if (ratio < 0.70) return FRAME_BASE_TIME * 0.55
+  if (ratio < 0.85) return FRAME_BASE_TIME * 0.45
+  return FRAME_BASE_TIME * 0.35
+}
+
+function buildLUT(): Uint8Array {
+  const lut = new Uint8Array(256 * 3)
+  const stops: [number, number, number, number][] = [
+    [0.00, 0, 0, 200],
+    [0.10, 0, 60, 255],
+    [0.20, 0, 130, 255],
+    [0.30, 0, 180, 255],
+    [0.40, 0, 220, 210],
+    [0.50, 0, 255, 120],
+    [0.60, 100, 255, 0],
+    [0.70, 210, 255, 0],
+    [0.78, 255, 200, 0],
+    [0.86, 255, 80, 0],
+    [0.93, 215, 10, 0],
+    [1.00, 120, 0, 0],
+  ]
+
+  for (let i = 0; i < 256; i++) {
+    const value = i / 255
+    let start = stops[0]
+    let end = stops[1]
+    for (let j = 0; j < stops.length - 1; j++) {
+      if (value >= stops[j][0] && value <= stops[j + 1][0]) {
+        start = stops[j]
+        end = stops[j + 1]
+        break
+      }
+    }
+    const span = end[0] - start[0]
+    const t = span > 0 ? (value - start[0]) / span : 0
+    const eased = t * t * (3 - 2 * t)
+    lut[i * 3] = Math.round(start[1] + (end[1] - start[1]) * eased)
+    lut[i * 3 + 1] = Math.round(start[2] + (end[2] - start[2]) * eased)
+    lut[i * 3 + 2] = Math.round(start[3] + (end[3] - start[3]) * eased)
+  }
+
+  return lut
+}
+
+const LUT = buildLUT()
+const LUT32 = new Uint32Array(256)
+for (let i = 0; i < 256; i++) {
+  LUT32[i] = LUT[i * 3]
+    | (LUT[i * 3 + 1] << 8)
+    | (LUT[i * 3 + 2] << 16)
+    | (210 << 24)
+}
+
+function depositHeat(
+  p1x: number,
+  p1y: number,
+  p2x: number,
+  p2y: number,
+  heat: Float32Array,
+  heatMask: Uint8Array,
+  gridW: number,
+  gridH: number,
+  gridOX: number,
+  gridOY: number,
+  gradientRate: number,
+  rangeFt: number,
+): void {
+  const maxDist = rangeFt
+  const fieldRad = rangeFt * 0.28
+  const depositBase = 0.005 / gradientRate
+
+  const pdx = p2x - p1x
+  const pdy = p2y - p1y
+  const dist2 = pdx * pdx + pdy * pdy
+  if (dist2 >= maxDist * maxDist) return
+
+  const dist = Math.sqrt(dist2)
+  const closeness = 1 - dist / maxDist
+  const strength = depositBase * Math.pow(closeness, 2.2)
+  if (strength <= 0) return
+
+  const x1g = (p1x - gridOX) / CELL_FT
+  const y1g = (p1y - gridOY) / CELL_FT
+  const x2g = (p2x - gridOX) / CELL_FT
+  const y2g = (p2y - gridOY) / CELL_FT
+
+  const iterR = Math.min(60, Math.max(3, fieldRad / CELL_FT))
+  const iterR2 = iterR * iterR
+  const pad = Math.ceil(iterR) + 1
+  const minX = Math.max(0, Math.floor(Math.min(x1g, x2g) - pad))
+  const maxX = Math.min(gridW - 1, Math.ceil(Math.max(x1g, x2g) + pad))
+  const minY = Math.max(0, Math.floor(Math.min(y1g, y2g) - pad))
+  const maxY = Math.min(gridH - 1, Math.ceil(Math.max(y1g, y2g) + pad))
+  if (minX > maxX || minY > maxY) return
+
+  const sdx = x2g - x1g
+  const sdy = y2g - y1g
+  const slen2 = sdx * sdx + sdy * sdy
+  const midX = (x1g + x2g) * 0.5
+  const midY = (y1g + y2g) * 0.5
+  const mR2 = Math.pow(Math.max(2.0, iterR * 0.95), 2) * 2
+
+  for (let gy = minY; gy <= maxY; gy++) {
+    const rowBase = gy * gridW
+    for (let gx = minX; gx <= maxX; gx++) {
+      const idx = rowBase + gx
+      if (!heatMask[idx]) continue
+
+      const px = gx + 0.5
+      const py = gy + 0.5
+
+      let dSeg2: number
+      if (slen2 < 1e-6) {
+        const ex = px - x1g
+        const ey = py - y1g
+        dSeg2 = ex * ex + ey * ey
+      } else {
+        const t = Math.max(0, Math.min(1, ((px - x1g) * sdx + (py - y1g) * sdy) / slen2))
+        const ex = px - (x1g + t * sdx)
+        const ey = py - (y1g + t * sdy)
+        dSeg2 = ex * ex + ey * ey
+      }
+      if (dSeg2 >= iterR2) continue
+
+      const r = dSeg2 / iterR2
+      const falloff = (1 - r) * (1 - r)
+
+      const mdx = px - midX
+      const mdy = py - midY
+      const md2 = mdx * mdx + mdy * mdy
+      const midpointWeight = md2 < mR2 ? Math.pow(1 - md2 / mR2, 2) : 0
+
+      const next = heat[idx] + falloff * (0.65 + 0.35 * midpointWeight) * strength
+      heat[idx] = next < 1 ? next : 1
+    }
+  }
+}
+
 const RTLSRoomView = forwardRef<RTLSRoomViewHandle, Props>(({
   room,
   tags,
   activeSolveRoomName,
   referenceAnchorId,
+  visualSettings,
 }, ref) => {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const viewportRef = useRef<Viewport>({ offsetX: 0, offsetY: 0, scale: 20 })
   const dragRef = useRef<{ x: number; y: number } | null>(null)
-  const [version, setVersion] = useState(0)
+  const tagStatesRef = useRef<Map<string, TagRenderState>>(new Map())
+  const heatRef = useRef<Float32Array>(new Float32Array(0))
+  const gridWRef = useRef(0)
+  const gridHRef = useRef(0)
+  const gridOXRef = useRef(0)
+  const gridOYRef = useRef(0)
+  const heatCanvasRef = useRef<HTMLCanvasElement | null>(null)
+  const heatMaskRef = useRef<Uint8Array>(new Uint8Array(0))
+  const rafRef = useRef(0)
+  const propsRef = useRef<RuntimeProps>({
+    room,
+    localBoundary: [],
+    localInterior: [],
+    localPolygon: [],
+    localTags: [],
+    activeReferenceAnchor: null,
+    activeSolveRoomName,
+    visualSettings,
+  })
+  const spritesRef = useRef<{
+    stand: HTMLImageElement | null
+    left: HTMLImageElement | null
+    right: HTMLImageElement | null
+  }>({ stand: null, left: null, right: null })
 
   const localBoundary = room.segments_ft.map(segment => toLocalSegment(room, segment))
   const localInterior = room.interior_segments_ft.map(segment => toLocalSegment(room, segment))
@@ -91,6 +338,17 @@ const RTLSRoomView = forwardRef<RTLSRoomViewHandle, Props>(({
       && tag.localY <= room.room_bounds_ft.height + 0.25
     ))
 
+  propsRef.current = {
+    room,
+    localBoundary,
+    localInterior,
+    localPolygon,
+    localTags,
+    activeReferenceAnchor,
+    activeSolveRoomName,
+    visualSettings,
+  }
+
   const resetView = useCallback(() => {
     const canvas = canvasRef.current
     if (!canvas) return
@@ -106,75 +364,259 @@ const RTLSRoomView = forwardRef<RTLSRoomViewHandle, Props>(({
       offsetX: (canvas.width - width * Math.max(2, scale)) / 2,
       offsetY: (canvas.height - height * Math.max(2, scale)) / 2,
     }
-    setVersion(current => current + 1)
   }, [room.room_bounds_ft.height, room.room_bounds_ft.width])
 
-  const zoomBy = useCallback((factor: number) => {
-    const canvas = canvasRef.current
-    if (!canvas) return
-    const pivotX = canvas.width / 2
-    const pivotY = canvas.height / 2
-    const current = viewportRef.current
-    const nextScale = Math.max(2, Math.min(320, current.scale * factor))
-    viewportRef.current = {
-      scale: nextScale,
-      offsetX: pivotX - (pivotX - current.offsetX) * (nextScale / current.scale),
-      offsetY: pivotY - (pivotY - current.offsetY) * (nextScale / current.scale),
+  const initHeatGrid = useCallback(() => {
+    const { room: currentRoom, localPolygon: polygon } = propsRef.current
+    const margin = 1.0
+    const ox = -margin
+    const oy = -margin
+    const widthFt = currentRoom.room_bounds_ft.width
+    const heightFt = currentRoom.room_bounds_ft.height
+    const gridW = Math.max(4, Math.ceil((widthFt + margin * 2) / CELL_FT))
+    const gridH = Math.max(4, Math.ceil((heightFt + margin * 2) / CELL_FT))
+
+    gridOXRef.current = ox
+    gridOYRef.current = oy
+    gridWRef.current = gridW
+    gridHRef.current = gridH
+    heatRef.current = new Float32Array(gridW * gridH).fill(BASE_HEAT)
+
+    const heatCanvas = document.createElement('canvas')
+    heatCanvas.width = gridW
+    heatCanvas.height = gridH
+    heatCanvasRef.current = heatCanvas
+
+    const mask = new Uint8Array(gridW * gridH)
+    if (polygon.length >= 3) {
+      for (let gy = 0; gy < gridH; gy++) {
+        for (let gx = 0; gx < gridW; gx++) {
+          const wx = ox + (gx + 0.5) * CELL_FT
+          const wy = oy + (gy + 0.5) * CELL_FT
+          mask[gy * gridW + gx] = pointInPolygon(wx, wy, polygon) ? 1 : 0
+        }
+      }
+    } else {
+      mask.fill(1)
     }
-    setVersion(value => value + 1)
+    heatMaskRef.current = mask
   }, [])
 
-  useImperativeHandle(ref, () => ({
-    resetView,
-    zoomIn: () => zoomBy(1.15),
-    zoomOut: () => zoomBy(1 / 1.15),
-  }), [resetView, zoomBy])
+  const renderHeatToOffscreen = useCallback((heatPeak: number) => {
+    const heatCanvas = heatCanvasRef.current
+    const gridW = gridWRef.current
+    const gridH = gridHRef.current
+    if (!heatCanvas || gridW === 0 || gridH === 0) return
+    const ctx = heatCanvas.getContext('2d')
+    if (!ctx) return
 
-  useEffect(() => {
-    const canvas = canvasRef.current
-    if (!canvas) return
-    const parent = canvas.parentElement
-    if (!parent) return
-    const observer = new ResizeObserver(() => {
-      canvas.width = parent.clientWidth
-      canvas.height = parent.clientHeight
-      resetView()
-    })
-    observer.observe(parent)
-    canvas.width = parent.clientWidth
-    canvas.height = parent.clientHeight
-    resetView()
-    return () => observer.disconnect()
-  }, [resetView])
+    const imageData = ctx.createImageData(gridW, gridH)
+    const data32 = new Uint32Array(imageData.data.buffer)
+    const heat = heatRef.current
+    const maxLut = Math.max(1, (heatPeak / 100 * 255) | 0)
+    const heatSpan = 1 - BASE_HEAT
+    const scale = maxLut / heatSpan
 
-  useEffect(() => {
-    resetView()
-  }, [resetView, room.room_name])
+    for (let gy = 0; gy < gridH; gy++) {
+      const srcOffset = gy * gridW
+      const dstOffset = gy * gridW
+      for (let gx = 0; gx < gridW; gx++) {
+        const idx = Math.min(maxLut, Math.max(0, ((heat[srcOffset + gx] - BASE_HEAT) * scale) | 0))
+        data32[dstOffset + gx] = LUT32[idx]
+      }
+    }
 
-  useEffect(() => {
+    ctx.putImageData(imageData, 0, 0)
+  }, [])
+
+  const syncTagStates = useCallback((timeMs: number, dt: number) => {
+    const map = tagStatesRef.current
+    const present = new Set<string>()
+
+    for (const tag of propsRef.current.localTags) {
+      present.add(tag.tag_id)
+      let state = map.get(tag.tag_id)
+      if (!state) {
+        state = {
+          tagId: tag.tag_id,
+          color: tag.color,
+          x: tag.localX,
+          y: tag.localY,
+          sampleX: tag.localX,
+          sampleY: tag.localY,
+          speed: 0,
+          angle: 0,
+          targetAngle: 0,
+          isWalking: false,
+          walkPhase: 0,
+          animElapsed: 0,
+          lastSampleTs: timeMs,
+          lastMoveTs: timeMs,
+          directionSamples: [],
+        }
+        map.set(tag.tag_id, state)
+      }
+
+      state.color = tag.color
+      state.x = tag.localX
+      state.y = tag.localY
+
+      const dx = tag.localX - state.sampleX
+      const dy = tag.localY - state.sampleY
+      const dist = Math.hypot(dx, dy)
+
+      if (dist > 1e-3) {
+        const sampleDt = Math.max(1 / 60, (timeMs - state.lastSampleTs) / 1000)
+        state.speed = dist / (sampleDt * 60)
+        state.sampleX = tag.localX
+        state.sampleY = tag.localY
+        state.lastSampleTs = timeMs
+        state.lastMoveTs = timeMs
+
+        if (state.speed > MIN_SPEED_FACING) {
+          state.directionSamples.push([dx, dy])
+          if (state.directionSamples.length > DIR_HISTORY) state.directionSamples.shift()
+          const avgAngle = meanAngle(state.directionSamples)
+          if (avgAngle !== null) state.targetAngle = avgAngle
+        }
+      } else if ((timeMs - state.lastMoveTs) > 140) {
+        state.speed = 0
+      }
+
+      if (state.speed > MIN_SPEED_FACING) {
+        state.angle = smoothAngle(state.angle, state.targetAngle, DIR_SMOOTH)
+      }
+
+      const frameTime = animFrameTime(state.speed)
+      if (frameTime === null) {
+        if (state.animElapsed > 0) {
+          state.animElapsed += dt
+          const stopFrame = animFrameTime(STOP_ANIM_SPEED + 0.001) ?? FRAME_BASE_TIME
+          if (state.animElapsed >= stopFrame) {
+            state.isWalking = false
+            state.walkPhase = 0
+            state.animElapsed = 0
+          }
+        } else {
+          state.isWalking = false
+          state.walkPhase = 0
+        }
+      } else {
+        state.isWalking = true
+        state.animElapsed += dt
+        while (state.animElapsed >= frameTime) {
+          state.animElapsed -= frameTime
+          state.walkPhase = state.walkPhase === 0 ? 1 : 0
+        }
+      }
+    }
+
+    for (const tagId of map.keys()) {
+      if (!present.has(tagId)) map.delete(tagId)
+    }
+  }, [])
+
+  const updateHeatLayer = useCallback((vs: RTLSVisualSettings) => {
+    const gridW = gridWRef.current
+    const gridH = gridHRef.current
+    if (gridW === 0 || gridH === 0) return
+
+    const heat = heatRef.current
+    const mask = heatMaskRef.current
+    const decayRate = Math.max(0.90, 1 - 0.002 / vs.heatGradientRate)
+    const decayBlend = 1 - decayRate
+
+    for (let i = 0; i < heat.length; i++) {
+      if (!mask[i]) {
+        heat[i] = BASE_HEAT
+        continue
+      }
+      heat[i] += (BASE_HEAT - heat[i]) * decayBlend
+    }
+
+    const entities = propsRef.current.localTags
+    for (let i = 0; i < entities.length; i++) {
+      for (let j = i + 1; j < entities.length; j++) {
+        depositHeat(
+          entities[i].localX,
+          entities[i].localY,
+          entities[j].localX,
+          entities[j].localY,
+          heat,
+          mask,
+          gridW,
+          gridH,
+          gridOXRef.current,
+          gridOYRef.current,
+          vs.heatGradientRate,
+          vs.heatRange,
+        )
+      }
+    }
+
+    renderHeatToOffscreen(vs.heatPeak)
+  }, [renderHeatToOffscreen])
+
+  const drawFrame = useCallback(() => {
     const canvas = canvasRef.current
     const ctx = canvas?.getContext('2d')
     if (!canvas || !ctx) return
 
     const viewport = viewportRef.current
+    const runtime = propsRef.current
+    const { localBoundary: boundary, localInterior: interior, localPolygon: polygon, activeReferenceAnchor: referenceAnchor, activeSolveRoomName: solveRoomName, visualSettings: vs } = runtime
+
     ctx.clearRect(0, 0, canvas.width, canvas.height)
     ctx.fillStyle = COLORS.bg
     ctx.fillRect(0, 0, canvas.width, canvas.height)
 
-    if (localPolygon.length >= 3) {
+    if (polygon.length >= 3) {
       ctx.fillStyle = COLORS.roomFill
       ctx.beginPath()
-      const [x0, y0] = worldToScreen(viewport, localPolygon[0][0], localPolygon[0][1])
+      const [x0, y0] = worldToScreen(viewport, polygon[0][0], polygon[0][1])
       ctx.moveTo(x0, y0)
-      for (let i = 1; i < localPolygon.length; i++) {
-        const [x, y] = worldToScreen(viewport, localPolygon[i][0], localPolygon[i][1])
+      for (let i = 1; i < polygon.length; i++) {
+        const [x, y] = worldToScreen(viewport, polygon[i][0], polygon[i][1])
         ctx.lineTo(x, y)
       }
       ctx.closePath()
       ctx.fill()
     }
 
-    for (const segment of localInterior) {
+    if (vs.heatMap && heatCanvasRef.current) {
+      const gridW = gridWRef.current
+      const gridH = gridHRef.current
+      if (gridW > 0 && gridH > 0) {
+        if (polygon.length >= 3) {
+          ctx.save()
+          ctx.beginPath()
+          const [x0, y0] = worldToScreen(viewport, polygon[0][0], polygon[0][1])
+          ctx.moveTo(x0, y0)
+          for (let i = 1; i < polygon.length; i++) {
+            const [x, y] = worldToScreen(viewport, polygon[i][0], polygon[i][1])
+            ctx.lineTo(x, y)
+          }
+          ctx.closePath()
+          ctx.clip()
+        }
+
+        const [screenX, screenY] = worldToScreen(viewport, gridOXRef.current, gridOYRef.current)
+        ctx.globalAlpha = 0.72
+        ctx.imageSmoothingEnabled = false
+        ctx.drawImage(
+          heatCanvasRef.current,
+          screenX,
+          screenY,
+          gridW * CELL_FT * viewport.scale,
+          gridH * CELL_FT * viewport.scale,
+        )
+        ctx.imageSmoothingEnabled = true
+        ctx.globalAlpha = 1
+        if (polygon.length >= 3) ctx.restore()
+      }
+    }
+
+    for (const segment of interior) {
       const [x1, y1] = worldToScreen(viewport, segment.x1, segment.y1)
       const [x2, y2] = worldToScreen(viewport, segment.x2, segment.y2)
       ctx.strokeStyle = COLORS.segment
@@ -185,7 +627,7 @@ const RTLSRoomView = forwardRef<RTLSRoomViewHandle, Props>(({
       ctx.stroke()
     }
 
-    for (const segment of localBoundary) {
+    for (const segment of boundary) {
       const [x1, y1] = worldToScreen(viewport, segment.x1, segment.y1)
       const [x2, y2] = worldToScreen(viewport, segment.x2, segment.y2)
       ctx.strokeStyle = COLORS.roomBoundary
@@ -196,12 +638,12 @@ const RTLSRoomView = forwardRef<RTLSRoomViewHandle, Props>(({
       ctx.stroke()
     }
 
-    const refLocalX = activeReferenceAnchor?.x_ft ?? 0
-    const refLocalY = activeReferenceAnchor?.y_ft ?? 0
+    const refLocalX = referenceAnchor?.x_ft ?? 0
+    const refLocalY = referenceAnchor?.y_ft ?? 0
 
     for (const anchor of room.anchors) {
       const [sx, sy] = worldToScreen(viewport, anchor.x_ft, anchor.y_ft)
-      const isReference = anchor === activeReferenceAnchor
+      const isReference = anchor === referenceAnchor
       const radius = isReference ? 8 : 6
 
       if (isReference) {
@@ -232,54 +674,185 @@ const RTLSRoomView = forwardRef<RTLSRoomViewHandle, Props>(({
       ctx.fillText(label, sx + 10, sy - 4)
     }
 
-    for (const tag of localTags) {
-      const [sx, sy] = worldToScreen(viewport, tag.localX, tag.localY)
-      const radius = 8
-      const glow = ctx.createRadialGradient(sx, sy, 0, sx, sy, radius * 2.5)
-      glow.addColorStop(0, `${tag.color}66`)
-      glow.addColorStop(1, 'transparent')
+    if (polygon.length >= 3) {
+      ctx.save()
       ctx.beginPath()
-      ctx.arc(sx, sy, radius * 2.5, 0, Math.PI * 2)
-      ctx.fillStyle = glow
-      ctx.fill()
+      const [x0, y0] = worldToScreen(viewport, polygon[0][0], polygon[0][1])
+      ctx.moveTo(x0, y0)
+      for (let i = 1; i < polygon.length; i++) {
+        const [x, y] = worldToScreen(viewport, polygon[i][0], polygon[i][1])
+        ctx.lineTo(x, y)
+      }
+      ctx.closePath()
+      ctx.clip()
+    }
 
-      ctx.beginPath()
-      ctx.arc(sx, sy, radius, 0, Math.PI * 2)
-      ctx.fillStyle = tag.color
-      ctx.fill()
-      ctx.strokeStyle = 'rgba(255,255,255,0.4)'
-      ctx.lineWidth = 1.5
-      ctx.stroke()
+    for (const state of tagStatesRef.current.values()) {
+      const [sx, sy] = worldToScreen(viewport, state.x, state.y)
 
-      ctx.fillStyle = tag.color
+      if (vs.tagAppearance === 'human') {
+        const frameName = state.isWalking ? (state.walkPhase === 0 ? 'left' : 'right') : 'stand'
+        const sprite = spritesRef.current[frameName]
+        if (sprite) {
+          const half = SPRITE_PX / 2
+          ctx.save()
+          ctx.translate(sx, sy)
+          ctx.rotate(-state.angle)
+          ctx.drawImage(sprite, -half, -half, SPRITE_PX, SPRITE_PX)
+          ctx.restore()
+        } else {
+          ctx.beginPath()
+          ctx.arc(sx, sy, TAG_DOT_R, 0, Math.PI * 2)
+          ctx.fillStyle = state.color
+          ctx.fill()
+          ctx.strokeStyle = 'rgba(255,255,255,0.35)'
+          ctx.lineWidth = 1
+          ctx.stroke()
+        }
+      } else if (vs.tagAppearance === 'dots') {
+        const glow = ctx.createRadialGradient(sx, sy, 0, sx, sy, TAG_DOT_R * 2.5)
+        glow.addColorStop(0, `${state.color}66`)
+        glow.addColorStop(1, 'transparent')
+        ctx.beginPath()
+        ctx.arc(sx, sy, TAG_DOT_R * 2.5, 0, Math.PI * 2)
+        ctx.fillStyle = glow
+        ctx.fill()
+
+        ctx.beginPath()
+        ctx.arc(sx, sy, TAG_DOT_R, 0, Math.PI * 2)
+        ctx.fillStyle = state.color
+        ctx.fill()
+        ctx.strokeStyle = 'rgba(255,255,255,0.4)'
+        ctx.lineWidth = 1.5
+        ctx.stroke()
+      }
+
+      ctx.fillStyle = state.color
       ctx.font = 'bold 11px sans-serif'
       ctx.textAlign = 'left'
       ctx.textBaseline = 'middle'
-      ctx.fillText(tag.tag_id, sx + 14, sy)
+      ctx.fillText(state.tagId, sx + TAG_DOT_R + 7, sy)
 
       ctx.fillStyle = 'rgba(200, 220, 255, 0.7)'
       ctx.font = '9px sans-serif'
       ctx.fillText(
-        `(${(tag.localX - refLocalX).toFixed(2)}, ${(tag.localY - refLocalY).toFixed(2)}) ft`,
-        sx + 14,
+        `(${(state.x - refLocalX).toFixed(2)}, ${(state.y - refLocalY).toFixed(2)}) ft`,
+        sx + TAG_DOT_R + 7,
         sy + 12,
       )
     }
 
-    if (localTags.length === 0) {
+    if (polygon.length >= 3) ctx.restore()
+
+    if (tagStatesRef.current.size === 0) {
       ctx.fillStyle = 'rgba(180, 194, 214, 0.7)'
       ctx.font = '12px sans-serif'
       ctx.textAlign = 'center'
       ctx.textBaseline = 'middle'
       ctx.fillText(
-        activeSolveRoomName === room.room_name
+        solveRoomName === room.room_name
           ? 'Waiting for live RTLS positions...'
-          : `Room tab open. Active solve room is ${activeSolveRoomName || 'not selected'}.`,
+          : `Room tab open. Active solve room is ${solveRoomName || 'not selected'}.`,
         canvas.width / 2,
         24,
       )
     }
-  }, [activeReferenceAnchor, activeSolveRoomName, localBoundary, localInterior, localPolygon, localTags, room, version])
+  }, [room.anchors, room.room_name])
+
+  const zoomBy = useCallback((factor: number) => {
+    const canvas = canvasRef.current
+    if (!canvas) return
+    const pivotX = canvas.width / 2
+    const pivotY = canvas.height / 2
+    const current = viewportRef.current
+    const nextScale = Math.max(2, Math.min(320, current.scale * factor))
+    viewportRef.current = {
+      scale: nextScale,
+      offsetX: pivotX - (pivotX - current.offsetX) * (nextScale / current.scale),
+      offsetY: pivotY - (pivotY - current.offsetY) * (nextScale / current.scale),
+    }
+  }, [])
+
+  useImperativeHandle(ref, () => ({
+    resetView,
+    zoomIn: () => zoomBy(1.15),
+    zoomOut: () => zoomBy(1 / 1.15),
+  }), [resetView, zoomBy])
+
+  useEffect(() => {
+    const canvas = canvasRef.current
+    if (!canvas) return
+    const parent = canvas.parentElement
+    if (!parent) return
+    const observer = new ResizeObserver(() => {
+      canvas.width = parent.clientWidth
+      canvas.height = parent.clientHeight
+      resetView()
+    })
+    observer.observe(parent)
+    canvas.width = parent.clientWidth
+    canvas.height = parent.clientHeight
+    resetView()
+    return () => observer.disconnect()
+  }, [resetView])
+
+  useEffect(() => {
+    tagStatesRef.current.clear()
+    initHeatGrid()
+    resetView()
+  }, [initHeatGrid, resetView, room.room_bounds_ft.height, room.room_bounds_ft.width, room.room_name, room.segments_ft.length])
+
+  useEffect(() => {
+    const entries: [keyof typeof spritesRef.current, string][] = [
+      ['stand', `${API_BASE}/assets/walk/Untitled%20Design%20(1).png`],
+      ['left', `${API_BASE}/assets/walk/Untitled%20Design%20(2).png`],
+      ['right', `${API_BASE}/assets/walk/Untitled%20Design%20(3).png`],
+    ]
+    const blobUrls: string[] = []
+    entries.forEach(([name, url]) => {
+      fetch(url)
+        .then(response => {
+          if (!response.ok) throw new Error(String(response.status))
+          return response.blob()
+        })
+        .then(blob => {
+          const blobUrl = URL.createObjectURL(blob)
+          blobUrls.push(blobUrl)
+          const image = new Image()
+          image.onload = () => { spritesRef.current[name] = image }
+          image.src = blobUrl
+        })
+        .catch(() => {
+          spritesRef.current[name] = null
+        })
+    })
+    return () => {
+      blobUrls.forEach(url => URL.revokeObjectURL(url))
+    }
+  }, [])
+
+  useEffect(() => {
+    let lastTime = 0
+    let heatTick = 0
+
+    const loop = (time: number) => {
+      const dt = lastTime === 0 ? 0 : Math.min(0.1, (time - lastTime) / 1000)
+      lastTime = time
+
+      syncTagStates(time, dt)
+
+      if (propsRef.current.visualSettings.heatMap) {
+        heatTick += 1
+        if (heatTick % 2 === 0) updateHeatLayer(propsRef.current.visualSettings)
+      }
+
+      drawFrame()
+      rafRef.current = window.requestAnimationFrame(loop)
+    }
+
+    rafRef.current = window.requestAnimationFrame(loop)
+    return () => window.cancelAnimationFrame(rafRef.current)
+  }, [drawFrame, syncTagStates, updateHeatLayer])
 
   const onMouseDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
     dragRef.current = { x: e.clientX, y: e.clientY }
@@ -292,7 +865,6 @@ const RTLSRoomView = forwardRef<RTLSRoomViewHandle, Props>(({
     dragRef.current = { x: e.clientX, y: e.clientY }
     viewportRef.current.offsetX += dx
     viewportRef.current.offsetY += dy
-    setVersion(current => current + 1)
   }
 
   const onMouseUp = () => {
@@ -314,7 +886,6 @@ const RTLSRoomView = forwardRef<RTLSRoomViewHandle, Props>(({
       offsetX: mouseX - worldX * nextScale,
       offsetY: mouseY - worldY * nextScale,
     }
-    setVersion(value => value + 1)
   }, [])
 
   useEffect(() => {

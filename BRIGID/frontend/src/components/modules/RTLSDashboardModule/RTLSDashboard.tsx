@@ -6,7 +6,7 @@ import RTLSDashboardCanvas, {
   RTLSTagState,
   tagColor,
 } from './RTLSDashboardCanvas'
-import RTLSRoomView, { RTLSRoomViewHandle } from './RTLSRoomView'
+import RTLSRoomView, { RTLSRoomViewHandle, RTLSVisualSettings, TagAppearance } from './RTLSRoomView'
 import './RTLSDashboard.css'
 
 const API = 'http://localhost:8765'
@@ -45,16 +45,20 @@ interface RoomSettingsState {
   tag_height_ft: number
 }
 
+type RtlsTransportMode = 'serial' | 'ble'
+
 interface FloorplanSegment extends SegmentData {
   role?: string
 }
 
 interface RTLSSnapshot {
+  mode: RtlsTransportMode | null
   transport_status: string
   transport_detail: string
   selected_port: string
   ports: string[]
   auto_detect_port: string
+  ble_available: boolean
   tags: RTLSTag[]
   anchors: Record<string, [number, number]>
   room_name: string
@@ -97,12 +101,24 @@ interface RoomViewTab {
   roomName: string
 }
 
+type DashboardPanelTab = 'setup' | 'visuals' | 'analytics'
+
+const DEFAULT_VISUAL: RTLSVisualSettings = {
+  heatMap: false,
+  heatGradientRate: 0.3,
+  heatRange: 5.0,
+  heatPeak: 70,
+  tagAppearance: 'dots',
+}
+
 const emptySnap = (): RTLSSnapshot => ({
+  mode: 'serial',
   transport_status: 'idle',
   transport_detail: 'Disconnected.',
   selected_port: '',
   ports: [],
   auto_detect_port: '',
+  ble_available: false,
   tags: [],
   anchors: {},
   room_name: '',
@@ -174,6 +190,80 @@ const NumInput: React.FC<{
   )
 }
 
+const SliderInput: React.FC<{
+  label: string
+  value: number
+  min: number
+  max: number
+  step: number
+  unit: string
+  decimals?: number
+  onChange: (v: number) => void
+}> = ({ label, value, min, max, step, unit, decimals = 1, onChange }) => {
+  const formatValue = useCallback((next: number) => next.toFixed(decimals), [decimals])
+  const [text, setText] = useState(() => formatValue(value))
+  const focused = useRef(false)
+
+  useEffect(() => {
+    if (!focused.current) setText(formatValue(value))
+  }, [formatValue, value])
+
+  const clamp = useCallback((next: number) => Math.max(min, Math.min(max, next)), [max, min])
+  const parsed = parseFloat(text)
+  const sliderValue = Number.isFinite(parsed) ? clamp(parsed) : value
+
+  return (
+    <div className="rtls-slider-row">
+      <div className="rtls-slider-header">
+        <span className="rtls-slider-label">{label}</span>
+        <div className="rtls-slider-input-group">
+          <input
+            type="text"
+            inputMode="decimal"
+            className="rtls-slider-text-input"
+            value={text}
+            onFocus={() => { focused.current = true }}
+            onChange={e => {
+              setText(e.target.value)
+              const next = parseFloat(e.target.value)
+              if (Number.isFinite(next)) onChange(clamp(next))
+            }}
+            onBlur={() => {
+              focused.current = false
+              const next = parseFloat(text)
+              const clamped = Number.isFinite(next) ? clamp(next) : value
+              setText(formatValue(clamped))
+              onChange(clamped)
+            }}
+            onKeyDown={e => {
+              if (e.key !== 'Enter') return
+              const next = parseFloat(text)
+              const clamped = Number.isFinite(next) ? clamp(next) : value
+              setText(formatValue(clamped))
+              onChange(clamped)
+              ;(e.target as HTMLInputElement).blur()
+            }}
+          />
+          <span className="rtls-slider-unit">{unit}</span>
+        </div>
+      </div>
+      <input
+        type="range"
+        className="rtls-range"
+        min={min}
+        max={max}
+        step={step}
+        value={sliderValue}
+        onChange={e => {
+          const next = parseFloat(e.target.value)
+          setText(formatValue(next))
+          onChange(next)
+        }}
+      />
+    </div>
+  )
+}
+
 const RTLSDashboard: React.FC<RTLSDashboardProps> = ({ workspaceId, workspaceName }) => {
   const [snap, setSnap] = useState<RTLSSnapshot>(emptySnap)
   const [rooms, setRooms] = useState<RoomData[]>([])
@@ -186,6 +276,9 @@ const RTLSDashboard: React.FC<RTLSDashboardProps> = ({ workspaceId, workspaceNam
   const [roomTabs, setRoomTabs] = useState<RoomViewTab[]>([])
   const [selectedRoomName, setSelectedRoomName] = useState<string | null>(null)
   const [hoverRoomName, setHoverRoomName] = useState<string | null>(null)
+  const [transportMode, setTransportMode] = useState<RtlsTransportMode>('serial')
+  const [activePanelTab, setActivePanelTab] = useState<DashboardPanelTab>('setup')
+  const [visualSettings, setVisualSettings] = useState<RTLSVisualSettings>(DEFAULT_VISUAL)
 
   const floorplanCanvasRef = useRef<RTLSDashboardCanvasHandle>(null)
   const roomViewRef = useRef<RTLSRoomViewHandle>(null)
@@ -236,6 +329,7 @@ const RTLSDashboard: React.FC<RTLSDashboardProps> = ({ workspaceId, workspaceNam
   const activeViewLabel = activeTab === 'floor-plan'
     ? 'Floor Plan'
     : `${activeRoomTab?.roomName ?? 'Room'} Room View`
+  const isRoomView = canvasMode === 'room'
 
   const panelSubtitle = [
     projectName || workspaceName || 'RTLS Dashboard',
@@ -243,6 +337,10 @@ const RTLSDashboard: React.FC<RTLSDashboardProps> = ({ workspaceId, workspaceNam
     selectedRoomName ? `Selected room: ${selectedRoomName}` : null,
     snap.room_name ? `Active solve room: ${snap.room_name}` : null,
   ].filter(Boolean).join(' · ')
+
+  useEffect(() => {
+    if (snap.mode === 'ble' || snap.mode === 'serial') setTransportMode(snap.mode)
+  }, [snap.mode])
 
   const showMsg = useCallback((text: string, kind: 'ok' | 'warn' | 'error', ms = 4000) => {
     setStatusMsg({ text, kind })
@@ -469,32 +567,32 @@ const RTLSDashboard: React.FC<RTLSDashboardProps> = ({ workspaceId, workspaceNam
   }, [currentCompositeSource, loadWorkspace, selectedRoomName, snap.room_name])
 
   const connect = useCallback(async () => {
-    const port = snap.selected_port || savedModulePort || snap.auto_detect_port
-    if (!port) {
+    const port = transportMode === 'serial' ? (snap.selected_port || savedModulePort || snap.auto_detect_port) : ''
+    if (transportMode === 'serial' && !port) {
       showMsg('Select a module port first.', 'warn')
       return
     }
     try {
-      const res = await fetch(`${API}/api/rtls/serial/connect`, {
+      const res = await fetch(`${API}/api/rtls/transport/connect`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ port }),
+        body: JSON.stringify({ mode: transportMode, port }),
       })
       const data = await res.json()
       if (data.success) {
         setSnap(data as RTLSSnapshot)
-        showMsg(`Connected to ${port}.`, 'ok')
+        showMsg(transportMode === 'serial' ? `Connected to ${port}.` : 'BLE listeners started.', 'ok')
       } else {
         showMsg(data.error ?? 'Could not connect to RTLS transport.', 'warn')
       }
     } catch {
       showMsg('Could not connect to RTLS transport.', 'error')
     }
-  }, [savedModulePort, showMsg, snap.auto_detect_port, snap.selected_port])
+  }, [savedModulePort, showMsg, snap.auto_detect_port, snap.selected_port, transportMode])
 
   const disconnect = useCallback(async () => {
     try {
-      const res = await fetch(`${API}/api/rtls/serial/disconnect`, { method: 'POST' })
+      const res = await fetch(`${API}/api/rtls/transport/disconnect`, { method: 'POST' })
       const data = await res.json()
       if (data.success) {
         setSnap(data as RTLSSnapshot)
@@ -597,6 +695,401 @@ const RTLSDashboard: React.FC<RTLSDashboardProps> = ({ workspaceId, workspaceNam
     ;[refX, refY] = snap.anchors[snap.reference_anchor_id]
   }
 
+  const renderRoomManagerSection = () => (
+    <div className="rtls-section">
+      <div className="rtls-section-title">Room Manager</div>
+      <div className="rtls-room-chip-list">
+        {rooms.length === 0 && (
+          <div className="rtls-runtime-note">Load a project to restore the floor plan and room definitions.</div>
+        )}
+        {rooms.map(room => {
+          const isSelected = room.room_name === selectedRoomName
+          const isHovered = room.room_name === hoverRoomName
+          const isOpen = roomTabs.some(tab => tab.roomName === room.room_name)
+          return (
+            <button
+              key={room.room_name}
+              className={`rtls-room-chip${isSelected ? ' active' : ''}${isHovered ? ' hovered' : ''}${isOpen ? ' open' : ''}`}
+              onClick={() => void selectRoom(room.room_name)}
+              onMouseEnter={() => setHoverRoomName(room.room_name)}
+              onMouseLeave={() => setHoverRoomName(null)}
+              onDoubleClick={() => void openRoomTab(room.room_name)}
+            >
+              <span className="rtls-room-chip__name">{room.room_name}</span>
+              <span className="rtls-room-chip__meta">
+                {room.anchors.length} anchor{room.anchors.length !== 1 ? 's' : ''}
+              </span>
+            </button>
+          )
+        })}
+      </div>
+      <div className="rtls-runtime-note">
+        Click a room to target it on the floor plan. Double-click a room or room outline to open a room tab.
+      </div>
+    </div>
+  )
+
+  const renderTransportSection = () => (
+    <div className="rtls-section">
+      <div className="rtls-section-title">Connectivity</div>
+      <div className="rtls-transport-tabs">
+        <button
+          className={`rtls-btn rtls-transport-tab${transportMode === 'ble' ? ' rtls-transport-tab--active' : ''}`}
+          disabled={!snap.ble_available}
+          onClick={() => setTransportMode('ble')}
+        >
+          Bluetooth (BLE)
+        </button>
+        <button
+          className={`rtls-btn rtls-transport-tab${transportMode === 'serial' ? ' rtls-transport-tab--active' : ''}`}
+          onClick={() => setTransportMode('serial')}
+        >
+          Serial Port
+        </button>
+      </div>
+      {transportMode === 'serial' ? (
+        <select
+          className="rtls-input"
+          value={snap.selected_port || savedModulePort || snap.auto_detect_port || ''}
+          onChange={e => setSnap(prev => ({ ...prev, selected_port: e.target.value }))}
+        >
+          <option value="">Select a module port</option>
+          {Array.from(new Set([savedModulePort, snap.auto_detect_port, ...snap.ports].filter(Boolean))).map(port => (
+            <option key={port} value={port}>{port}</option>
+          ))}
+        </select>
+      ) : (
+        <div className="rtls-runtime-note">
+          BLE uses the MAC addresses saved in each tag profile for the active RTLS room.
+        </div>
+      )}
+      <div className="rtls-runtime-note">{snap.transport_detail}</div>
+      {snap.tags.length > 0 ? (
+        <div className="rtls-ble-rows">
+          {snap.tags.map((tag, index) => (
+            <div key={tag.tag_id} className="rtls-ble-row">
+              <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <span className="rtls-tag-dot" style={{ background: tagColor(index) }} />
+                {tag.tag_id}
+              </span>
+              <span style={{ color: transportStatusColor(tag.status), fontWeight: 600 }}>{tag.status}</span>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <div className="rtls-runtime-note">No profiled tags available yet.</div>
+      )}
+      {snap.serial_debug.length > 0 && (
+        <div className="rtls-serial-log">
+          {snap.serial_debug.slice(-12).map((line, index) => (
+            <div key={`${index}-${line}`} className="rtls-serial-log__line">{line}</div>
+          ))}
+        </div>
+      )}
+      <div className="rtls-connect-row">
+        <button
+          className="rtls-btn rtls-btn--primary"
+          style={{ flex: 1 }}
+          disabled={snap.transport_status === 'connected'}
+          onClick={() => void connect()}
+        >
+          Connect
+        </button>
+        <button
+          className="rtls-btn"
+          style={{ flex: 1 }}
+          disabled={snap.transport_status === 'idle'}
+          onClick={() => void disconnect()}
+        >
+          Disconnect
+        </button>
+      </div>
+    </div>
+  )
+
+  const renderTagCoordinatesSection = () => (
+    snap.tags.length > 0 ? (
+      <div className="rtls-section">
+        <div className="rtls-section-title">Coordinates (ft)</div>
+        <div className="rtls-ble-rows">
+          {snap.tags.map((tag, index) => (
+            <div key={tag.tag_id} className="rtls-ble-row">
+              <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <span className="rtls-tag-dot" style={{ background: tagColor(index) }} />
+                {tag.tag_id}
+              </span>
+              <span>
+                {tag.position
+                  ? `(${(tag.position.x - refX).toFixed(2)}, ${(tag.position.y - refY).toFixed(2)})`
+                  : '(---, ---)'}
+              </span>
+            </div>
+          ))}
+        </div>
+      </div>
+    ) : null
+  )
+
+  const renderTagElevationSection = () => (
+    <div className="rtls-section">
+      <div className="rtls-section-title">Tag Elevation</div>
+      <label className="rtls-check">
+        <input
+          type="checkbox"
+          checked={snap.elevation.override}
+          onChange={e => void setElevation({ override: e.target.checked })}
+        />
+        Manual Z-Height Override
+      </label>
+      {snap.elevation.override && (
+        <div className="rtls-elevation-row">
+          <div className="rtls-elevation-label">Height (ft):</div>
+          <NumInput
+            value={snap.elevation.value_ft}
+            min={0}
+            max={30}
+            onChange={value => void setElevation({ value_ft: value })}
+          />
+        </div>
+      )}
+    </div>
+  )
+
+  const renderSmoothingFilterSection = () => (
+    <div className="rtls-section">
+      <div className="rtls-section-title">Smoothing Filter</div>
+      <div className="rtls-transport-tabs">
+        {(['Raw', 'EMA', 'Rolling', 'Kalman'] as const).map(mode => (
+          <button
+            key={mode}
+            className={`rtls-filter-tab${snap.filter.mode === mode ? ' active' : ''}`}
+            onClick={() => void setFilter({ mode })}
+          >
+            {mode}
+          </button>
+        ))}
+      </div>
+      <div className="rtls-slider-row">
+        <div className="rtls-slider-header">
+          <span className="rtls-slider-label">EMA α</span>
+          <span className="rtls-slider-value">{snap.filter.ema_alpha.toFixed(2)}</span>
+        </div>
+        <input
+          type="range"
+          className="rtls-range"
+          min={0.01}
+          max={0.99}
+          step={0.01}
+          value={snap.filter.ema_alpha}
+          disabled={snap.filter.mode !== 'EMA'}
+          onChange={e => void setFilter({ ema_alpha: parseFloat(e.target.value) })}
+        />
+      </div>
+      <div className="rtls-slider-row">
+        <div className="rtls-slider-header">
+          <span className="rtls-slider-label">Rolling N</span>
+          <span className="rtls-slider-value">{snap.filter.roll_n}</span>
+        </div>
+        <input
+          type="range"
+          className="rtls-range"
+          min={2}
+          max={30}
+          step={1}
+          value={snap.filter.roll_n}
+          disabled={snap.filter.mode !== 'Rolling'}
+          onChange={e => void setFilter({ roll_n: parseInt(e.target.value, 10) })}
+        />
+      </div>
+      <div className="rtls-slider-row">
+        <div className="rtls-slider-header">
+          <span className="rtls-slider-label">Kalman Q</span>
+          <span className="rtls-slider-value">{snap.filter.kal_q.toFixed(3)}</span>
+        </div>
+        <input
+          type="range"
+          className="rtls-range"
+          min={0.001}
+          max={1}
+          step={0.001}
+          value={snap.filter.kal_q}
+          disabled={snap.filter.mode !== 'Kalman'}
+          onChange={e => void setFilter({ kal_q: parseFloat(e.target.value) })}
+        />
+      </div>
+      <div className="rtls-slider-row">
+        <div className="rtls-slider-header">
+          <span className="rtls-slider-label">Kalman R</span>
+          <span className="rtls-slider-value">{snap.filter.kal_r.toFixed(1)}</span>
+        </div>
+        <input
+          type="range"
+          className="rtls-range"
+          min={0.1}
+          max={20}
+          step={0.1}
+          value={snap.filter.kal_r}
+          disabled={snap.filter.mode !== 'Kalman'}
+          onChange={e => void setFilter({ kal_r: parseFloat(e.target.value) })}
+        />
+      </div>
+    </div>
+  )
+
+  const renderCsvSection = () => (
+    <div className="rtls-section">
+      <div className="rtls-section-title">Log CSV</div>
+      <button
+        className={`rtls-btn rtls-btn--full ${snap.csv.enabled ? 'rtls-btn--danger' : 'rtls-btn--primary'}`}
+        onClick={() => void toggleCsv()}
+      >
+        {snap.csv.enabled ? 'Stop Logging' : 'Start Logging'}
+      </button>
+      {snap.csv.enabled && snap.csv.path && (
+        <div className="rtls-csv-path">{snap.csv.path}</div>
+      )}
+    </div>
+  )
+
+  const renderSetupTab = () => (
+    <>
+      {renderRoomManagerSection()}
+      {isRoomView && (
+        <div className="rtls-section">
+          <div className="rtls-section-title">Room View</div>
+          <div className="rtls-panel-info-grid">
+            <div className="rtls-panel-info-card">
+              <span className="rtls-panel-info-card__label">Room</span>
+              <span className="rtls-panel-info-card__value">{visibleRoom?.room_name ?? '—'}</span>
+            </div>
+            <div className="rtls-panel-info-card">
+              <span className="rtls-panel-info-card__label">Module</span>
+              <span className="rtls-panel-info-card__value">{savedModulePort || 'Not assigned'}</span>
+            </div>
+          </div>
+          <div className="rtls-runtime-note">
+            Room-specific connectivity and coordinates live here so the floor-plan setup stays cleaner.
+          </div>
+        </div>
+      )}
+      {isRoomView && renderTransportSection()}
+      {isRoomView && renderTagCoordinatesSection()}
+      {renderTagElevationSection()}
+      {renderSmoothingFilterSection()}
+      {renderCsvSection()}
+    </>
+  )
+
+  const renderVisualsTab = () => (
+    <>
+      <div className="rtls-section">
+        <div className="rtls-section-title">Heat Map</div>
+        <div className="rtls-toggle-row">
+          <span className="rtls-toggle-label">Enable Heat Map</span>
+          <label className="rtls-toggle">
+            <input
+              type="checkbox"
+              checked={visualSettings.heatMap}
+              onChange={e => setVisualSettings(current => ({ ...current, heatMap: e.target.checked }))}
+            />
+            <span className="rtls-toggle-slider" />
+          </label>
+        </div>
+        <SliderInput
+          label="Exposure Rate"
+          value={visualSettings.heatGradientRate}
+          min={0.05}
+          max={5.0}
+          step={0.05}
+          unit="s/step"
+          decimals={2}
+          onChange={value => setVisualSettings(current => ({ ...current, heatGradientRate: value }))}
+        />
+        <SliderInput
+          label="Range"
+          value={visualSettings.heatRange}
+          min={0.5}
+          max={30}
+          step={0.5}
+          unit="ft"
+          decimals={1}
+          onChange={value => setVisualSettings(current => ({ ...current, heatRange: value }))}
+        />
+        <div className="rtls-slider-row">
+          <div className="rtls-slider-header">
+            <span className="rtls-slider-label">Peak Color</span>
+            <span className="rtls-slider-value">{visualSettings.heatPeak}</span>
+          </div>
+          <input
+            type="range"
+            className="rtls-range"
+            min={1}
+            max={100}
+            step={1}
+            value={visualSettings.heatPeak}
+            onChange={e => setVisualSettings(current => ({ ...current, heatPeak: parseInt(e.target.value, 10) }))}
+          />
+        </div>
+        <div className="rtls-runtime-note">
+          Heat is now driven only by live tag coordinates in room view, using the same grid size and deposit logic as your reference implementation.
+        </div>
+      </div>
+
+      <div className="rtls-section">
+        <div className="rtls-section-title">Tag Appearance</div>
+        <div className="rtls-transport-tabs">
+          {([
+            ['invisible', 'Invisible'],
+            ['dots', 'Normal'],
+            ['human', 'Human'],
+          ] as [TagAppearance, string][]).map(([value, label]) => (
+            <button
+              key={value}
+              className={`rtls-btn rtls-transport-tab${visualSettings.tagAppearance === value ? ' rtls-transport-tab--active' : ''}`}
+              onClick={() => setVisualSettings(current => ({ ...current, tagAppearance: value }))}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+        <div className="rtls-runtime-note">
+          Human mode replaces the live tag dots with the walking-frame animation assets. The animation direction is inferred from real tag movement between hardware updates.
+        </div>
+        {!isRoomView && (
+          <div className="rtls-placeholder-item">
+            Visuals are shown in room view so the heat map and tag appearance stay clipped to the active room geometry.
+          </div>
+        )}
+      </div>
+
+      <div className="rtls-section">
+        <div className="rtls-section-title">Reference Alignment</div>
+        <div className="rtls-placeholder-list">
+          <div className="rtls-placeholder-item">Heat map resolution stays at 0.02 ft per cell with the same offscreen raster and lookup-table rendering strategy from the docs.</div>
+          <div className="rtls-placeholder-item">The simulated bot controls from the reference were intentionally omitted so visuals apply only to real RTLS hardware tags.</div>
+        </div>
+      </div>
+    </>
+  )
+
+  const renderAnalyticsTab = () => (
+    <>
+      <div className="rtls-section">
+        <div className="rtls-section-title">Analytics</div>
+        <div className="rtls-runtime-note">
+          This tab is staged for future exposure and occupancy views that build on the same heatmap-oriented data flow from the docs.
+        </div>
+      </div>
+      <div className="rtls-section">
+        <div className="rtls-section-title">Planned Outputs</div>
+        <div className="rtls-placeholder-list">
+          <div className="rtls-placeholder-item">Room-level exposure summaries and trend views.</div>
+          <div className="rtls-placeholder-item">Session insights derived from live tags plus upcoming simulated visual layers.</div>
+        </div>
+      </div>
+    </>
+  )
+
   return (
     <div className="rtls-root">
       <div className="rtls-stage">
@@ -663,6 +1156,7 @@ const RTLSDashboard: React.FC<RTLSDashboardProps> = ({ workspaceId, workspaceNam
               tags={tagStates}
               activeSolveRoomName={snap.room_name || null}
               referenceAnchorId={snap.reference_anchor_id}
+              visualSettings={visualSettings}
             />
           ) : (
             <div className="rtls-no-room">
@@ -707,247 +1201,27 @@ const RTLSDashboard: React.FC<RTLSDashboardProps> = ({ workspaceId, workspaceNam
             </div>
 
             <div className="rtls-section">
-              <div className="rtls-section-title">Room Manager</div>
-              <div className="rtls-room-chip-list">
-                {rooms.length === 0 && (
-                  <div className="rtls-runtime-note">Load a project to restore the floor plan and room definitions.</div>
-                )}
-                {rooms.map(room => {
-                  const isSelected = room.room_name === selectedRoomName
-                  const isHovered = room.room_name === hoverRoomName
-                  const isOpen = roomTabs.some(tab => tab.roomName === room.room_name)
-                  return (
-                    <button
-                      key={room.room_name}
-                      className={`rtls-room-chip${isSelected ? ' active' : ''}${isHovered ? ' hovered' : ''}${isOpen ? ' open' : ''}`}
-                      onClick={() => void selectRoom(room.room_name)}
-                      onMouseEnter={() => setHoverRoomName(room.room_name)}
-                      onMouseLeave={() => setHoverRoomName(null)}
-                      onDoubleClick={() => void openRoomTab(room.room_name)}
-                    >
-                      <span className="rtls-room-chip__name">{room.room_name}</span>
-                      <span className="rtls-room-chip__meta">
-                        {room.anchors.length} anchor{room.anchors.length !== 1 ? 's' : ''}
-                      </span>
-                    </button>
-                  )
-                })}
-              </div>
-              {visibleRoom && (
-                <div className="rtls-room-summary">
-                  <div className="rtls-room-summary__row">
-                    <span>Reference</span>
-                    <span>{visibleRoom.room_name === snap.room_name ? (snap.reference_anchor_id || visibleRoom.reference_anchor_id || '—') : (visibleRoom.reference_anchor_id || '—')}</span>
-                  </div>
-                  <div className="rtls-room-summary__row">
-                    <span>Module</span>
-                    <span>{savedModulePort || 'Not assigned'}</span>
-                  </div>
-                  <div className="rtls-room-summary__row">
-                    <span>Filter</span>
-                    <span>{visibleRoom.room_name === snap.room_name ? snap.filter.mode : visibleRoom.rtls_settings.filter_mode}</span>
-                  </div>
-                  <div className="rtls-room-summary__row">
-                    <span>Room Height</span>
-                    <span>{(visibleRoom.room_name === snap.room_name ? snap.room_settings.tag_height_ft : visibleRoom.rtls_settings.tag_height_ft).toFixed(1)} ft</span>
-                  </div>
-                </div>
-              )}
-              <div className="rtls-runtime-note">
-                Click a room to target it on the floor plan. Double-click a room or room outline to open a room tab.
-              </div>
-            </div>
-
-            <div className="rtls-section">
-              <div className="rtls-section-title">Connectivity</div>
-              <select
-                className="rtls-input"
-                value={snap.selected_port || savedModulePort || snap.auto_detect_port || ''}
-                onChange={e => setSnap(prev => ({ ...prev, selected_port: e.target.value }))}
-              >
-                <option value="">Select a module port</option>
-                {Array.from(new Set([savedModulePort, snap.auto_detect_port, ...snap.ports].filter(Boolean))).map(port => (
-                  <option key={port} value={port}>{port}</option>
-                ))}
-              </select>
-              <div className="rtls-runtime-note">{snap.transport_detail}</div>
-              {snap.tags.length > 0 ? (
-                <div className="rtls-ble-rows">
-                  {snap.tags.map((tag, index) => (
-                    <div key={tag.tag_id} className="rtls-ble-row">
-                      <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                        <span className="rtls-tag-dot" style={{ background: tagColor(index) }} />
-                        {tag.tag_id}
-                      </span>
-                      <span style={{ color: transportStatusColor(tag.status), fontWeight: 600 }}>{tag.status}</span>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <div className="rtls-runtime-note">No profiled tags available yet.</div>
-              )}
-              {snap.serial_debug.length > 0 && (
-                <div className="rtls-serial-log">
-                  {snap.serial_debug.slice(-12).map((line, index) => (
-                    <div key={`${index}-${line}`} className="rtls-serial-log__line">{line}</div>
-                  ))}
-                </div>
-              )}
-              <div className="rtls-connect-row">
-                <button
-                  className="rtls-btn rtls-btn--primary"
-                  style={{ flex: 1 }}
-                  disabled={snap.transport_status === 'connected'}
-                  onClick={() => void connect()}
-                >
-                  Connect
-                </button>
-                <button
-                  className="rtls-btn"
-                  style={{ flex: 1 }}
-                  disabled={snap.transport_status === 'idle'}
-                  onClick={() => void disconnect()}
-                >
-                  Disconnect
-                </button>
-              </div>
-            </div>
-
-            {snap.tags.length > 0 && (
-              <div className="rtls-section">
-                <div className="rtls-section-title">Coordinates (ft)</div>
-                <div className="rtls-ble-rows">
-                  {snap.tags.map((tag, index) => (
-                    <div key={tag.tag_id} className="rtls-ble-row">
-                      <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                        <span className="rtls-tag-dot" style={{ background: tagColor(index) }} />
-                        {tag.tag_id}
-                      </span>
-                      <span>
-                        {tag.position
-                          ? `(${(tag.position.x - refX).toFixed(2)}, ${(tag.position.y - refY).toFixed(2)})`
-                          : '(---, ---)'}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            <div className="rtls-section">
-              <div className="rtls-section-title">Tag Elevation</div>
-              <label className="rtls-check">
-                <input
-                  type="checkbox"
-                  checked={snap.elevation.override}
-                  onChange={e => void setElevation({ override: e.target.checked })}
-                />
-                Manual Z-Height Override
-              </label>
-              {snap.elevation.override && (
-                <div className="rtls-elevation-row">
-                  <div className="rtls-elevation-label">Height (ft):</div>
-                  <NumInput
-                    value={snap.elevation.value_ft}
-                    min={0}
-                    max={30}
-                    onChange={value => void setElevation({ value_ft: value })}
-                  />
-                </div>
-              )}
-            </div>
-
-            <div className="rtls-section">
-              <div className="rtls-section-title">Smoothing Filter</div>
-              <div className="rtls-transport-tabs">
-                {(['Raw', 'EMA', 'Rolling', 'Kalman'] as const).map(mode => (
+              <div className="rtls-section-title">Tabs</div>
+              <div className="rtls-dashboard-tabs">
+                {([
+                  ['setup', 'Setup'],
+                  ['visuals', 'Visuals'],
+                  ['analytics', 'Analytics'],
+                ] as [DashboardPanelTab, string][]).map(([tabId, label]) => (
                   <button
-                    key={mode}
-                    className={`rtls-filter-tab${snap.filter.mode === mode ? ' active' : ''}`}
-                    onClick={() => void setFilter({ mode })}
+                    key={tabId}
+                    className={`rtls-btn rtls-dashboard-tab${activePanelTab === tabId ? ' rtls-dashboard-tab--active' : ''}`}
+                    onClick={() => setActivePanelTab(tabId)}
                   >
-                    {mode}
+                    {label}
                   </button>
                 ))}
               </div>
-              <div className="rtls-slider-row">
-                <div className="rtls-slider-header">
-                  <span className="rtls-slider-label">EMA α</span>
-                  <span className="rtls-slider-value">{snap.filter.ema_alpha.toFixed(2)}</span>
-                </div>
-                <input
-                  type="range"
-                  className="rtls-range"
-                  min={0.01}
-                  max={0.99}
-                  step={0.01}
-                  value={snap.filter.ema_alpha}
-                  disabled={snap.filter.mode !== 'EMA'}
-                  onChange={e => void setFilter({ ema_alpha: parseFloat(e.target.value) })}
-                />
-              </div>
-              <div className="rtls-slider-row">
-                <div className="rtls-slider-header">
-                  <span className="rtls-slider-label">Rolling N</span>
-                  <span className="rtls-slider-value">{snap.filter.roll_n}</span>
-                </div>
-                <input
-                  type="range"
-                  className="rtls-range"
-                  min={2}
-                  max={30}
-                  step={1}
-                  value={snap.filter.roll_n}
-                  disabled={snap.filter.mode !== 'Rolling'}
-                  onChange={e => void setFilter({ roll_n: parseInt(e.target.value, 10) })}
-                />
-              </div>
-              <div className="rtls-slider-row">
-                <div className="rtls-slider-header">
-                  <span className="rtls-slider-label">Kalman Q</span>
-                  <span className="rtls-slider-value">{snap.filter.kal_q.toFixed(3)}</span>
-                </div>
-                <input
-                  type="range"
-                  className="rtls-range"
-                  min={0.001}
-                  max={1}
-                  step={0.001}
-                  value={snap.filter.kal_q}
-                  disabled={snap.filter.mode !== 'Kalman'}
-                  onChange={e => void setFilter({ kal_q: parseFloat(e.target.value) })}
-                />
-              </div>
-              <div className="rtls-slider-row">
-                <div className="rtls-slider-header">
-                  <span className="rtls-slider-label">Kalman R</span>
-                  <span className="rtls-slider-value">{snap.filter.kal_r.toFixed(1)}</span>
-                </div>
-                <input
-                  type="range"
-                  className="rtls-range"
-                  min={0.1}
-                  max={20}
-                  step={0.1}
-                  value={snap.filter.kal_r}
-                  disabled={snap.filter.mode !== 'Kalman'}
-                  onChange={e => void setFilter({ kal_r: parseFloat(e.target.value) })}
-                />
-              </div>
             </div>
 
-            <div className="rtls-section">
-              <div className="rtls-section-title">CSV Logging</div>
-              <button
-                className={`rtls-btn rtls-btn--full ${snap.csv.enabled ? 'rtls-btn--danger' : 'rtls-btn--primary'}`}
-                onClick={() => void toggleCsv()}
-              >
-                {snap.csv.enabled ? 'Stop Logging' : 'Start Logging'}
-              </button>
-              {snap.csv.enabled && snap.csv.path && (
-                <div className="rtls-csv-path">{snap.csv.path}</div>
-              )}
-            </div>
+            {activePanelTab === 'setup' && renderSetupTab()}
+            {activePanelTab === 'visuals' && renderVisualsTab()}
+            {activePanelTab === 'analytics' && renderAnalyticsTab()}
           </div>
         </div>
       </div>

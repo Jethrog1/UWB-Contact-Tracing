@@ -22,10 +22,12 @@ Changes from original:
 
 from __future__ import annotations
 
+import asyncio
 import csv
 import math
 import os
 import re
+import sys
 import threading
 import time
 from collections import deque
@@ -38,6 +40,14 @@ import serial.tools.list_ports
 
 from utilities.profilers.calibration_math import compile_manual_equation
 
+try:
+    from bleak import BleakClient
+
+    HAS_BLEAK = True
+except ImportError:
+    BleakClient = None
+    HAS_BLEAK = False
+
 # ── ESP32-C6 auto-detect identifiers (same as original) ───────────────────────
 ESP32_C6_IDENTIFIERS = [
     ("303a", "1001"),
@@ -46,6 +56,8 @@ ESP32_C6_IDENTIFIERS = [
     ("10c4", "ea60"),
     ("0403", "6001"),
 ]
+CHAR_UUID = "deadbeef-0000-0000-0000-000000000001"
+HOME_PY_BLE_ORDER = ("T0", "T1", "T2")
 
 DEVICE_HEIGHT_FIELD_MAP = {
     "Wrist Band": "wrist_to_floor_ft",
@@ -53,6 +65,17 @@ DEVICE_HEIGHT_FIELD_MAP = {
     "Belt Clip-on": "hip_to_floor_ft",
     "Breast Pocket": "breast_to_floor_ft",
 }
+
+
+def _normalize_ble_mac(value: str) -> str:
+    return str(value or "").strip().replace("-", ":").upper()
+
+
+def _home_py_ble_sort_key(tag_id: str) -> tuple[int, str]:
+    text = str(tag_id or "").strip().upper()
+    if text in HOME_PY_BLE_ORDER:
+        return (0, f"{HOME_PY_BLE_ORDER.index(text):02d}")
+    return (1, text)
 
 
 def _anchor_key_candidates(anchor_id: str) -> list[str]:
@@ -264,6 +287,9 @@ class RTLSRuntime:
         self._serial_port_obj: serial.Optional[Serial] = None
         self._serial_running: bool = False
         self._serial_thread: threading.Optional[Thread] = None
+        self._ble_thread: threading.Optional[Thread] = None
+        self._ble_stop = threading.Event()
+        self._mode: Optional[str] = None
         self._selected_port: str = ""
         self._transport_status: str = "idle"   # idle | connecting | connected | error
         self._transport_detail: str = "Disconnected."
@@ -375,7 +401,7 @@ class RTLSRuntime:
                     tag_id = p.get("tag_id", "")
                     if not tag_id:
                         continue
-                    mac = (p.get("device", {}).get("mac_address", "") or "").lower()
+                    mac = _normalize_ble_mac(p.get("device", {}).get("mac_address", ""))
                     # Derive height for this tag based on device type
                     device = p.get("device", {})
                     dev_type = device.get("device_type", "")
@@ -394,7 +420,7 @@ class RTLSRuntime:
                         "compiled_calibration": {},
                     }
                     if mac:
-                        new_mac_map[mac] = tag_id
+                        new_mac_map[mac.lower()] = tag_id
 
                 # Preserve any tags already in registry that aren't being replaced
                 for tid in list(self._tag_data.keys()):
@@ -441,7 +467,7 @@ class RTLSRuntime:
                 return tid
         return None
 
-    def parse_and_store(self, data_str: str) -> None:
+    def parse_and_store(self, data_str: str, fallback_tag_id: Optional[str] = None) -> None:
         """
         Parse distance line: T2 | A0:11.37 | A1:10.90 | A2:--- | A3:16.55
         Profile-driven: resolves incoming tag prefix against registry and mirrors
@@ -453,6 +479,10 @@ class RTLSRuntime:
                 return
             raw_tid = parts[0]
             tag_id = self._resolve_tag_id(raw_tid)
+            fragments = parts[1:]
+            if tag_id is None and fallback_tag_id:
+                tag_id = self._resolve_tag_id(fallback_tag_id)
+                fragments = parts
             if tag_id is None:
                 return
             with self._lock:
@@ -460,7 +490,7 @@ class RTLSRuntime:
                     self._tag_data[tag_id] = {aid: -1.0 for aid in self._anchors}
                 self._tag_status[tag_id] = "Connected"
                 self._tag_seen_at[tag_id] = time.time()
-                for fragment in parts[1:]:
+                for fragment in fragments:
                     tokens = fragment.replace(":", " ").split()
                     if len(tokens) < 2:
                         continue
@@ -529,17 +559,110 @@ class RTLSRuntime:
         stamp = datetime.now().strftime("%H:%M:%S")
         self._serial_debug.append(f"[{stamp}] {text}")
 
+    def _home_py_ble_profiles(self) -> dict[str, str]:
+        items = []
+        for tag_id, info in self._tag_registry.items():
+            mac = _normalize_ble_mac(info.get("mac_address", ""))
+            if mac:
+                items.append((tag_id, mac))
+        items.sort(key=lambda item: _home_py_ble_sort_key(item[0]))
+        return dict(items)
+
+    # ── Transport lifecycle ────────────────────────────────────────────────────
+
+    def connect(self, mode: str, port: str = "") -> tuple[bool, str]:
+        self.disconnect()
+
+        if mode == "serial":
+            resolved_port = port or auto_detect_esp32_port() or ""
+            if not resolved_port:
+                self._transport_status = "error"
+                self._transport_detail = "No serial port selected."
+                return False, self._transport_detail
+            self._mode = "serial"
+            self._selected_port = resolved_port
+            self._transport_status = "connecting"
+            self._transport_detail = f"Connecting: {resolved_port}..."
+            self._append_serial_debug(f"Connecting to {resolved_port}...")
+            thread = threading.Thread(target=self._serial_reader, args=(resolved_port,), daemon=True)
+            self._serial_thread = thread
+            thread.start()
+            return True, self._transport_detail
+
+        if mode == "ble":
+            if not HAS_BLEAK:
+                self._transport_status = "error"
+                self._transport_detail = "bleak is not installed on the backend."
+                return False, self._transport_detail
+            ble_profiles = self._home_py_ble_profiles()
+            if not ble_profiles:
+                self._transport_status = "error"
+                self._transport_detail = "No profiled tags have BLE MAC addresses yet."
+                return False, self._transport_detail
+            self._mode = "ble"
+            self._selected_port = ""
+            self._transport_status = "connecting"
+            self._transport_detail = f"Starting BLE listeners for {len(ble_profiles)} tag(s)..."
+            self._append_serial_debug(self._transport_detail)
+            thread = threading.Thread(target=self._ble_thread_main, args=(ble_profiles,), daemon=True)
+            self._ble_thread = thread
+            thread.start()
+            return True, self._transport_detail
+
+        self._transport_status = "error"
+        self._transport_detail = f"Unsupported transport mode: {mode}"
+        return False, self._transport_detail
+
+    def disconnect(self) -> None:
+        mode = self._mode
+        self._mode = None
+        self._transport_status = "idle"
+        self._transport_detail = "Disconnected."
+        self._selected_port = ""
+        self._last_attempting = None
+        with self._lock:
+            for tag_id in self._tag_status:
+                self._tag_status[tag_id] = "Disconnected"
+                self._tag_seen_at.pop(tag_id, None)
+                self._tag_positions[tag_id] = None
+                if tag_id in self._tag_data:
+                    for aid in list(self._tag_data[tag_id].keys()):
+                        self._tag_data[tag_id][aid] = -1.0
+
+        if mode == "serial":
+            self._serial_running = False
+            if self._serial_port_obj and self._serial_port_obj.is_open:
+                try:
+                    self._serial_port_obj.close()
+                except Exception:
+                    pass
+            if self._serial_thread and self._serial_thread.is_alive():
+                self._serial_thread.join(timeout=1.0)
+            self._serial_thread = None
+            self._serial_port_obj = None
+
+        if mode == "ble":
+            self._ble_stop.set()
+            if self._ble_thread and self._ble_thread.is_alive():
+                self._ble_thread.join(timeout=1.5)
+            self._ble_thread = None
+            self._ble_stop.clear()
+
+        self._append_serial_debug("Transport stopped.")
+
     # ── Serial transport (preserved from rtls_main_official.py) ───────────────
 
     def _serial_reader(self, port: str, baud: int = 115200) -> None:
         try:
             self._serial_port_obj = serial.Serial(port, baud, timeout=1)
-            self._transport_status = "connected"
-            self._transport_detail = f"Connected: {port}"
+            if self._mode == "serial":
+                self._transport_status = "connected"
+                self._transport_detail = f"Connected: {port}"
             self._append_serial_debug(f"Connected to {port}")
         except Exception as e:
-            self._transport_status = "error"
-            self._transport_detail = f"Could not open {port}: {e}"
+            if self._mode == "serial":
+                self._transport_status = "error"
+                self._transport_detail = f"Could not open {port}: {e}"
             self._append_serial_debug(f"Open failed on {port}: {e}")
             self._serial_running = False
             return
@@ -569,37 +692,78 @@ class RTLSRuntime:
 
         if self._serial_port_obj and self._serial_port_obj.is_open:
             self._serial_port_obj.close()
-        self._transport_status = "idle"
-        self._transport_detail = "Disconnected."
+        if self._mode == "serial":
+            self._transport_status = "idle"
+            self._transport_detail = "Disconnected."
         self._append_serial_debug("Disconnected.")
 
     def start_serial(self, port: str) -> None:
-        self.stop_serial()
-        self._selected_port = port
-        self._transport_status = "connecting"
-        self._transport_detail = f"Connecting: {port}…"
-        self._append_serial_debug(f"Connecting to {port}...")
-        t = threading.Thread(target=self._serial_reader, args=(port,), daemon=True)
-        self._serial_thread = t
-        t.start()
+        self.connect("serial", port)
 
     def stop_serial(self) -> None:
-        self._serial_running = False
-        if self._serial_port_obj and self._serial_port_obj.is_open:
-            try:
-                self._serial_port_obj.close()
-            except Exception:
-                pass
-        if self._serial_thread and self._serial_thread.is_alive():
-            self._serial_thread.join(timeout=1.0)
-        self._serial_thread = None
-        self._transport_status = "idle"
-        self._transport_detail = "Disconnected."
-        self._selected_port = ""
-        self._append_serial_debug("Transport stopped.")
+        self.disconnect()
 
     def get_serial_ports(self) -> list[str]:
         return [p.device for p in serial.tools.list_ports.comports()]
+
+    def _ble_thread_main(self, profiles: dict[str, str]) -> None:
+        if not HAS_BLEAK:
+            return
+        if sys.platform.startswith("win"):
+            try:
+                asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+            except Exception:
+                pass
+        asyncio.run(self._ble_main(profiles))
+
+    async def _ble_main(self, profiles: dict[str, str]) -> None:
+        tasks = []
+        for tag_id, mac in profiles.items():
+            tasks.append(asyncio.create_task(self._ble_connect_and_listen(tag_id, mac)))
+            await self._sleep_with_stop(3.0)
+        if self._mode == "ble":
+            self._transport_status = "connected"
+            self._transport_detail = f"BLE listeners running for {len(tasks)} tag(s)."
+            self._append_serial_debug(self._transport_detail)
+        try:
+            await asyncio.gather(*tasks)
+        finally:
+            for task in tasks:
+                task.cancel()
+
+    async def _ble_connect_and_listen(self, tag_id: str, mac_address: str) -> None:
+        if not HAS_BLEAK:
+            return
+        while not self._ble_stop.is_set():
+            try:
+                with self._lock:
+                    self._tag_status[tag_id] = "Connecting..."
+                async with BleakClient(mac_address) as client:
+                    with self._lock:
+                        self._tag_status[tag_id] = "Connected"
+                    await client.start_notify(
+                        CHAR_UUID,
+                        lambda _sender, data, tid=tag_id: self.parse_and_store(
+                            data.decode("utf-8", errors="replace").strip(),
+                            fallback_tag_id=tid,
+                        ),
+                    )
+                    while client.is_connected and not self._ble_stop.is_set():
+                        await asyncio.sleep(1.0)
+            except Exception as exc:
+                with self._lock:
+                    self._tag_status[tag_id] = "Disconnected"
+                    if tag_id in self._tag_data:
+                        for aid in list(self._tag_data[tag_id].keys()):
+                            self._tag_data[tag_id][aid] = -1.0
+                    self._tag_seen_at.pop(tag_id, None)
+                self._append_serial_debug(f"{tag_id}: {exc}")
+                await self._sleep_with_stop(3.0)
+
+    async def _sleep_with_stop(self, seconds: float) -> None:
+        deadline = time.time() + seconds
+        while not self._ble_stop.is_set() and time.time() < deadline:
+            await asyncio.sleep(0.25)
 
     # ── Smoothing filters (preserved verbatim from rtls_main_official.py) ─────
 
@@ -907,11 +1071,13 @@ class RTLSRuntime:
                 })
 
             return {
+                "mode": self._mode,
                 "transport_status": self._transport_status,
                 "transport_detail": self._transport_detail,
                 "selected_port": self._selected_port,
                 "ports": self.get_serial_ports(),
                 "auto_detect_port": auto_detect_esp32_port() or "",
+                "ble_available": HAS_BLEAK,
                 "tags": tags_out,
                 "anchors": {aid: list(pos) for aid, pos in self._anchors.items()},
                 "segments": self._segments,

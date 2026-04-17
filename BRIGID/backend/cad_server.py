@@ -14,10 +14,12 @@ switching tabs never resets CAD state.
 import json
 import logging
 import os
+import pathlib
 import re
 from typing import List, Optional
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
@@ -78,6 +80,7 @@ app.add_middleware(
 _workspace_engines: dict[str, CADEngine] = {}
 _calibration_runtime = CalibrationRuntime()
 _rtls_runtime = RTLSRuntime()
+_WALK_ANIM_DIR = pathlib.Path(__file__).parent.parent / "assets" / "Walking animation"
 
 # Workspace registry: workspace_id → workspace_name (for path resolution)
 _workspace_names: dict[str, str] = {}
@@ -175,6 +178,15 @@ def _load_all_profiles(workspace_id: Optional[str] = None, workspace_name: Optio
 @app.get("/health")
 async def health():
     return {"status": "ok", "service": "cad-server", "workspaces": len(_workspace_engines)}
+
+
+@app.get("/assets/walk/{filename}")
+async def get_walk_asset(filename: str):
+    safe_name = pathlib.Path(filename).name
+    file_path = _WALK_ANIM_DIR / safe_name
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail=f"Asset not found: {safe_name}")
+    return FileResponse(str(file_path))
 
 
 # ---------------------------------------------------------------------------
@@ -786,6 +798,7 @@ async def api_workspace_list():
 # ===========================================================================
 
 class RtlsConnectRequest(BaseModel):
+    mode: Optional[str] = "serial"
     port: str
 
 
@@ -1109,15 +1122,27 @@ async def api_rtls_workspace_load(req: RtlsWorkspaceLoadRequest):
     }
 
 
+@app.post("/api/rtls/transport/connect")
+async def api_rtls_transport_connect(req: RtlsConnectRequest):
+    ok, detail = _rtls_runtime.connect(req.mode or "serial", req.port)
+    return {"success": ok, "error": None if ok else detail, **_rtls_runtime.snapshot()}
+
+
+@app.post("/api/rtls/transport/disconnect")
+async def api_rtls_transport_disconnect():
+    _rtls_runtime.disconnect()
+    return {"success": True, **_rtls_runtime.snapshot()}
+
+
 @app.post("/api/rtls/serial/connect")
 async def api_rtls_serial_connect(req: RtlsConnectRequest):
-    _rtls_runtime.start_serial(req.port)
-    return {"success": True, **_rtls_runtime.snapshot()}
+    ok, detail = _rtls_runtime.connect("serial", req.port)
+    return {"success": ok, "error": None if ok else detail, **_rtls_runtime.snapshot()}
 
 
 @app.post("/api/rtls/serial/disconnect")
 async def api_rtls_serial_disconnect():
-    _rtls_runtime.stop_serial()
+    _rtls_runtime.disconnect()
     return {"success": True, **_rtls_runtime.snapshot()}
 
 
