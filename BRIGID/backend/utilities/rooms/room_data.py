@@ -192,6 +192,10 @@ class Room:
                  "x2": round(x2, 3), "y2": round(y2, 3)}
                 for x1, y1, x2, y2 in self.interior_segments
             ],
+            "room_polygon_ft": [
+                {"x": round(lx + self.min_x, 3), "y": round(ly + self.min_y, 3)}
+                for lx, ly in self._local_polygon
+            ],
         }
 
     @classmethod

@@ -59,6 +59,26 @@ ensure_profile_dirs()
 
 app = FastAPI(title="BRIGID CAD Server", version="0.3.0")
 
+# ---------------------------------------------------------------------------
+# Walking-animation sprite endpoint (serves BRIGID/assets/Walking animation/)
+# ---------------------------------------------------------------------------
+
+import pathlib as _pathlib
+
+_WALK_ANIM_DIR = _pathlib.Path(__file__).parent.parent / "assets" / "Walking animation"
+
+
+@app.get("/assets/walk/{filename}")
+async def get_walk_asset(filename: str):
+    from fastapi.responses import FileResponse
+    from fastapi import HTTPException
+    safe = _pathlib.Path(filename).name          # strip any path traversal
+    path = _WALK_ANIM_DIR / safe
+    if not path.is_file():
+        raise HTTPException(status_code=404, detail="Asset not found")
+    return FileResponse(str(path))
+
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],

@@ -505,6 +505,93 @@
   border: 1px solid var(--border-subtle);
 }
 
+/* ── Visual Settings toggle rows ─────────────────────────────────── */
+
+.rtls-toggle-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 5px 0;
+}
+
+.rtls-toggle-label {
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+/* Toggle switch */
+
+.rtls-toggle {
+  position: relative;
+  display: inline-block;
+  width: 34px;
+  height: 18px;
+  flex-shrink: 0;
+  cursor: pointer;
+}
+
+.rtls-toggle input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+  position: absolute;
+}
+
+.rtls-toggle-slider {
+  position: absolute;
+  inset: 0;
+  background: var(--border-default);
+  border-radius: 9px;
+  transition: background var(--transition-fast);
+}
+
+.rtls-toggle-slider::after {
+  content: '';
+  position: absolute;
+  width: 12px;
+  height: 12px;
+  left: 3px;
+  top: 3px;
+  background: #fff;
+  border-radius: 50%;
+  transition: transform var(--transition-fast);
+}
+
+.rtls-toggle input:checked + .rtls-toggle-slider {
+  background: var(--accent-primary);
+}
+
+.rtls-toggle input:checked + .rtls-toggle-slider::after {
+  transform: translateX(16px);
+}
+
+/* ── SliderInput ──────────────────────────────────────────────────── */
+
+.rtls-slider-text-input {
+  width: 46px;
+  padding: 1px 4px;
+  background: transparent;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  color: var(--text-accent);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  text-align: right;
+  outline: none;
+  flex-shrink: 0;
+}
+
+.rtls-slider-text-input:focus { border-color: var(--border-active); }
+
+.rtls-slider-unit {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
 /* ── Responsive ───────────────────────────────────────────────────── */
 
 @media (max-width: 1200px) {

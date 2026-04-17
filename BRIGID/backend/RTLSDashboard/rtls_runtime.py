@@ -187,6 +187,7 @@ class RTLSRuntime:
         self._segments: list[dict] = []
         self._room_bounds: dict[str, float] = {}
         self._room_name: str = ""
+        self._room_polygon_ft: list[dict] = []
 
         # ── Smoothing filter state ─────────────────────────────────────────────
         self._filter_mode: str = "EMA"       # EMA | Rolling | Kalman
@@ -287,6 +288,7 @@ class RTLSRuntime:
                 self._segments = room_data.get("segments_ft", [])
                 self._room_bounds = room_data.get("room_bounds_ft", {})
                 self._room_name = room_data.get("room_name", "")
+                self._room_polygon_ft = room_data.get("room_polygon_ft", [])
 
             if tag_profiles:
                 new_registry: dict[str, dict[str, Any]] = {}
@@ -771,6 +773,7 @@ class RTLSRuntime:
                 "segments": self._segments,
                 "room_bounds": self._room_bounds,
                 "room_name": self._room_name,
+                "room_polygon_ft": list(self._room_polygon_ft),
                 "reference_anchor_id": self._reference_anchor_id,
                 "filter": {
                     "mode": self._filter_mode,

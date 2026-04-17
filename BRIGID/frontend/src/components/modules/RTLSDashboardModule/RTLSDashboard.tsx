@@ -1,8 +1,10 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import React, { useCallback, useEffect, useRef, useState } from 'react'
 import RTLSDashboardCanvas, {
+  BotAppearance,
   RTLSDashboardCanvasHandle,
   RTLSTagState,
+  VisualSettings,
   tagColor,
 } from './RTLSDashboardCanvas'
 import './RTLSDashboard.css'
@@ -49,6 +51,7 @@ interface RTLSSnapshot {
   anchors: Record<string, [number, number]>
   segments: { x1: number; y1: number; x2: number; y2: number }[]
   room_bounds: { min_x?: number; min_y?: number; max_x?: number; max_y?: number }
+  room_polygon_ft: { x: number; y: number }[]
   room_name: string
   reference_anchor_id: string
   filter: FilterState
@@ -56,9 +59,90 @@ interface RTLSSnapshot {
   csv: CSVState
 }
 
+const MAX_BOTS = 24
+
+const DEFAULT_VISUAL: VisualSettings = {
+  heatMap: false,
+  heatGradientRate: 0.3,
+  heatRange: 5.0,
+  heatPeak: 70,
+  botAppearance: 'dots',
+  bots: false,
+  botSpeed: 2.0,
+  botAccel: 1.5,
+  botPause: 1.0,
+}
+
 interface RTLSDashboardProps {
   workspaceId: string
   workspaceName: string
+}
+
+// ── Slider + typeable input (slider moves as you type; Enter/blur confirms) ───
+const SliderInput: React.FC<{
+  label: string
+  value: number
+  min: number
+  max: number
+  step: number
+  unit: string
+  decimals?: number
+  onChange: (v: number) => void
+}> = ({ label, value, min, max, step, unit, decimals = 1, onChange }) => {
+  const fmt = (n: number) => n.toFixed(decimals)
+  const [text, setText] = useState(() => fmt(value))
+  const focused = useRef(false)
+
+  useEffect(() => { if (!focused.current) setText(fmt(value)) }, [value]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const clamp = (n: number) => Math.max(min, Math.min(max, n))
+  const parsed = parseFloat(text)
+  const sliderVal = isFinite(parsed) ? clamp(parsed) : value
+
+  return (
+    <div className="rtls-slider-row">
+      <div className="rtls-slider-header">
+        <span className="rtls-slider-label">{label}</span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+          <input
+            type="text"
+            className="rtls-slider-text-input"
+            value={text}
+            onFocus={() => { focused.current = true }}
+            onChange={e => {
+              setText(e.target.value)
+              const v = parseFloat(e.target.value)
+              if (isFinite(v)) onChange(clamp(v))   // slider tracks immediately
+            }}
+            onBlur={() => {
+              focused.current = false
+              const v = parseFloat(text)
+              const c = isFinite(v) ? clamp(v) : value
+              setText(fmt(c)); onChange(c)
+            }}
+            onKeyDown={e => {
+              if (e.key === 'Enter') {
+                const v = parseFloat(text)
+                const c = isFinite(v) ? clamp(v) : value
+                setText(fmt(c)); onChange(c)
+                  ; (e.target as HTMLInputElement).blur()
+              }
+            }}
+          />
+          <span className="rtls-slider-unit">{unit}</span>
+        </div>
+      </div>
+      <input
+        type="range" className="rtls-range"
+        min={min} max={max} step={step}
+        value={sliderVal}
+        onChange={e => {
+          const v = parseFloat(e.target.value)
+          setText(fmt(v)); onChange(v)
+        }}
+      />
+    </div>
+  )
 }
 
 // ── Controlled numeric input ───────────────────────────────────────────────────
@@ -105,6 +189,7 @@ const emptySnap = (): RTLSSnapshot => ({
   anchors: {},
   segments: [],
   room_bounds: {},
+  room_polygon_ft: [],
   room_name: '',
   reference_anchor_id: '',
   filter: { mode: 'EMA', ema_alpha: 0.2, roll_n: 8, kal_q: 0.1, kal_r: 2.0 },
@@ -120,6 +205,8 @@ const RTLSDashboard: React.FC<RTLSDashboardProps> = ({ workspaceId, workspaceNam
   const [roomLoaded, setRoomLoaded] = useState(false)
   const [svgContent, setSvgContent] = useState<string | null>(null)
   const [autoLoading, setAutoLoading] = useState(false)
+  const [visualSettings, setVisualSettings] = useState<VisualSettings>(DEFAULT_VISUAL)
+  const [botCount, setBotCount] = useState(0)
   const canvasRef = useRef<RTLSDashboardCanvasHandle>(null)
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const busy = useRef(false)
@@ -218,7 +305,7 @@ const RTLSDashboard: React.FC<RTLSDashboardProps> = ({ workspaceId, workspaceNam
       const detail = (e as CustomEvent).detail as { cmd: string; workspaceId: string }
       if (detail.workspaceId !== workspaceId) return
       if (detail.cmd === 'refresh') loadWorkspace()
-      
+
       const canvas = canvasRef.current
       if (!canvas) return
       if (detail.cmd === 'zoom_in') canvas.zoomIn()
@@ -332,10 +419,10 @@ const RTLSDashboard: React.FC<RTLSDashboardProps> = ({ workspaceId, workspaceNam
   const tStatus = snap.transport_status
   const transportKind: 'ok' | 'error' =
     (tStatus === 'connected' && !snap.transport_detail.toLowerCase().includes('disconnect')) ? 'ok'
-    : 'error'
+      : 'error'
 
   const { filter, elevation } = snap
-  
+
   // Reference anchor offset
   let refX = 0
   let refY = 0
@@ -366,8 +453,10 @@ const RTLSDashboard: React.FC<RTLSDashboardProps> = ({ workspaceId, workspaceNam
               anchors={snap.anchors}
               tags={tagStates}
               roomBounds={snap.room_bounds}
+              roomPolygon={snap.room_polygon_ft}
               svgContent={svgContent}
               referenceAnchorId={snap.reference_anchor_id}
+              visualSettings={visualSettings}
             />
           )}
         </div>
@@ -571,6 +660,93 @@ const RTLSDashboard: React.FC<RTLSDashboardProps> = ({ workspaceId, workspaceNam
               {snap.csv.enabled && snap.csv.path && (
                 <div className="rtls-csv-path">{snap.csv.path}</div>
               )}
+            </div>
+
+            {/* Visual Settings */}
+            <div className="rtls-section">
+              <div className="rtls-section-title">Visual Settings</div>
+
+              {/* ── Heat Map ── */}
+              <div className="rtls-toggle-row">
+                <span className="rtls-toggle-label">Heat Map</span>
+                <label className="rtls-toggle">
+                  <input type="checkbox" checked={visualSettings.heatMap}
+                    onChange={e => setVisualSettings(p => ({ ...p, heatMap: e.target.checked }))} />
+                  <span className="rtls-toggle-slider" />
+                </label>
+              </div>
+
+              <SliderInput
+                label="Exposure Rate"
+                value={visualSettings.heatGradientRate}
+                min={0.05} max={5.0} step={0.05} decimals={2} unit="s/step"
+                onChange={v => setVisualSettings(p => ({ ...p, heatGradientRate: v }))}
+              />
+              <SliderInput
+                label="Range"
+                value={visualSettings.heatRange}
+                min={0.5} max={30} step={0.5} decimals={1} unit="ft"
+                onChange={v => setVisualSettings(p => ({ ...p, heatRange: v }))}
+              />
+
+              <div className="rtls-slider-row">
+                <div className="rtls-slider-header">
+                  <span className="rtls-slider-label">Peak Color</span>
+                  <span className="rtls-slider-value">{visualSettings.heatPeak}</span>
+                </div>
+                <input type="range" className="rtls-range" min={1} max={100} step={1}
+                  value={visualSettings.heatPeak}
+                  onChange={e => setVisualSettings(p => ({ ...p, heatPeak: parseInt(e.target.value) }))} />
+              </div>
+
+              {/* ── Bot Appearance (3-option segmented control) ── */}
+              <div className="rtls-section-title" style={{ marginTop: 10 }}>Bot Appearance</div>
+              <div className="rtls-transport-tabs">
+                {(['invisible', 'dots', 'human'] as BotAppearance[]).map(opt => (
+                  <button
+                    key={opt}
+                    className={`rtls-transport-tab${visualSettings.botAppearance === opt ? ' active' : ''}`}
+                    onClick={() => setVisualSettings(p => ({ ...p, botAppearance: opt }))}
+                  >
+                    {opt === 'invisible' ? 'Invisible' : opt === 'dots' ? 'Normal' : 'Human'}
+                  </button>
+                ))}
+              </div>
+
+              {/* ── Bots ── */}
+              <div className="rtls-toggle-row" style={{ marginTop: 6 }}>
+                <span className="rtls-toggle-label">Bots</span>
+                <label className="rtls-toggle">
+                  <input type="checkbox" checked={visualSettings.bots}
+                    onChange={e => {
+                      const enabled = e.target.checked
+                      setVisualSettings(p => ({ ...p, bots: enabled }))
+                      if (enabled && canvasRef.current && canvasRef.current.getBotCount() === 0) {
+                        canvasRef.current.seedBots(6); setBotCount(6)
+                      }
+                    }} />
+                  <span className="rtls-toggle-slider" />
+                </label>
+              </div>
+
+              <button
+                className="rtls-btn rtls-btn--full"
+                style={{ marginTop: 4 }}
+                disabled={!visualSettings.bots || botCount >= MAX_BOTS}
+                onClick={() => { if (!canvasRef.current) return; setBotCount(canvasRef.current.addBot()) }}
+              >
+                Add Random{botCount > 0 ? ` (${botCount}/${MAX_BOTS})` : ''}
+              </button>
+
+              <SliderInput label="Speed" value={visualSettings.botSpeed}
+                min={0.5} max={8} step={0.1} decimals={1} unit="ft/s"
+                onChange={v => setVisualSettings(p => ({ ...p, botSpeed: v }))} />
+              <SliderInput label="Acceleration" value={visualSettings.botAccel}
+                min={0.1} max={5} step={0.1} decimals={1} unit="ft/s²"
+                onChange={v => setVisualSettings(p => ({ ...p, botAccel: v }))} />
+              <SliderInput label="Pause" value={visualSettings.botPause}
+                min={0.2} max={3.0} step={0.1} decimals={1} unit="s"
+                onChange={v => setVisualSettings(p => ({ ...p, botPause: v }))} />
             </div>
 
           </div>
