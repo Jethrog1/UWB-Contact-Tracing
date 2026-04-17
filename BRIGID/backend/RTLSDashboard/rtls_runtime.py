@@ -36,6 +36,8 @@ from typing import Any
 import serial
 import serial.tools.list_ports
 
+from utilities.profilers.calibration_math import compile_manual_equation
+
 # ── ESP32-C6 auto-detect identifiers (same as original) ───────────────────────
 ESP32_C6_IDENTIFIERS = [
     ("303a", "1001"),
@@ -44,6 +46,54 @@ ESP32_C6_IDENTIFIERS = [
     ("10c4", "ea60"),
     ("0403", "6001"),
 ]
+
+DEVICE_HEIGHT_FIELD_MAP = {
+    "Wrist Band": "wrist_to_floor_ft",
+    "Arm Band": "arm_to_floor_ft",
+    "Belt Clip-on": "hip_to_floor_ft",
+    "Breast Pocket": "breast_to_floor_ft",
+}
+
+
+def _anchor_key_candidates(anchor_id: str) -> list[str]:
+    raw = str(anchor_id or "").strip()
+    if not raw:
+        return []
+
+    candidates: list[str] = []
+    seen: set[str] = set()
+
+    def _add(candidate: str) -> None:
+        text = str(candidate or "").strip()
+        if text and text not in seen:
+            seen.add(text)
+            candidates.append(text)
+
+    _add(raw)
+    upper = raw.upper()
+    _add(upper)
+    if "A" in upper:
+        _add(upper[upper.rfind("A"):])
+    return candidates
+
+
+def _resolve_anchor_equation(equations: dict[str, Any], anchor_id: str) -> tuple[str, str]:
+    if not isinstance(equations, dict):
+        return "", ""
+
+    for candidate in _anchor_key_candidates(anchor_id):
+        expr = str(equations.get(candidate, "")).strip()
+        if expr:
+            return candidate, expr
+
+    normalized = {candidate.casefold() for candidate in _anchor_key_candidates(anchor_id)}
+    for key, expr in equations.items():
+        key_text = str(key or "").strip()
+        if key_text and key_text.casefold() in normalized:
+            expr_text = str(expr or "").strip()
+            if expr_text:
+                return key_text, expr_text
+    return "", ""
 
 
 def auto_detect_esp32_port() -> Optional[str]:
@@ -187,9 +237,14 @@ class RTLSRuntime:
         self._segments: list[dict] = []
         self._room_bounds: dict[str, float] = {}
         self._room_name: str = ""
+        self._room_rtls_settings: dict[str, Any] = {
+            "tag_height_ft": 0.0,
+            "filter_mode": "Raw",
+            "ble_module_port": "",
+        }
 
         # ── Smoothing filter state ─────────────────────────────────────────────
-        self._filter_mode: str = "EMA"       # EMA | Rolling | Kalman
+        self._filter_mode: str = "Raw"       # Raw | EMA | Rolling | Kalman
         self._ema_alpha: float = 0.20
         self._roll_n: int = 8
         self._kal_q: float = 0.10
@@ -257,11 +312,19 @@ class RTLSRuntime:
             if room_data:
                 self._anchors = {}
                 self._anchor_z = {}
+                self._reference_anchor_id = ""
 
                 # Room bounds for local→world coordinate conversion
                 bounds = room_data.get("room_bounds_ft", {})
                 min_x = float(bounds.get("min_x", 0))
                 min_y = float(bounds.get("min_y", 0))
+
+                settings = {
+                    "tag_height_ft": 0.0,
+                    "filter_mode": "Raw",
+                    "ble_module_port": "",
+                    **dict(room_data.get("rtls_settings", {})),
+                }
 
                 # Reference anchor (default anchor = coordinate origin)
                 ref_room_id = room_data.get("reference_anchor_id", "")
@@ -287,6 +350,21 @@ class RTLSRuntime:
                 self._segments = room_data.get("segments_ft", [])
                 self._room_bounds = room_data.get("room_bounds_ft", {})
                 self._room_name = room_data.get("room_name", "")
+                self._room_rtls_settings = settings
+
+                filter_mode = str(settings.get("filter_mode", "Raw") or "Raw").strip() or "Raw"
+                if filter_mode.lower() == "none":
+                    filter_mode = "Raw"
+                self._filter_mode = filter_mode
+
+                if not self._global_elevation_override:
+                    try:
+                        self._global_elevation_ft = float(settings.get("tag_height_ft", 0.0))
+                    except (TypeError, ValueError):
+                        self._global_elevation_ft = 0.0
+
+                if self._transport_status != "connected":
+                    self._selected_port = str(settings.get("ble_module_port", "") or "").strip()
 
             if tag_profiles:
                 new_registry: dict[str, dict[str, Any]] = {}
@@ -299,16 +377,19 @@ class RTLSRuntime:
                     # Derive height for this tag based on device type
                     device = p.get("device", {})
                     dev_type = device.get("device_type", "")
-                    height_map = {
-                        "Wrist Band": device.get("wrist_to_floor_ft", 0.0),
-                        "Arm Band": device.get("arm_to_floor_ft", 0.0),
-                        "Belt Clip-on": device.get("hip_to_floor_ft", 0.0),
-                        "Breast Pocket": device.get("breast_to_floor_ft", 0.0),
-                    }
-                    tag_height_ft = float(height_map.get(dev_type, 0.0))
+                    height_key = DEVICE_HEIGHT_FIELD_MAP.get(dev_type, "")
+                    try:
+                        tag_height_ft = float(device.get(height_key, 0.0)) if height_key else 0.0
+                    except (TypeError, ValueError):
+                        tag_height_ft = 0.0
+
+                    calibration = dict(p.get("calibration", {}))
                     new_registry[tag_id] = {
                         "mac_address": mac,
                         "tag_height_ft": tag_height_ft,
+                        "calibration_enabled": bool(calibration.get("equations_enabled")),
+                        "calibration_equations": dict(calibration.get("equations", {})),
+                        "compiled_calibration": {},
                     }
                     if mac:
                         new_mac_map[mac] = tag_id
@@ -585,6 +666,34 @@ class RTLSRuntime:
             return self._apply_kalman(t_id, rx, ry)
         return (rx, ry)
 
+    def _apply_anchor_correction(self, tag_info: dict[str, Any], anchor_id: str, raw_distance: float) -> float:
+        if raw_distance <= 0.0 or not tag_info.get("calibration_enabled"):
+            return raw_distance
+
+        equations = tag_info.get("calibration_equations", {})
+        cache = tag_info.setdefault("compiled_calibration", {})
+        resolved_anchor_id, expr = _resolve_anchor_equation(equations, anchor_id)
+        if not expr:
+            return raw_distance
+
+        cache_key = resolved_anchor_id or str(anchor_id or "").strip()
+        func = cache.get(cache_key)
+        if func is None:
+            try:
+                func = compile_manual_equation(expr)
+            except Exception:
+                cache[cache_key] = False
+                return raw_distance
+            cache[cache_key] = func
+        elif func is False:
+            return raw_distance
+
+        try:
+            corrected = float(func(float(raw_distance)))
+        except Exception:
+            return raw_distance
+        return corrected if corrected > 0.0 else raw_distance
+
     def reset_filter_state(self, t_id: str) -> None:
         self._ema_pos[t_id] = None
         self._roll_buf[t_id] = deque(maxlen=20)
@@ -623,7 +732,12 @@ class RTLSRuntime:
             with self._lock:
                 dists = dict(self._tag_data.get(t_id, {}))
 
-            x, y = calc_pos_multi(dists, anchors, anchor_z=eff_anchor_z, tag_z=tag_z)
+            corrected_dists = {
+                a_id: self._apply_anchor_correction(tag_info, a_id, raw_distance)
+                for a_id, raw_distance in dists.items()
+            }
+
+            x, y = calc_pos_multi(corrected_dists, anchors, anchor_z=eff_anchor_z, tag_z=tag_z)
             if x is not None and y is not None:
                 sx, sy = self.smooth(t_id, x, y)
                 self._tag_positions[t_id] = (round(sx, 3), round(sy, 3))
@@ -772,6 +886,7 @@ class RTLSRuntime:
                 "room_bounds": self._room_bounds,
                 "room_name": self._room_name,
                 "reference_anchor_id": self._reference_anchor_id,
+                "room_settings": dict(self._room_rtls_settings),
                 "filter": {
                     "mode": self._filter_mode,
                     "ema_alpha": self._ema_alpha,

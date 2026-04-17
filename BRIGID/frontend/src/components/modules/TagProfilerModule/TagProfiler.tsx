@@ -44,6 +44,44 @@ const createEmptyProfile = (): TagProfile => ({
   notes: '',
 })
 
+const normalizeLoadedProfile = (raw: Partial<TagProfile> | null | undefined): TagProfile => {
+  const fallback = createEmptyProfile()
+  const device = raw?.device ?? {}
+  const calibration = raw?.calibration ?? {}
+  const equations = calibration.equations ?? {}
+
+  const parseHeight = (value: unknown): number => {
+    const parsed = Number(value)
+    return Number.isFinite(parsed) ? parsed : 0
+  }
+
+  return {
+    ...fallback,
+    ...raw,
+    identity: {
+      ...fallback.identity,
+      ...(raw?.identity ?? {}),
+    },
+    device: {
+      ...fallback.device,
+      ...device,
+      wrist_to_floor_ft: parseHeight(device.wrist_to_floor_ft),
+      arm_to_floor_ft: parseHeight(device.arm_to_floor_ft),
+      hip_to_floor_ft: parseHeight(device.hip_to_floor_ft),
+      breast_to_floor_ft: parseHeight(device.breast_to_floor_ft),
+    },
+    calibration: {
+      ...fallback.calibration,
+      ...calibration,
+      equations: {
+        ...fallback.calibration.equations,
+        ...equations,
+      },
+    },
+    notes: raw?.notes ?? fallback.notes,
+  }
+}
+
 const TagProfiler: React.FC<TagProfilerProps> = ({ workspaceId }) => {
   const [profile, setProfile] = useState<TagProfile>(createEmptyProfile)
   const [savedProfiles, setSavedProfiles] = useState<string[]>([])
@@ -124,7 +162,7 @@ const TagProfiler: React.FC<TagProfilerProps> = ({ workspaceId }) => {
       const res = await fetch(`${API}/api/profile/${encodeURIComponent(tagId)}?workspace_id=${encodeURIComponent(workspaceId)}`)
       const data = await res.json()
       if (data.success) {
-        setProfile(data.profile)
+        setProfile(normalizeLoadedProfile(data.profile))
         setDirty(false)
       } else {
         pushToast(data.error, 'error')
@@ -161,7 +199,7 @@ const TagProfiler: React.FC<TagProfilerProps> = ({ workspaceId }) => {
     reader.onload = ev => {
       try {
         const data = JSON.parse(ev.target?.result as string) as TagProfile
-        setProfile(data)
+        setProfile(normalizeLoadedProfile(data))
         setDirty(true)
         pushToast(`Loaded: ${data.tag_id || file.name}`, 'ok')
       } catch {
