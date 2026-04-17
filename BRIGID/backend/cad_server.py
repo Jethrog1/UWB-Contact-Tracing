@@ -53,6 +53,7 @@ from utilities.rooms.geometry_utils import (
     detect_room_boundary as _detect_boundary,
     compute_subsegment as _compute_subsegment,
 )
+from utilities.importers.svg_importer import extract_styled_segments_from_svg
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("cad_server")
@@ -797,6 +798,7 @@ class RtlsWorkspaceLoadRequest(BaseModel):
     svg_folder: Optional[str] = None      # direct path to an svg/ folder
     rooms_folder: Optional[str] = None    # direct path to a rooms/ folder
     tags_folder: Optional[str] = None     # direct path to a tags/ folder
+    project_path: Optional[str] = None    # .rtls ZIP project file
 
 
 class RtlsFilterRequest(BaseModel):
@@ -898,6 +900,81 @@ def _read_svg_content(svg_path: Optional[str]) -> Optional[str]:
         return None
 
 
+def _read_floorplan_segments(svg_path: Optional[str]) -> list[dict]:
+    """Read full floor-plan linework from the SVG in world coordinates."""
+    if not svg_path or not os.path.isfile(svg_path):
+        return []
+    entries, error = extract_styled_segments_from_svg(svg_path)
+    if error:
+        return []
+    segments: list[dict] = []
+    for entry in entries:
+        x1, y1, x2, y2 = entry.get("segment", (0, 0, 0, 0))
+        segments.append({
+            "x1": round(float(x1), 3),
+            "y1": round(float(y1), 3),
+            "x2": round(float(x2), 3),
+            "y2": round(float(y2), 3),
+            "role": entry.get("role", "wall"),
+        })
+    return segments
+
+
+def _normalize_optional_path(path: Optional[str]) -> Optional[str]:
+    """Normalize optional request paths so blank strings behave like unset values."""
+    if path is None:
+        return None
+    stripped = path.strip()
+    return stripped or None
+
+
+def _resolve_rtls_output_dir(
+    workspace_id: Optional[str],
+    workspace_name: Optional[str],
+    folder_path: Optional[str],
+    project_path: Optional[str],
+) -> Optional[str]:
+    """Choose a stable RTLS output directory for CSV/logging state."""
+    ws_name = workspace_name or (workspace_id and _workspace_names.get(workspace_id))
+    if ws_name:
+        rtls_dir = str(workspace_rtls_dir(ws_name))
+    elif folder_path:
+        rtls_dir = os.path.join(folder_path, "RTLS")
+    elif project_path:
+        rtls_dir = os.path.join(os.path.dirname(project_path), "RTLS")
+    else:
+        return None
+    os.makedirs(rtls_dir, exist_ok=True)
+    return rtls_dir
+
+
+def _normalize_room_rtls_settings(room_payload: dict) -> dict:
+    settings = {
+        "tag_height_ft": 0.0,
+        "filter_mode": "Raw",
+        "ble_module_port": "",
+        **dict(room_payload.get("rtls_settings", {})),
+    }
+    filter_mode = str(settings.get("filter_mode", "Raw") or "Raw").strip() or "Raw"
+    if filter_mode.lower() == "none":
+        filter_mode = "Raw"
+    settings["filter_mode"] = filter_mode
+    return settings
+
+
+def _build_room_summary(room: Room) -> dict:
+    payload = room.to_dict()
+    settings = _normalize_room_rtls_settings(payload)
+    return {
+        "room_name": room.name,
+        "anchor_count": len(room.anchors),
+        "reference_anchor_id": payload.get("reference_anchor_id") or "",
+        "ble_module_port": str(settings.get("ble_module_port", "") or "").strip(),
+        "filter_mode": str(settings.get("filter_mode", "Raw") or "Raw"),
+        "tag_height_ft": float(settings.get("tag_height_ft", 0.0) or 0.0),
+    }
+
+
 @app.get("/api/rtls/snapshot")
 async def api_rtls_snapshot():
     """Poll current RTLS state (20 Hz safe — cheap dict copy)."""
@@ -909,71 +986,83 @@ async def api_rtls_workspace_load(req: RtlsWorkspaceLoadRequest):
     """
     Load room + tag + SVG data into RTLS runtime from workspace.
 
-    Three modes:
-      1. folder_path set → discover manifest/tags/SVG inside that folder
-      2. manifest_path set → load that specific manifest file
-      3. neither → auto-discover from current workspace (workspace_id/workspace_name)
+    Sources are composable so the frontend can keep a stable session:
+      - project_path provides packaged room manifest + SVG
+      - folder_path provides workspace-style defaults
+      - manifest_path / rooms_folder / svg_folder / tags_folder override individually
+      - workspace data remains the final fallback
     """
     # Auto-register workspace name so registry survives server restarts
     if req.workspace_id and req.workspace_name:
         _workspace_names[req.workspace_id] = req.workspace_name
 
-    manifest_path = req.manifest_path
+    project_path = _normalize_optional_path(req.project_path)
+    folder_path = _normalize_optional_path(req.folder_path)
+    manifest_path = _normalize_optional_path(req.manifest_path)
+    svg_folder = _normalize_optional_path(req.svg_folder)
+    rooms_folder = _normalize_optional_path(req.rooms_folder)
+    tags_folder = _normalize_optional_path(req.tags_folder)
+
     tag_profiles: list[dict] = []
     svg_path: Optional[str] = None
 
-    if req.folder_path:
-        # Mode 1: workspace root folder — discover manifest/tags/SVG inside
-        manifest_path = _find_manifest_in_folder(req.folder_path)
-        tag_profiles = _load_profiles_from_folder(req.folder_path)
-        svg_path = _find_svg_in_folder(req.folder_path)
-        rtls_dir = os.path.join(req.folder_path, "RTLS")
-        os.makedirs(rtls_dir, exist_ok=True)
-        _rtls_runtime.set_rtls_dir(rtls_dir)
-    elif req.svg_folder or req.rooms_folder or req.tags_folder:
-        # Mode 4: independent folder loading — each resource resolved from its own folder.
-        # Any un-specified resource falls back to workspace auto-discovery.
+    if project_path:
+        # A packaged project supplies room geometry and floor-plan SVG.
+        project_svg_path, _, _, error = load_project_package(project_path, TEMP_EXTRACT_DIR)
+        if error:
+            return {"success": False, "error": error}
+        if not manifest_path:
+            manifest_path = os.path.join(TEMP_EXTRACT_DIR, "room_data.json")
+        svg_path = project_svg_path
+
+    if folder_path:
+        # A selected workspace folder acts as the default source for all resources
+        # unless a more specific override is supplied.
+        if not manifest_path:
+            manifest_path = _find_manifest_in_folder(folder_path)
+        if not svg_path:
+            svg_path = _find_svg_in_folder(folder_path)
+        if not tags_folder:
+            tag_profiles = _load_profiles_from_folder(folder_path)
+
+    if rooms_folder:
         import glob as _glob
 
-        if req.rooms_folder:
-            # Search directly in the given folder for *.rooms.json
-            matches = sorted(
-                _glob.glob(os.path.join(req.rooms_folder, "*.rooms.json")),
-                key=os.path.getmtime, reverse=True,
-            )
-            manifest_path = matches[0] if matches else None
-        else:
-            manifest_path = _find_workspace_manifest(req.workspace_id, req.workspace_name)
+        matches = sorted(
+            _glob.glob(os.path.join(rooms_folder, "*.rooms.json")),
+            key=os.path.getmtime,
+            reverse=True,
+        )
+        if matches:
+            manifest_path = matches[0]
 
-        if req.tags_folder:
-            for tag_id in list_profiles(req.tags_folder):
-                profile, error = load_profile(tag_id, req.tags_folder)
-                if profile and not error:
-                    tag_profiles.append(profile)
-        else:
-            tag_profiles = _load_workspace_profiles(req.workspace_id, req.workspace_name)
+    if tags_folder:
+        for tag_id in list_profiles(tags_folder):
+            profile, error = load_profile(tag_id, tags_folder)
+            if profile and not error:
+                tag_profiles.append(profile)
 
-        if req.svg_folder:
-            matches = sorted(
-                _glob.glob(os.path.join(req.svg_folder, "*.svg")),
-                key=os.path.getmtime, reverse=True,
-            )
-            svg_path = matches[0] if matches else None
-        else:
-            svg_path = _find_workspace_svg(req.workspace_id, req.workspace_name)
-        # RTLS dir unchanged in this mode (keep whatever was previously set)
-    else:
-        # Mode 2/3: workspace-based loading
-        if not manifest_path:
-            manifest_path = _find_workspace_manifest(req.workspace_id, req.workspace_name)
-        tag_profiles = _load_workspace_profiles(req.workspace_id, req.workspace_name)
+    if svg_folder:
+        import glob as _glob
+
+        matches = sorted(
+            _glob.glob(os.path.join(svg_folder, "*.svg")),
+            key=os.path.getmtime,
+            reverse=True,
+        )
+        if matches:
+            svg_path = matches[0]
+
+    if not manifest_path:
+        manifest_path = _find_workspace_manifest(req.workspace_id, req.workspace_name)
+    if not svg_path:
         svg_path = _find_workspace_svg(req.workspace_id, req.workspace_name)
-        # Set workspace RTLS dir for CSV logging
-        ws_name = req.workspace_name or (req.workspace_id and _workspace_names.get(req.workspace_id))
-        if ws_name:
-            rtls_dir = str(workspace_rtls_dir(ws_name))
-            os.makedirs(rtls_dir, exist_ok=True)
-            _rtls_runtime.set_rtls_dir(rtls_dir)
+    if not tag_profiles:
+        tag_profiles = _load_workspace_profiles(req.workspace_id, req.workspace_name)
+
+    rtls_dir = _resolve_rtls_output_dir(req.workspace_id, req.workspace_name, folder_path, project_path)
+    if rtls_dir:
+        _rtls_runtime.set_rtls_dir(rtls_dir)
 
     if not manifest_path:
         return {"success": False, "error": "No rooms manifest found in workspace. Save rooms in Anchor Manager first."}
@@ -992,16 +1081,28 @@ async def api_rtls_workspace_load(req: RtlsWorkspaceLoadRequest):
                 target_room = r
                 break
 
-    _rtls_runtime.update_from_workspace(target_room.to_dict(), tag_profiles)
+    target_room_payload = target_room.to_dict()
+    room_payloads = [room.to_dict() for room in rooms]
+    room_summaries = [_build_room_summary(room) for room in rooms]
+    room_settings = _normalize_room_rtls_settings(target_room_payload)
+
+    _rtls_runtime.update_from_workspace(target_room_payload, tag_profiles)
 
     # Read SVG content for frontend rendering
     svg_content = _read_svg_content(svg_path)
+    floorplan_segments = _read_floorplan_segments(svg_path)
 
     return {
         "success": True,
+        "project_name": str((manifest or {}).get("project_name", "") or ""),
         "room_name": target_room.name,
         "anchor_count": len(target_room.anchors),
         "tag_count": len(tag_profiles),
+        "available_rooms": [r.name for r in rooms],
+        "rooms": room_payloads,
+        "room_summaries": room_summaries,
+        "room_settings": room_settings,
+        "floorplan_segments": floorplan_segments,
         "svg_content": svg_content,
         "svg_path": svg_path or "",
         **_rtls_runtime.snapshot(),
