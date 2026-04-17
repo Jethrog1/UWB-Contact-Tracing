@@ -116,7 +116,21 @@ const roomBounds = (rooms: RoomData[]): { minX: number; minY: number; maxX: numb
   return { minX, minY, maxX, maxY }
 }
 
+const toRoomLocal = (room: RoomData, x: number, y: number): [number, number] => ([
+  x - room.room_bounds_ft.min_x,
+  y - room.room_bounds_ft.min_y,
+])
+
+const localizeSegment = (room: RoomData, segment: SegmentData): SegmentData => {
+  const [x1, y1] = toRoomLocal(room, segment.x1, segment.y1)
+  const [x2, y2] = toRoomLocal(room, segment.x2, segment.y2)
+  return { x1, y1, x2, y2 }
+}
+
 const roomPolygon = (room: RoomData): [number, number][] => chainSegmentsToPolygon(room.segments_ft)
+const roomLocalPolygon = (room: RoomData): [number, number][] => (
+  chainSegmentsToPolygon(room.segments_ft.map(segment => localizeSegment(room, segment)))
+)
 
 const roomAtPoint = (rooms: RoomData[], worldX: number, worldY: number): string | null => {
   for (const room of rooms) {
@@ -151,7 +165,9 @@ const RTLSDashboardCanvas = forwardRef<RTLSDashboardCanvasHandle, RTLSDashboardC
 
   const activeRoom = currentRoom ?? rooms.find(room => room.room_name === activeRoomName) ?? null
   const displaySegments = mode === 'room'
-    ? (activeRoom ? [...activeRoom.segments_ft, ...activeRoom.interior_segments_ft] : [])
+    ? (activeRoom
+        ? [...activeRoom.segments_ft, ...activeRoom.interior_segments_ft].map(segment => localizeSegment(activeRoom, segment))
+        : [])
     : floorplanSegments
 
   const resetView = useCallback(() => {
@@ -163,10 +179,10 @@ const RTLSDashboardCanvas = forwardRef<RTLSDashboardCanvasHandle, RTLSDashboardC
     if (!bounds && mode === 'floor-plan') bounds = roomBounds(rooms)
     if (mode === 'room' && activeRoom) {
       bounds = {
-        minX: activeRoom.room_bounds_ft.min_x,
-        minY: activeRoom.room_bounds_ft.min_y,
-        maxX: activeRoom.room_bounds_ft.max_x,
-        maxY: activeRoom.room_bounds_ft.max_y,
+        minX: 0,
+        minY: 0,
+        maxX: activeRoom.room_bounds_ft.width,
+        maxY: activeRoom.room_bounds_ft.height,
       }
     }
     if (!bounds) return
@@ -284,7 +300,7 @@ const RTLSDashboardCanvas = forwardRef<RTLSDashboardCanvasHandle, RTLSDashboardC
         }
       }
     } else if (activeRoom) {
-      const polygon = roomPolygon(activeRoom)
+      const polygon = roomLocalPolygon(activeRoom)
       const points = polygon.map(([x, y]) => worldToScreen(viewport, x, y))
       if (points.length >= 3) {
         ctx.fillStyle = ROOM_FILL_ACTIVE
@@ -296,8 +312,9 @@ const RTLSDashboardCanvas = forwardRef<RTLSDashboardCanvasHandle, RTLSDashboardC
       }
 
       for (const seg of [...activeRoom.segments_ft, ...activeRoom.interior_segments_ft]) {
-        const [x1, y1] = worldToScreen(viewport, seg.x1, seg.y1)
-        const [x2, y2] = worldToScreen(viewport, seg.x2, seg.y2)
+        const localSeg = localizeSegment(activeRoom, seg)
+        const [x1, y1] = worldToScreen(viewport, localSeg.x1, localSeg.y1)
+        const [x2, y2] = worldToScreen(viewport, localSeg.x2, localSeg.y2)
         const isBoundary = activeRoom.segments_ft.includes(seg)
         ctx.strokeStyle = isBoundary ? ROOM_OUTLINE_ACTIVE : FLOORPLAN_SEGMENT
         ctx.lineWidth = isBoundary ? 1.9 : 1.1
@@ -308,83 +325,87 @@ const RTLSDashboardCanvas = forwardRef<RTLSDashboardCanvasHandle, RTLSDashboardC
       }
     }
 
-    const anchorIds = Object.keys(anchors)
-    let refX = 0
-    let refY = 0
-    if (referenceAnchorId && anchors[referenceAnchorId]) {
-      [refX, refY] = anchors[referenceAnchorId]
-    }
-
-    for (let i = 0; i < anchorIds.length; i++) {
-      const anchorId = anchorIds[i]
-      const [ax, ay] = anchors[anchorId]
-      const [sx, sy] = worldToScreen(viewport, ax, ay)
-      const isRef = anchorId === referenceAnchorId
-      const r = isRef ? 8 : 6
-      const color = anchorColor(i)
-
-      if (isRef) {
-        ctx.beginPath()
-        ctx.arc(sx, sy, r + 4, 0, Math.PI * 2)
-        ctx.strokeStyle = color
-        ctx.lineWidth = 1.5
-        ctx.setLineDash([3, 2])
-        ctx.stroke()
-        ctx.setLineDash([])
+    if (mode === 'room') {
+      const anchorIds = Object.keys(anchors)
+      let refX = 0
+      let refY = 0
+      if (referenceAnchorId && anchors[referenceAnchorId]) {
+        [refX, refY] = toRoomLocal(activeRoom, anchors[referenceAnchorId][0], anchors[referenceAnchorId][1])
       }
 
-      ctx.beginPath()
-      ctx.arc(sx, sy, r, 0, Math.PI * 2)
-      ctx.fillStyle = color
-      ctx.fill()
-      ctx.strokeStyle = 'rgba(255,255,255,0.25)'
-      ctx.lineWidth = 1
-      ctx.stroke()
+      for (let i = 0; i < anchorIds.length; i++) {
+        const anchorId = anchorIds[i]
+        const [ax, ay] = anchors[anchorId]
+        const [localAx, localAy] = toRoomLocal(activeRoom, ax, ay)
+        const [sx, sy] = worldToScreen(viewport, localAx, localAy)
+        const isRef = anchorId === referenceAnchorId
+        const r = isRef ? 8 : 6
+        const color = anchorColor(i)
 
-      const labelX = ax - refX
-      const labelY = ay - refY
-      ctx.fillStyle = '#ffffff'
-      ctx.font = 'bold 11px "SF Mono", monospace'
-      ctx.textAlign = 'left'
-      ctx.textBaseline = 'bottom'
-      ctx.fillText(
-        isRef ? `${anchorId} ★ (0.0, 0.0)` : `${anchorId} (${labelX.toFixed(1)}, ${labelY.toFixed(1)})`,
-        sx + 10,
-        sy - 4,
-      )
-    }
+        if (isRef) {
+          ctx.beginPath()
+          ctx.arc(sx, sy, r + 4, 0, Math.PI * 2)
+          ctx.strokeStyle = color
+          ctx.lineWidth = 1.5
+          ctx.setLineDash([3, 2])
+          ctx.stroke()
+          ctx.setLineDash([])
+        }
 
-    for (const tag of tags) {
-      if (!tag.position) continue
-      const [sx, sy] = worldToScreen(viewport, tag.position.x, tag.position.y)
-      const radius = 8
-      const grad = ctx.createRadialGradient(sx, sy, 0, sx, sy, radius * 2.5)
-      grad.addColorStop(0, `${tag.color}66`)
-      grad.addColorStop(1, 'transparent')
-      ctx.beginPath()
-      ctx.arc(sx, sy, radius * 2.5, 0, Math.PI * 2)
-      ctx.fillStyle = grad
-      ctx.fill()
+        ctx.beginPath()
+        ctx.arc(sx, sy, r, 0, Math.PI * 2)
+        ctx.fillStyle = color
+        ctx.fill()
+        ctx.strokeStyle = 'rgba(255,255,255,0.25)'
+        ctx.lineWidth = 1
+        ctx.stroke()
 
-      ctx.beginPath()
-      ctx.arc(sx, sy, radius, 0, Math.PI * 2)
-      ctx.fillStyle = tag.color
-      ctx.fill()
-      ctx.strokeStyle = 'rgba(255,255,255,0.4)'
-      ctx.lineWidth = 1.5
-      ctx.stroke()
+        const labelX = localAx - refX
+        const labelY = localAy - refY
+        ctx.fillStyle = '#ffffff'
+        ctx.font = 'bold 11px "SF Mono", monospace'
+        ctx.textAlign = 'left'
+        ctx.textBaseline = 'bottom'
+        ctx.fillText(
+          isRef ? `${anchorId} ★ (0.0, 0.0)` : `${anchorId} (${labelX.toFixed(1)}, ${labelY.toFixed(1)})`,
+          sx + 10,
+          sy - 4,
+        )
+      }
 
-      ctx.fillStyle = tag.color
-      ctx.font = 'bold 11px sans-serif'
-      ctx.textAlign = 'left'
-      ctx.textBaseline = 'middle'
-      ctx.fillText(tag.tag_id, sx + 14, sy)
+      for (const tag of tags) {
+        if (!tag.position) continue
+        const [localX, localY] = toRoomLocal(activeRoom, tag.position.x, tag.position.y)
+        const [sx, sy] = worldToScreen(viewport, localX, localY)
+        const radius = 8
+        const grad = ctx.createRadialGradient(sx, sy, 0, sx, sy, radius * 2.5)
+        grad.addColorStop(0, `${tag.color}66`)
+        grad.addColorStop(1, 'transparent')
+        ctx.beginPath()
+        ctx.arc(sx, sy, radius * 2.5, 0, Math.PI * 2)
+        ctx.fillStyle = grad
+        ctx.fill()
 
-      const labelX = tag.position.x - refX
-      const labelY = tag.position.y - refY
-      ctx.fillStyle = 'rgba(200, 220, 255, 0.7)'
-      ctx.font = '9px sans-serif'
-      ctx.fillText(`(${labelX.toFixed(2)}, ${labelY.toFixed(2)}) ft`, sx + 14, sy + 12)
+        ctx.beginPath()
+        ctx.arc(sx, sy, radius, 0, Math.PI * 2)
+        ctx.fillStyle = tag.color
+        ctx.fill()
+        ctx.strokeStyle = 'rgba(255,255,255,0.4)'
+        ctx.lineWidth = 1.5
+        ctx.stroke()
+
+        ctx.fillStyle = tag.color
+        ctx.font = 'bold 11px sans-serif'
+        ctx.textAlign = 'left'
+        ctx.textBaseline = 'middle'
+        ctx.fillText(tag.tag_id, sx + 14, sy)
+
+        const labelX = localX - refX
+        const labelY = localY - refY
+        ctx.fillStyle = 'rgba(200, 220, 255, 0.7)'
+        ctx.font = '9px sans-serif'
+        ctx.fillText(`(${labelX.toFixed(2)}, ${labelY.toFixed(2)}) ft`, sx + 14, sy + 12)
+      }
     }
   }, [
     activeRoom,

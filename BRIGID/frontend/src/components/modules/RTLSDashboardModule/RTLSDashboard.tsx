@@ -6,6 +6,7 @@ import RTLSDashboardCanvas, {
   RTLSTagState,
   tagColor,
 } from './RTLSDashboardCanvas'
+import RTLSRoomView, { RTLSRoomViewHandle } from './RTLSRoomView'
 import './RTLSDashboard.css'
 
 const API = 'http://localhost:8765'
@@ -62,6 +63,7 @@ interface RTLSSnapshot {
   filter: FilterState
   elevation: ElevationState
   csv: CSVState
+  serial_debug: string[]
 }
 
 interface RTLSLoadSource {
@@ -90,6 +92,11 @@ interface RTLSDashboardProps {
   workspaceName: string
 }
 
+interface RoomViewTab {
+  id: string
+  roomName: string
+}
+
 const emptySnap = (): RTLSSnapshot => ({
   transport_status: 'idle',
   transport_detail: 'Disconnected.',
@@ -104,6 +111,7 @@ const emptySnap = (): RTLSSnapshot => ({
   filter: { mode: 'Raw', ema_alpha: 0.2, roll_n: 8, kal_q: 0.1, kal_r: 2.0 },
   elevation: { override: false, value_ft: 3.0 },
   csv: { enabled: false, path: '' },
+  serial_debug: [],
 })
 
 const normalizeRoomSettings = (settings: RoomData['rtls_settings'] | undefined): RoomData['rtls_settings'] => ({
@@ -175,26 +183,38 @@ const RTLSDashboard: React.FC<RTLSDashboardProps> = ({ workspaceId, workspaceNam
   const [autoLoading, setAutoLoading] = useState(false)
   const [statusMsg, setStatusMsg] = useState<{ text: string; kind: 'ok' | 'warn' | 'error' } | null>(null)
   const [activeTab, setActiveTab] = useState<string>('floor-plan')
-  const [roomTabs, setRoomTabs] = useState<string[]>([])
+  const [roomTabs, setRoomTabs] = useState<RoomViewTab[]>([])
+  const [selectedRoomName, setSelectedRoomName] = useState<string | null>(null)
   const [hoverRoomName, setHoverRoomName] = useState<string | null>(null)
 
-  const canvasRef = useRef<RTLSDashboardCanvasHandle>(null)
+  const floorplanCanvasRef = useRef<RTLSDashboardCanvasHandle>(null)
+  const roomViewRef = useRef<RTLSRoomViewHandle>(null)
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const busyRef = useRef(false)
   const loadSourceRef = useRef<RTLSLoadSource>({})
   const statusTimerRef = useRef<number | null>(null)
 
-  const currentRoom = useMemo(
+  const solveRoom = useMemo(
     () => rooms.find(room => room.room_name === snap.room_name) ?? null,
     [rooms, snap.room_name],
+  )
+
+  const selectedRoom = useMemo(
+    () => rooms.find(room => room.room_name === selectedRoomName) ?? null,
+    [rooms, selectedRoomName],
+  )
+
+  const activeRoomTab = useMemo(
+    () => roomTabs.find(tab => tab.id === activeTab) ?? null,
+    [activeTab, roomTabs],
   )
 
   const canvasMode = activeTab === 'floor-plan' ? 'floor-plan' : 'room'
   const visibleRoom = useMemo(
     () => canvasMode === 'room'
-      ? rooms.find(room => room.room_name === activeTab) ?? currentRoom
-      : currentRoom,
-    [activeTab, canvasMode, currentRoom, rooms],
+      ? rooms.find(room => room.room_name === activeRoomTab?.roomName) ?? null
+      : selectedRoom,
+    [activeRoomTab?.roomName, canvasMode, rooms, selectedRoom],
   )
 
   const tagStates: RTLSTagState[] = useMemo(
@@ -208,17 +228,21 @@ const RTLSDashboard: React.FC<RTLSDashboardProps> = ({ workspaceId, workspaceNam
   )
 
   const savedModulePort = visibleRoom?.rtls_settings?.ble_module_port?.trim()
-    || currentRoom?.rtls_settings?.ble_module_port?.trim()
+    || selectedRoom?.rtls_settings?.ble_module_port?.trim()
+    || solveRoom?.rtls_settings?.ble_module_port?.trim()
     || snap.room_settings?.ble_module_port?.trim()
     || ''
 
   const activeViewLabel = activeTab === 'floor-plan'
     ? 'Floor Plan'
-    : `${activeTab} Room View`
+    : `${activeRoomTab?.roomName ?? 'Room'} Room View`
 
-  const panelSubtitle = snap.room_name
-    ? `${projectName || workspaceName} · ${activeViewLabel} · Active solve room: ${snap.room_name}`
-    : `${projectName || workspaceName || 'RTLS Dashboard'} · ${activeViewLabel}`
+  const panelSubtitle = [
+    projectName || workspaceName || 'RTLS Dashboard',
+    activeViewLabel,
+    selectedRoomName ? `Selected room: ${selectedRoomName}` : null,
+    snap.room_name ? `Active solve room: ${snap.room_name}` : null,
+  ].filter(Boolean).join(' · ')
 
   const showMsg = useCallback((text: string, kind: 'ok' | 'warn' | 'error', ms = 4000) => {
     setStatusMsg({ text, kind })
@@ -256,7 +280,10 @@ const RTLSDashboard: React.FC<RTLSDashboardProps> = ({ workspaceId, workspaceNam
   }, [poll])
 
   const resetCanvasSoon = useCallback(() => {
-    window.setTimeout(() => canvasRef.current?.resetView(), 80)
+    window.setTimeout(() => {
+      floorplanCanvasRef.current?.resetView()
+      roomViewRef.current?.resetView()
+    }, 80)
   }, [])
 
   const loadWorkspace = useCallback(async (
@@ -293,7 +320,11 @@ const RTLSDashboard: React.FC<RTLSDashboardProps> = ({ workspaceId, workspaceNam
       setProjectName(data.project_name ?? '')
       setRoomLoaded(true)
       setHoverRoomName(null)
-      setRoomTabs(current => current.filter(roomName => nextRooms.some(room => room.room_name === roomName)))
+      setSelectedRoomName(currentSelected => {
+        const requested = opts?.roomName ?? data.room_name ?? currentSelected
+        if (requested && nextRooms.some(room => room.room_name === requested)) return requested
+        return nextRooms[0]?.room_name ?? null
+      })
       showMsg(`Loaded ${data.room_name || 'project'}: ${data.anchor_count} anchors, ${data.tag_count} profiled tags.`, 'ok')
       resetCanvasSoon()
       return true
@@ -310,6 +341,7 @@ const RTLSDashboard: React.FC<RTLSDashboardProps> = ({ workspaceId, workspaceNam
     setProjectName('')
     setRoomLoaded(false)
     setRoomTabs([])
+    setSelectedRoomName(null)
     setActiveTab('floor-plan')
     setHoverRoomName(null)
     loadSourceRef.current = {}
@@ -340,34 +372,28 @@ const RTLSDashboard: React.FC<RTLSDashboardProps> = ({ workspaceId, workspaceNam
   }, [loadWorkspace, workspaceId])
 
   useEffect(() => {
-    const validRoomNames = new Set(rooms.map(room => room.room_name))
-    setRoomTabs(current => current.filter(roomName => validRoomNames.has(roomName)))
-    if (activeTab !== 'floor-plan' && !validRoomNames.has(activeTab)) {
-      setActiveTab('floor-plan')
-    }
-  }, [activeTab, rooms])
-
-  useEffect(() => {
     const handler = (e: Event) => {
       const detail = (e as CustomEvent).detail as { cmd: string; workspaceId: string }
       if (detail.workspaceId !== workspaceId) return
 
-      const requestedRoom = activeTab === 'floor-plan' ? (snap.room_name || undefined) : activeTab
+      const requestedRoom = activeTab === 'floor-plan'
+        ? (selectedRoomName || snap.room_name || undefined)
+        : (activeRoomTab?.roomName || selectedRoomName || undefined)
       if (detail.cmd === 'refresh') {
         void loadWorkspace(loadSourceRef.current, { roomName: requestedRoom })
         return
       }
 
-      const canvas = canvasRef.current
-      if (!canvas) return
-      if (detail.cmd === 'zoom_in') canvas.zoomIn()
-      else if (detail.cmd === 'zoom_out') canvas.zoomOut()
-      else if (detail.cmd === 'zoom_reset') canvas.resetView()
+      const currentView = activeTab === 'floor-plan' ? floorplanCanvasRef.current : roomViewRef.current
+      if (!currentView) return
+      if (detail.cmd === 'zoom_in') currentView.zoomIn()
+      else if (detail.cmd === 'zoom_out') currentView.zoomOut()
+      else if (detail.cmd === 'zoom_reset') currentView.resetView()
     }
 
     window.addEventListener('rtls-view-command', handler)
     return () => window.removeEventListener('rtls-view-command', handler)
-  }, [activeTab, loadWorkspace, snap.room_name, workspaceId])
+  }, [activeRoomTab?.roomName, activeTab, loadWorkspace, selectedRoomName, snap.room_name, workspaceId])
 
   const currentCompositeSource = useCallback((): RTLSLoadSource => {
     const current = loadSourceRef.current
@@ -388,6 +414,7 @@ const RTLSDashboard: React.FC<RTLSDashboardProps> = ({ workspaceId, workspaceNam
   const resetViewState = useCallback(() => {
     setActiveTab('floor-plan')
     setRoomTabs([])
+    setSelectedRoomName(null)
     setHoverRoomName(null)
   }, [])
 
@@ -427,9 +454,9 @@ const RTLSDashboard: React.FC<RTLSDashboardProps> = ({ workspaceId, workspaceNam
       await loadWorkspace({
         ...currentCompositeSource(),
         tagsFolder: r.folderPath,
-      }, { roomName: snap.room_name || undefined })
+      }, { roomName: selectedRoomName || snap.room_name || undefined })
     }
-  }, [currentCompositeSource, loadWorkspace, snap.room_name])
+  }, [currentCompositeSource, loadWorkspace, selectedRoomName, snap.room_name])
 
   const loadSvgFolder = useCallback(async () => {
     const r = await window.api?.openFolder?.()
@@ -437,9 +464,9 @@ const RTLSDashboard: React.FC<RTLSDashboardProps> = ({ workspaceId, workspaceNam
       await loadWorkspace({
         ...currentCompositeSource(),
         svgFolder: r.folderPath,
-      }, { roomName: snap.room_name || undefined })
+      }, { roomName: selectedRoomName || snap.room_name || undefined })
     }
-  }, [currentCompositeSource, loadWorkspace, snap.room_name])
+  }, [currentCompositeSource, loadWorkspace, selectedRoomName, snap.room_name])
 
   const connect = useCallback(async () => {
     const port = snap.selected_port || savedModulePort || snap.auto_detect_port
@@ -524,27 +551,45 @@ const RTLSDashboard: React.FC<RTLSDashboardProps> = ({ workspaceId, workspaceNam
   }, [showMsg, snap.csv.enabled])
 
   const selectRoom = useCallback(async (roomName: string) => {
-    setActiveTab('floor-plan')
+    setSelectedRoomName(roomName)
+    if (roomName === snap.room_name && roomLoaded) return
     await loadWorkspace(loadSourceRef.current, { roomName })
-  }, [loadWorkspace])
+  }, [loadWorkspace, roomLoaded, snap.room_name])
 
-  const openRoomTab = useCallback(async (roomName: string) => {
-    setRoomTabs(current => current.includes(roomName) ? current : [...current, roomName])
-    setActiveTab(roomName)
-    await loadWorkspace(loadSourceRef.current, { roomName })
-  }, [loadWorkspace])
+  const openRoomTab = useCallback((roomName: string) => {
+    const tabId = `room-view-${roomName}`
+    setSelectedRoomName(roomName)
+    setRoomTabs(current => current.some(tab => tab.id === tabId) ? current : [...current, { id: tabId, roomName }])
+    setActiveTab(tabId)
+    if (roomName !== snap.room_name || !roomLoaded) {
+      void loadWorkspace(loadSourceRef.current, { roomName })
+    }
+  }, [loadWorkspace, roomLoaded, snap.room_name])
 
-  const closeRoomTab = useCallback((roomName: string) => {
-    setRoomTabs(current => current.filter(tab => tab !== roomName))
-    setActiveTab(current => (current === roomName ? 'floor-plan' : current))
+  const closeRoomTab = useCallback((tabId: string) => {
+    setRoomTabs(current => {
+      const remaining = current.filter(tab => tab.id !== tabId)
+      setActiveTab(currentActive => {
+        if (currentActive !== tabId) return currentActive
+        const closedIndex = current.findIndex(tab => tab.id === tabId)
+        return remaining[Math.max(0, closedIndex - 1)]?.id ?? 'floor-plan'
+      })
+      return remaining
+    })
   }, [])
 
-  const handleTabClick = useCallback(async (tab: string) => {
-    setActiveTab(tab)
-    if (tab !== 'floor-plan' && tab !== snap.room_name) {
-      await loadWorkspace(loadSourceRef.current, { roomName: tab })
+  const handleTabClick = useCallback((tabId: string) => {
+    setActiveTab(tabId)
+    if (tabId !== 'floor-plan') {
+      const tab = roomTabs.find(entry => entry.id === tabId)
+      if (tab) {
+        setSelectedRoomName(tab.roomName)
+        if (tab.roomName !== snap.room_name || !roomLoaded) {
+          void loadWorkspace(loadSourceRef.current, { roomName: tab.roomName })
+        }
+      }
     }
-  }, [loadWorkspace, snap.room_name])
+  }, [loadWorkspace, roomLoaded, roomTabs, snap.room_name])
 
   let refX = 0
   let refY = 0
@@ -564,19 +609,19 @@ const RTLSDashboard: React.FC<RTLSDashboardProps> = ({ workspaceId, workspaceNam
               >
                 Floor Plan
               </button>
-              {roomTabs.map(roomName => (
+              {roomTabs.map(tab => (
                 <button
-                  key={roomName}
-                  className={`rtls-inner-tab${activeTab === roomName ? ' rtls-inner-tab--active' : ''}`}
-                  onClick={() => void handleTabClick(roomName)}
+                  key={tab.id}
+                  className={`rtls-inner-tab${activeTab === tab.id ? ' rtls-inner-tab--active' : ''}`}
+                  onClick={() => void handleTabClick(tab.id)}
                 >
-                  {roomName}
+                  {tab.roomName}
                   <span
                     className="rtls-inner-tab-close"
                     role="button"
                     onClick={e => {
                       e.stopPropagation()
-                      closeRoomTab(roomName)
+                      closeRoomTab(tab.id)
                     }}
                   >
                     ×
@@ -595,14 +640,14 @@ const RTLSDashboard: React.FC<RTLSDashboardProps> = ({ workspaceId, workspaceNam
                   : <>No RTLS project loaded.<br />Load a project or workspace to begin.</>}
               </div>
             </div>
-          ) : (
+          ) : activeTab === 'floor-plan' ? (
             <RTLSDashboardCanvas
-              ref={canvasRef}
-              mode={canvasMode}
+              ref={floorplanCanvasRef}
+              mode="floor-plan"
               floorplanSegments={floorplanSegments}
               rooms={rooms}
-              activeRoomName={snap.room_name || null}
-              currentRoom={visibleRoom}
+              activeRoomName={selectedRoomName}
+              currentRoom={selectedRoom}
               hoverRoomName={hoverRoomName}
               anchors={snap.anchors}
               tags={tagStates}
@@ -611,6 +656,21 @@ const RTLSDashboard: React.FC<RTLSDashboardProps> = ({ workspaceId, workspaceNam
               onRoomDoubleClick={roomName => void openRoomTab(roomName)}
               onRoomHover={setHoverRoomName}
             />
+          ) : visibleRoom ? (
+            <RTLSRoomView
+              ref={roomViewRef}
+              room={visibleRoom}
+              tags={tagStates}
+              activeSolveRoomName={snap.room_name || null}
+              referenceAnchorId={snap.reference_anchor_id}
+            />
+          ) : (
+            <div className="rtls-no-room">
+              <div className="rtls-no-room-icon">◎</div>
+              <div className="rtls-no-room-text">
+                Room data is unavailable for this tab.
+              </div>
+            </div>
           )}
         </div>
 
@@ -653,13 +713,13 @@ const RTLSDashboard: React.FC<RTLSDashboardProps> = ({ workspaceId, workspaceNam
                   <div className="rtls-runtime-note">Load a project to restore the floor plan and room definitions.</div>
                 )}
                 {rooms.map(room => {
-                  const isActive = room.room_name === snap.room_name
+                  const isSelected = room.room_name === selectedRoomName
                   const isHovered = room.room_name === hoverRoomName
-                  const isOpen = roomTabs.includes(room.room_name)
+                  const isOpen = roomTabs.some(tab => tab.roomName === room.room_name)
                   return (
                     <button
                       key={room.room_name}
-                      className={`rtls-room-chip${isActive ? ' active' : ''}${isHovered ? ' hovered' : ''}${isOpen ? ' open' : ''}`}
+                      className={`rtls-room-chip${isSelected ? ' active' : ''}${isHovered ? ' hovered' : ''}${isOpen ? ' open' : ''}`}
                       onClick={() => void selectRoom(room.room_name)}
                       onMouseEnter={() => setHoverRoomName(room.room_name)}
                       onMouseLeave={() => setHoverRoomName(null)}
@@ -677,7 +737,7 @@ const RTLSDashboard: React.FC<RTLSDashboardProps> = ({ workspaceId, workspaceNam
                 <div className="rtls-room-summary">
                   <div className="rtls-room-summary__row">
                     <span>Reference</span>
-                    <span>{snap.reference_anchor_id || visibleRoom.reference_anchor_id || '—'}</span>
+                    <span>{visibleRoom.room_name === snap.room_name ? (snap.reference_anchor_id || visibleRoom.reference_anchor_id || '—') : (visibleRoom.reference_anchor_id || '—')}</span>
                   </div>
                   <div className="rtls-room-summary__row">
                     <span>Module</span>
@@ -685,11 +745,11 @@ const RTLSDashboard: React.FC<RTLSDashboardProps> = ({ workspaceId, workspaceNam
                   </div>
                   <div className="rtls-room-summary__row">
                     <span>Filter</span>
-                    <span>{snap.filter.mode}</span>
+                    <span>{visibleRoom.room_name === snap.room_name ? snap.filter.mode : visibleRoom.rtls_settings.filter_mode}</span>
                   </div>
                   <div className="rtls-room-summary__row">
                     <span>Room Height</span>
-                    <span>{snap.room_settings.tag_height_ft.toFixed(1)} ft</span>
+                    <span>{(visibleRoom.room_name === snap.room_name ? snap.room_settings.tag_height_ft : visibleRoom.rtls_settings.tag_height_ft).toFixed(1)} ft</span>
                   </div>
                 </div>
               )}
@@ -725,6 +785,13 @@ const RTLSDashboard: React.FC<RTLSDashboardProps> = ({ workspaceId, workspaceNam
                 </div>
               ) : (
                 <div className="rtls-runtime-note">No profiled tags available yet.</div>
+              )}
+              {snap.serial_debug.length > 0 && (
+                <div className="rtls-serial-log">
+                  {snap.serial_debug.slice(-12).map((line, index) => (
+                    <div key={`${index}-${line}`} className="rtls-serial-log__line">{line}</div>
+                  ))}
+                </div>
               )}
               <div className="rtls-connect-row">
                 <button
