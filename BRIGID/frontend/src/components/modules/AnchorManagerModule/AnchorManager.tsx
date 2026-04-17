@@ -25,6 +25,7 @@ interface CreateRoomDialog {
 
 interface AnchorManagerProps {
   workspaceId: string
+  workspaceName: string
 }
 
 interface AnchorWorkspaceState {
@@ -35,8 +36,15 @@ interface AnchorWorkspaceState {
   selectedAnchorId: string | null
   selectedSegments: SegmentData[]
   svgPath: string
+  svgContent: string
   projectName: string
   viewport: AnchorManagerViewport
+}
+
+interface SerialPortState {
+  ports: string[]
+  autoDetectPort: string
+  loading: boolean
 }
 
 const DEFAULT_VIEWPORT: AnchorManagerViewport = { offsetX: 0, offsetY: 0, scale: 20 }
@@ -49,17 +57,29 @@ const createDefaultState = (): AnchorWorkspaceState => ({
   selectedAnchorId: null,
   selectedSegments: [],
   svgPath: '',
+  svgContent: '',
   projectName: 'Untitled',
   viewport: DEFAULT_VIEWPORT,
 })
 
 const cloneState = (state: AnchorWorkspaceState): AnchorWorkspaceState => JSON.parse(JSON.stringify(state))
 
-const normalizeRoom = (room: RoomData): RoomData => ({
-  ...room,
-  reference_anchor_id: room.reference_anchor_id ?? room.anchors[0]?.id ?? null,
-  edges: room.edges ?? [],
+const normalizeRoomSettings = (settings: RoomData['rtls_settings'] | undefined) => ({
+  tag_height_ft: Number(settings?.tag_height_ft ?? 0),
+  filter_mode: settings?.filter_mode ?? 'None',
+  ble_module_port: settings?.ble_module_port ?? '',
 })
+
+const normalizeRoom = (room: RoomData): RoomData => {
+  const anchors = Array.isArray(room.anchors) ? room.anchors : []
+  return {
+    ...room,
+    anchors,
+    rtls_settings: normalizeRoomSettings(room.rtls_settings),
+    reference_anchor_id: room.reference_anchor_id ?? anchors[0]?.id ?? null,
+    edges: room.edges ?? [],
+  }
+}
 
 const normalizeState = (state: Partial<AnchorWorkspaceState> | null | undefined): AnchorWorkspaceState => {
   const fallback = createDefaultState()
@@ -138,7 +158,7 @@ const findMatchingRoomName = (rooms: RoomData[], segments: SegmentData[]): strin
   return null
 }
 
-const AnchorManager: React.FC<AnchorManagerProps> = ({ workspaceId }) => {
+const AnchorManager: React.FC<AnchorManagerProps> = ({ workspaceId, workspaceName }) => {
   const rootRef = useRef<HTMLDivElement>(null)
   const canvasRef = useRef<AnchorManagerCanvasHandle>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -159,6 +179,11 @@ const AnchorManager: React.FC<AnchorManagerProps> = ({ workspaceId }) => {
   const [hoverRoomName, setHoverRoomName] = useState<string | null>(null)
   const [roomViewTabs, setRoomViewTabs] = useState<RoomViewTab[]>([])
   const [activeInternalTab, setActiveInternalTab] = useState<string>('anchor-view')
+  const [serialPortState, setSerialPortState] = useState<SerialPortState>({
+    ports: [],
+    autoDetectPort: '',
+    loading: false,
+  })
 
   useEffect(() => {
     workspaceStateRef.current = workspaceState
@@ -171,6 +196,26 @@ const AnchorManager: React.FC<AnchorManagerProps> = ({ workspaceId }) => {
     fitAfterLoadRef.current = false
     requestAnimationFrame(() => canvasRef.current?.fitView())
   }, [workspaceState.allSegments.length])
+
+  const loadSerialPorts = useCallback(async () => {
+    setSerialPortState(current => ({ ...current, loading: true }))
+    try {
+      const res = await fetch(`${API}/api/rtls/serial/ports`)
+      const data = await res.json()
+      if (!data.success) throw new Error(data.error || 'Could not load serial ports.')
+      setSerialPortState({
+        ports: Array.isArray(data.ports) ? data.ports : [],
+        autoDetectPort: typeof data.auto_detect_port === 'string' ? data.auto_detect_port : '',
+        loading: false,
+      })
+    } catch {
+      setSerialPortState(current => ({ ...current, loading: false }))
+    }
+  }, [])
+
+  useEffect(() => {
+    void loadSerialPorts()
+  }, [loadSerialPorts])
 
   const showStatus = (message: string, kind: 'ok' | 'error') => {
     setStatus(message)
@@ -276,6 +321,7 @@ const AnchorManager: React.FC<AnchorManagerProps> = ({ workspaceId }) => {
           selectedAnchorId: null,
           selectedSegments: [],
           svgPath: file.name,
+          svgContent: text,
           projectName: file.name.replace(/\.svg$/i, ''),
           viewport: DEFAULT_VIEWPORT,
         })
@@ -305,6 +351,7 @@ const AnchorManager: React.FC<AnchorManagerProps> = ({ workspaceId }) => {
             ? workspaceStateRef.current.allSegments
             : deriveSegmentsFromRooms(rooms),
           geometrySegments: workspaceStateRef.current.geometrySegments,
+          svgPath: manifest.svg_file ?? workspaceStateRef.current.svgPath,
           projectName: manifest.project_name ?? 'Project',
           selectedRoomName: rooms[0]?.room_name ?? null,
           selectedAnchorId: null,
@@ -322,22 +369,59 @@ const AnchorManager: React.FC<AnchorManagerProps> = ({ workspaceId }) => {
 
   const handleSaveManifest = useCallback(async () => {
     try {
-      const res = await fetch(`${API}/api/rooms/manifest/save?workspace_id=${encodeURIComponent(workspaceId)}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          project_name: workspaceState.projectName,
-          svg_path: workspaceState.svgPath,
-          rooms: workspaceState.rooms,
-        }),
-      })
+      const res = await fetch(
+        `${API}/api/rooms/manifest/save?workspace_id=${encodeURIComponent(workspaceId)}&workspace_name=${encodeURIComponent(workspaceName)}`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            project_name: workspaceState.projectName,
+            svg_path: workspaceState.svgPath,
+            rooms: workspaceState.rooms,
+          }),
+        },
+      )
       const data = await res.json()
       if (data.success) showStatus(`Saved to ${data.path}`, 'ok')
       else showStatus(data.error, 'error')
     } catch {
       showStatus('Backend unreachable.', 'error')
     }
-  }, [workspaceState.projectName, workspaceState.rooms, workspaceState.svgPath])
+  }, [workspaceId, workspaceName, workspaceState.projectName, workspaceState.rooms, workspaceState.svgPath])
+
+  const handleSaveProject = useCallback(async () => {
+    if (!workspaceState.svgContent.trim()) {
+      showStatus('Load an SVG before saving a project package.', 'error')
+      return
+    }
+    try {
+      const res = await fetch(`${API}/api/rooms/project/save`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          workspace_id: workspaceId,
+          workspace_name: workspaceName,
+          project_name: workspaceState.projectName,
+          svg_path: workspaceState.svgPath,
+          svg_filename: workspaceState.svgPath,
+          svg_content: workspaceState.svgContent,
+          rooms: workspaceState.rooms,
+        }),
+      })
+      const data = await res.json()
+      if (data.success) showStatus(`Saved project to ${data.path}`, 'ok')
+      else showStatus(data.error, 'error')
+    } catch {
+      showStatus('Backend unreachable.', 'error')
+    }
+  }, [
+    workspaceId,
+    workspaceName,
+    workspaceState.projectName,
+    workspaceState.rooms,
+    workspaceState.svgContent,
+    workspaceState.svgPath,
+  ])
 
   const handleSegmentClick = useCallback(async (segment: SegmentData, _shiftHeld: boolean, worldX: number, worldY: number) => {
     const current = workspaceStateRef.current
@@ -515,6 +599,20 @@ const AnchorManager: React.FC<AnchorManagerProps> = ({ workspaceId }) => {
     }))
   }, [commitWorkspaceState])
 
+  const handleRoomSettingsUpdate = useCallback((roomName: string, patch: Partial<RoomData['rtls_settings']>) => {
+    commitWorkspaceState(current => ({
+      ...current,
+      rooms: current.rooms.map(room => (
+        room.room_name !== roomName
+          ? room
+          : {
+              ...room,
+              rtls_settings: normalizeRoomSettings({ ...room.rtls_settings, ...patch }),
+            }
+      )),
+    }))
+  }, [commitWorkspaceState])
+
   const handleEdgesUpdate = useCallback((roomName: string, nextEdges: [string, string][]) => {
     commitWorkspaceState(current => ({
       ...current,
@@ -634,13 +732,14 @@ const AnchorManager: React.FC<AnchorManagerProps> = ({ workspaceId }) => {
           <button className="am-btn am-btn--ghost" onClick={() => fileInputRef.current?.click()}>Load SVG</button>
           <button className="am-btn am-btn--ghost" onClick={() => manifestInputRef.current?.click()}>Load Rooms</button>
           <button className="am-btn am-btn--secondary" onClick={handleSaveManifest}>Save Rooms</button>
+          <button className="am-btn am-btn--secondary" onClick={handleSaveProject}>Save Project</button>
           <input ref={fileInputRef} type="file" accept=".svg" style={{ display: 'none' }} onChange={handleLoadSVGFile} />
           <input ref={manifestInputRef} type="file" accept=".json,.rooms.json" style={{ display: 'none' }} onChange={handleLoadManifestFile} />
         </div>
         {status && <div className={`am-status am-status--${statusKind}`}>{status}</div>}
       </div>
 
-      {roomViewTabs.length > 0 && (
+      {(workspaceState.allSegments.length > 0 || roomViewTabs.length > 0) && (
         <div className="am-inner-tabbar">
           <button
             className={`am-inner-tab${activeInternalTab === 'anchor-view' ? ' am-inner-tab--active' : ''}`}
@@ -713,6 +812,11 @@ const AnchorManager: React.FC<AnchorManagerProps> = ({ workspaceId }) => {
                 setUndoStack(stack => [...stack.slice(-49), before])
                 setRedoStack([])
               }}
+              serialPorts={serialPortState.ports}
+              autoDetectPort={serialPortState.autoDetectPort}
+              serialPortsLoading={serialPortState.loading}
+              onRefreshSerialPorts={loadSerialPorts}
+              onRoomSettingsUpdate={patch => handleRoomSettingsUpdate(room.room_name, patch)}
             />
           ) : (
             <div className="am-room-view">

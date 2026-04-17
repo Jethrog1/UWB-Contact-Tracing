@@ -69,6 +69,7 @@ class Anchor:
         return {
             "id": self.id,
             "hw_id": self.hw_id,
+            "hardware_id": self.hw_id,
             "x_ft": round(float(self.x), 3),
             "y_ft": round(float(self.y), 3),
             "z_ft": round(float(self.z), 3),
@@ -200,10 +201,16 @@ class Room:
         reference_anchor_id = self.reference_anchor_id
         if reference_anchor_id is None and self.anchors:
             reference_anchor_id = self.anchors[0].id
+        rtls_settings = {
+            "tag_height_ft": 0.0,
+            "filter_mode": "None",
+            "ble_module_port": "",
+            **dict(self.rtls_settings),
+        }
         return {
             "room_name": self.name,
             "units": "ft",
-            "rtls_settings": dict(self.rtls_settings),
+            "rtls_settings": rtls_settings,
             "reference_anchor_id": reference_anchor_id,
             "room_bounds_ft": {
                 "min_x": round(self.min_x, 3),
@@ -241,7 +248,12 @@ class Room:
             name=str(d.get("room_name", "Room")),
             segments=segments,
             interior_segments=interior,
-            rtls_settings=dict(d.get("rtls_settings", {})),
+            rtls_settings={
+                "tag_height_ft": 0.0,
+                "filter_mode": "None",
+                "ble_module_port": "",
+                **dict(d.get("rtls_settings", {})),
+            },
             reference_anchor_id=d.get("reference_anchor_id"),
         )
         room.anchors = [Anchor.from_dict(a) for a in d.get("anchors", [])]

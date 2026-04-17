@@ -264,7 +264,7 @@ const AnchorPreviewCanvas = forwardRef<AnchorPreviewCanvasHandle, Props>(({
       ctx.fillStyle = COLORS.textLabel
       ctx.font = '10px var(--font-primary, sans-serif)'
       ctx.textAlign = 'center'
-      ctx.fillText(anchor.hw_id || anchor.id, sx, sy - 12)
+      ctx.fillText(anchor.id, sx, sy - 12)
     }
 
   }, [
