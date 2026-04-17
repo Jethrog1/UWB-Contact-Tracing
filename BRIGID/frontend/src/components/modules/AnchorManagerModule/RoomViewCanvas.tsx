@@ -62,6 +62,7 @@ const RoomViewCanvas = forwardRef<RoomViewCanvasHandle, Props>(({
   const [viewport, setViewport] = useState<Viewport>({ offsetX: 0, offsetY: 0, scale: 20 })
   const [hoverWorld, setHoverWorld] = useState<[number, number] | null>(null)
   const [hoverSnap, setHoverSnap] = useState<{ x: number; y: number } | null>(null)
+  const [ctrlDown, setCtrlDown] = useState(false)
   const fitDoneRef = useRef(false)
   const panRef = useRef<{ active: boolean; lastX: number; lastY: number }>({ active: false, lastX: 0, lastY: 0 })
   const dragRef = useRef<{ active: boolean; anchorId: string; origX: number; origY: number } | null>(null)
@@ -280,9 +281,11 @@ const RoomViewCanvas = forwardRef<RoomViewCanvasHandle, Props>(({
     if (!canvas) return
     const rect = canvas.getBoundingClientRect()
     const [worldX, worldY] = screenToWorld(vp, e.clientX - rect.left, e.clientY - rect.top)
+    const isCtrlHeld = e.ctrlKey || e.metaKey
+    setCtrlDown(isCtrlHeld)
     const isInRoom = roomContainsWorldPoint(room, worldX, worldY, 0.1)
-    const snap = isInRoom ? findSnapTarget(worldX, worldY, allSegments) : null
-    setHoverWorld(isInRoom && !getAnchorAt(e.clientX - rect.left, e.clientY - rect.top) ? [worldX, worldY] : null)
+    const snap = (isInRoom && isCtrlHeld) ? findSnapTarget(worldX, worldY, allSegments) : null
+    setHoverWorld(isInRoom && isCtrlHeld && !getAnchorAt(e.clientX - rect.left, e.clientY - rect.top) ? [worldX, worldY] : null)
     setHoverSnap(snap ? { x: snap.x, y: snap.y } : null)
   }, [allSegments, getAnchorAt, onAnchorMove, room])
 
@@ -304,10 +307,12 @@ const RoomViewCanvas = forwardRef<RoomViewCanvasHandle, Props>(({
     if (e.key === ' ') { spacePressedRef.current = true; e.preventDefault() }
     if (e.key === 'f' || e.key === 'F') { fitView(); e.preventDefault() }
     if (e.key === 'Escape') { onAnchorSelect(null); e.preventDefault() }
+    if (e.key === 'Control' || e.key === 'Meta') setCtrlDown(true)
   }, [fitView, onAnchorSelect])
 
   const handleKeyUp = useCallback((e: React.KeyboardEvent<HTMLCanvasElement>) => {
     if (e.key === ' ') spacePressedRef.current = false
+    if (e.key === 'Control' || e.key === 'Meta') { setCtrlDown(false); setHoverWorld(null); setHoverSnap(null) }
   }, [])
 
   const isHoveringAnchor = hoverWorld === null && (hoverSnap !== null || false)
@@ -320,11 +325,11 @@ const RoomViewCanvas = forwardRef<RoomViewCanvasHandle, Props>(({
       onMouseDown={handleMouseDown}
       onMouseMove={handleMouseMove}
       onMouseUp={handleMouseUp}
-      onMouseLeave={() => { handleMouseUp(); setHoverWorld(null); setHoverSnap(null) }}
+      onMouseLeave={() => { handleMouseUp(); setHoverWorld(null); setHoverSnap(null); setCtrlDown(false) }}
       onWheel={handleWheel}
       onKeyDown={handleKeyDown}
       onKeyUp={handleKeyUp}
-      style={{ cursor: panRef.current.active ? 'grabbing' : isHoveringAnchor ? 'grab' : 'crosshair' }}
+      style={{ cursor: panRef.current.active ? 'grabbing' : isHoveringAnchor ? 'grab' : ctrlDown ? 'crosshair' : 'default' }}
     />
   )
 })

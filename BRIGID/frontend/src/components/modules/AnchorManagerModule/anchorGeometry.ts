@@ -13,6 +13,24 @@ const pointsClose = (a: Point, b: Point, eps = 1e-4): boolean => (
   Math.abs(a[0] - b[0]) <= eps && Math.abs(a[1] - b[1]) <= eps
 )
 
+export const segmentsEqual = (a: SegmentData, b: SegmentData, eps = 1e-3): boolean => (
+  (pointsClose([a.x1, a.y1], [b.x1, b.y1], eps) && pointsClose([a.x2, a.y2], [b.x2, b.y2], eps))
+  || (pointsClose([a.x1, a.y1], [b.x2, b.y2], eps) && pointsClose([a.x2, a.y2], [b.x1, b.y1], eps))
+)
+
+export const segmentsMatch = (segmentsA: SegmentData[], segmentsB: SegmentData[], eps = 1e-3): boolean => {
+  if (segmentsA.length !== segmentsB.length) return false
+
+  const unmatched = [...segmentsB]
+  for (const segmentA of segmentsA) {
+    const matchIndex = unmatched.findIndex(segmentB => segmentsEqual(segmentA, segmentB, eps))
+    if (matchIndex === -1) return false
+    unmatched.splice(matchIndex, 1)
+  }
+
+  return unmatched.length === 0
+}
+
 export const getAnchorWorldPosition = (room: RoomData, anchor: AnchorData): Point => (
   [room.room_bounds_ft.min_x + anchor.x_ft, room.room_bounds_ft.min_y + anchor.y_ft]
 )
@@ -166,6 +184,101 @@ export const findSnapTarget = (
   }
 
   return best
+}
+
+const segmentIntersectionT = (
+  x1: number, y1: number, x2: number, y2: number,
+  x3: number, y3: number, x4: number, y4: number,
+  eps = 1e-12,
+): number | null => {
+  const d1x = x2 - x1
+  const d1y = y2 - y1
+  const d2x = x4 - x3
+  const d2y = y4 - y3
+  const denom = d1x * d2y - d1y * d2x
+  if (Math.abs(denom) < eps) return null
+
+  const dx = x3 - x1
+  const dy = y3 - y1
+  const t = (dx * d2y - dy * d2x) / denom
+  const u = (dx * d1y - dy * d1x) / denom
+  const rangeEps = 1e-4
+  if (t < -rangeEps || t > 1 + rangeEps || u < -rangeEps || u > 1 + rangeEps) return null
+  return Math.max(0, Math.min(1, t))
+}
+
+const projectTOnSegment = (segment: SegmentData, px: number, py: number): number => {
+  const dx = segment.x2 - segment.x1
+  const dy = segment.y2 - segment.y1
+  const lenSq = dx * dx + dy * dy
+  if (lenSq < 1e-12) return 0
+  return Math.max(0, Math.min(1, ((px - segment.x1) * dx + (py - segment.y1) * dy) / lenSq))
+}
+
+const getSegmentBreaks = (target: SegmentData, allSegments: SegmentData[]): number[] => {
+  const dx = target.x2 - target.x1
+  const dy = target.y2 - target.y1
+  const segLenSq = dx * dx + dy * dy
+  if (segLenSq < 1e-12) return [0, 1]
+
+  const segLen = Math.sqrt(segLenSq)
+  const snapWorld = Math.max(segLen * 2e-3, 0.01)
+  const breaks = [0, 1]
+
+  for (const seg of allSegments) {
+    if (seg === target) continue
+    const t = segmentIntersectionT(target.x1, target.y1, target.x2, target.y2, seg.x1, seg.y1, seg.x2, seg.y2)
+    if (t !== null) {
+      breaks.push(t)
+      continue
+    }
+
+    for (const [px, py] of [[seg.x1, seg.y1], [seg.x2, seg.y2]] as Point[]) {
+      const distance = pointToSegmentDistance(px, py, target.x1, target.y1, target.x2, target.y2)
+      if (distance < snapWorld) {
+        const tSnap = projectTOnSegment(target, px, py)
+        if (snapWorld / segLen < tSnap && tSnap < 1 - snapWorld / segLen) breaks.push(tSnap)
+      }
+    }
+  }
+
+  breaks.sort((a, b) => a - b)
+  const deduped = [breaks[0]]
+  for (const value of breaks.slice(1)) {
+    if (Math.abs(value - deduped[deduped.length - 1]) > 1e-9) deduped.push(value)
+  }
+  return deduped
+}
+
+export const getClickedSubsegment = (
+  target: SegmentData,
+  allSegments: SegmentData[],
+  clickX: number,
+  clickY: number,
+): SegmentData => {
+  const dx = target.x2 - target.x1
+  const dy = target.y2 - target.y1
+  const lenSq = dx * dx + dy * dy
+  if (lenSq < 1e-12) return target
+
+  const tClick = Math.max(0, Math.min(1, ((clickX - target.x1) * dx + (clickY - target.y1) * dy) / lenSq))
+  const breaks = getSegmentBreaks(target, allSegments)
+  let tLeft = 0
+  let tRight = 1
+  for (let i = 0; i < breaks.length - 1; i++) {
+    if (breaks[i] <= tClick && tClick <= breaks[i + 1]) {
+      tLeft = breaks[i]
+      tRight = breaks[i + 1]
+      break
+    }
+  }
+
+  return {
+    x1: target.x1 + tLeft * dx,
+    y1: target.y1 + tLeft * dy,
+    x2: target.x1 + tRight * dx,
+    y2: target.y1 + tRight * dy,
+  }
 }
 
 export const getRoomReferenceAnchor = (room: RoomData): AnchorData | null => (

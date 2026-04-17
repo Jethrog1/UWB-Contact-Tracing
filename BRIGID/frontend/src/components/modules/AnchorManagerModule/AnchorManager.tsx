@@ -3,7 +3,7 @@ import { AnchorData, FloorplanManifest, RoomData, SegmentData } from '../../../t
 import AnchorEditPanel from './AnchorEditPanel'
 import AnchorManagerCanvas, { AnchorManagerCanvasHandle, AnchorManagerViewport } from './AnchorManagerCanvas'
 import RoomView from './RoomView'
-import { findConnectedSegments, roomContainsWorldPoint } from './anchorGeometry'
+import { roomContainsWorldPoint, segmentsMatch } from './anchorGeometry'
 import './AnchorManager.css'
 
 const API = 'http://localhost:8765'
@@ -29,6 +29,7 @@ interface AnchorManagerProps {
 
 interface AnchorWorkspaceState {
   allSegments: LoadedSegment[]
+  geometrySegments: LoadedSegment[]
   rooms: RoomData[]
   selectedRoomName: string | null
   selectedAnchorId: string | null
@@ -42,6 +43,7 @@ const DEFAULT_VIEWPORT: AnchorManagerViewport = { offsetX: 0, offsetY: 0, scale:
 
 const createDefaultState = (): AnchorWorkspaceState => ({
   allSegments: [],
+  geometrySegments: [],
   rooms: [],
   selectedRoomName: null,
   selectedAnchorId: null,
@@ -67,6 +69,7 @@ const normalizeState = (state: Partial<AnchorWorkspaceState> | null | undefined)
     ...state,
     rooms: Array.isArray(state.rooms) ? state.rooms.map(normalizeRoom) : fallback.rooms,
     allSegments: Array.isArray(state.allSegments) ? state.allSegments : fallback.allSegments,
+    geometrySegments: Array.isArray(state.geometrySegments) ? state.geometrySegments : fallback.geometrySegments,
     selectedSegments: Array.isArray(state.selectedSegments) ? state.selectedSegments : fallback.selectedSegments,
     viewport: state.viewport ?? fallback.viewport,
   }
@@ -104,6 +107,35 @@ const deriveSegmentsFromRooms = (rooms: RoomData[]): LoadedSegment[] => {
     }
   }
   return segments
+}
+
+const roundCoord = (value: number): number => Math.round(value * 1e4) / 1e4
+
+const segmentKey = (segment: SegmentData): string => {
+  const start: [number, number] = [roundCoord(segment.x1), roundCoord(segment.y1)]
+  const end: [number, number] = [roundCoord(segment.x2), roundCoord(segment.y2)]
+  const [a, b] = start[0] < end[0] || (start[0] === end[0] && start[1] <= end[1])
+    ? [start, end]
+    : [end, start]
+  return `${a[0]},${a[1]},${b[0]},${b[1]}`
+}
+
+const segmentFromList = (raw: number[]): SegmentData => ({
+  x1: raw[0],
+  y1: raw[1],
+  x2: raw[2],
+  y2: raw[3],
+})
+
+const serializeSegments = (segments: SegmentData[]): number[][] => (
+  segments.map(segment => [segment.x1, segment.y1, segment.x2, segment.y2])
+)
+
+const findMatchingRoomName = (rooms: RoomData[], segments: SegmentData[]): string | null => {
+  for (const room of rooms) {
+    if (segmentsMatch(room.segments_ft, segments)) return room.room_name
+  }
+  return null
 }
 
 const AnchorManager: React.FC<AnchorManagerProps> = ({ workspaceId }) => {
@@ -237,6 +269,7 @@ const AnchorManager: React.FC<AnchorManagerProps> = ({ workspaceId }) => {
         replaceWorkspaceState({
           ...workspaceStateRef.current,
           allSegments: segments,
+          geometrySegments: segments,
           rooms: [],
           selectedRoomName: null,
           selectedAnchorId: null,
@@ -270,6 +303,7 @@ const AnchorManager: React.FC<AnchorManagerProps> = ({ workspaceId }) => {
           allSegments: workspaceStateRef.current.allSegments.length > 0
             ? workspaceStateRef.current.allSegments
             : deriveSegmentsFromRooms(rooms),
+          geometrySegments: workspaceStateRef.current.geometrySegments,
           projectName: manifest.project_name ?? 'Project',
           selectedRoomName: rooms[0]?.room_name ?? null,
           selectedAnchorId: null,
@@ -304,38 +338,99 @@ const AnchorManager: React.FC<AnchorManagerProps> = ({ workspaceId }) => {
     }
   }, [workspaceState.projectName, workspaceState.rooms, workspaceState.svgPath])
 
-  const handleSegmentClick = useCallback((segment: SegmentData, shiftHeld: boolean) => {
-    if (activeTool === 'smartSelect') {
-      updateWorkspaceState(current => {
-        const connected = findConnectedSegments(segment, current.allSegments)
-        if (shiftHeld) {
-          const existingKeys = new Set(current.selectedSegments.map(s => `${s.x1},${s.y1},${s.x2},${s.y2}`))
-          const merged = [...current.selectedSegments]
-          for (const seg of connected) {
-            const key = `${seg.x1},${seg.y1},${seg.x2},${seg.y2}`
-            if (!existingKeys.has(key)) merged.push(seg)
-          }
-          return { ...current, selectedSegments: merged }
-        }
-        return { ...current, selectedSegments: connected }
-      })
-    } else {
-      updateWorkspaceState(current => {
-        const key = `${segment.x1},${segment.y1},${segment.x2},${segment.y2}`
-        const exists = current.selectedSegments.some(item => `${item.x1},${item.y1},${item.x2},${item.y2}` === key)
-        const nextSegments = shiftHeld
-          ? (exists
-            ? current.selectedSegments.filter(item => `${item.x1},${item.y1},${item.x2},${item.y2}` !== key)
-            : [...current.selectedSegments, segment])
-          : (exists && current.selectedSegments.length === 1 ? [] : [segment])
-        return { ...current, selectedSegments: nextSegments }
-      })
+  const handleSegmentClick = useCallback(async (segment: SegmentData, _shiftHeld: boolean, worldX: number, worldY: number) => {
+    const current = workspaceStateRef.current
+    if (current.geometrySegments.length === 0) {
+      showStatus('Load the original SVG floor plan to use Select.', 'error')
+      return
     }
-  }, [activeTool, updateWorkspaceState])
+
+    const segIdx = current.geometrySegments.findIndex(item => item === segment || segmentKey(item) === segmentKey(segment))
+    let nextSegment = segment
+
+    if (segIdx >= 0) {
+      try {
+        const res = await fetch(`${API}/api/rooms/geometry/compute-subsegment`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            all_segments: serializeSegments(current.geometrySegments),
+            seg_idx: segIdx,
+            click_x: worldX,
+            click_y: worldY,
+          }),
+        })
+        const data = await res.json()
+        if (data.success && Array.isArray(data.subsegment) && data.subsegment.length === 4) {
+          nextSegment = segmentFromList(data.subsegment)
+        } else if (!data.success && data.error) {
+          showStatus(data.error, 'error')
+        }
+      } catch {
+        showStatus('Backend unreachable.', 'error')
+      }
+    }
+
+    updateWorkspaceState(state => {
+      const key = segmentKey(nextSegment)
+      const exists = state.selectedSegments.some(item => segmentKey(item) === key)
+      const nextSegments = exists
+        ? state.selectedSegments.filter(item => segmentKey(item) !== key)
+        : [...state.selectedSegments, nextSegment]
+      return { ...state, selectedSegments: nextSegments }
+    })
+  }, [updateWorkspaceState])
+
+  const handleSmartSelectClick = useCallback(async (worldX: number, worldY: number, _shiftHeld: boolean) => {
+    const current = workspaceStateRef.current
+    if (current.geometrySegments.length === 0) {
+      showStatus('Load the original SVG floor plan to use Smart Select.', 'error')
+      return
+    }
+
+    const roomAtPoint = current.rooms.find(room => roomContainsWorldPoint(room, worldX, worldY, 0))
+    if (roomAtPoint) {
+      showStatus(`Room already defined: ${roomAtPoint.room_name}`, 'error')
+      return
+    }
+
+    try {
+      const res = await fetch(`${API}/api/rooms/geometry/detect-boundary`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          segments: serializeSegments(current.geometrySegments),
+          click_x: worldX,
+          click_y: worldY,
+        }),
+      })
+      const data = await res.json()
+      if (!data.success || !Array.isArray(data.boundary)) {
+        showStatus('Could not find a closed room boundary at that point.', 'error')
+        return
+      }
+
+      const boundary = data.boundary.map((segment: number[]) => segmentFromList(segment))
+      const matchingRoomName = findMatchingRoomName(current.rooms, boundary)
+      if (matchingRoomName) {
+        showStatus(`Room already defined: ${matchingRoomName}`, 'error')
+        return
+      }
+
+      updateWorkspaceState(state => ({ ...state, selectedSegments: boundary }))
+    } catch {
+      showStatus('Backend unreachable.', 'error')
+    }
+  }, [updateWorkspaceState])
 
   const handleCreateRoom = useCallback(() => {
     if (workspaceState.selectedSegments.length === 0) {
       showStatus('Select segments on the canvas first.', 'error')
+      return
+    }
+    const matchingRoomName = findMatchingRoomName(workspaceState.rooms, workspaceState.selectedSegments)
+    if (matchingRoomName) {
+      showStatus(`Room already defined: ${matchingRoomName}`, 'error')
       return
     }
     setCreateDialog({
@@ -343,7 +438,7 @@ const AnchorManager: React.FC<AnchorManagerProps> = ({ workspaceId }) => {
       name: `Room_${roomCounter.current}`,
       segments: workspaceState.selectedSegments,
     })
-  }, [workspaceState.selectedSegments])
+  }, [workspaceState.rooms, workspaceState.selectedSegments])
 
   const handleConfirmCreateRoom = useCallback(async () => {
     if (!createDialog.name.trim()) return
@@ -354,6 +449,7 @@ const AnchorManager: React.FC<AnchorManagerProps> = ({ workspaceId }) => {
         body: JSON.stringify({
           name: createDialog.name.trim(),
           segments: createDialog.segments.map(seg => [seg.x1, seg.y1, seg.x2, seg.y2]),
+          existing_rooms: workspaceStateRef.current.rooms,
         }),
       })
       const data = await res.json()
@@ -377,55 +473,6 @@ const AnchorManager: React.FC<AnchorManagerProps> = ({ workspaceId }) => {
     }
   }, [commitWorkspaceState, createDialog])
 
-  const handleCanvasCtrlClick = useCallback((worldX: number, worldY: number) => {
-    const current = workspaceStateRef.current
-    if (!current.selectedRoomName) {
-      showStatus('Select a room first.', 'error')
-      return
-    }
-    const room = current.rooms.find(item => item.room_name === current.selectedRoomName)
-    if (!room) return
-    if (!roomContainsWorldPoint(room, worldX, worldY, 0.05)) {
-      showStatus('Anchor must be placed inside room bounds.', 'error')
-      return
-    }
-
-    const roomIndex = current.rooms.findIndex(item => item.room_name === room.room_name) + 1
-    const nextAnchorIndex = anchorCounter.current[room.room_name] ?? room.anchors.length
-    anchorCounter.current[room.room_name] = nextAnchorIndex + 1
-    const anchorId = `R${roomIndex}A${nextAnchorIndex}`
-    const localX = worldX - room.room_bounds_ft.min_x
-    const localY = worldY - room.room_bounds_ft.min_y
-
-    commitWorkspaceState(state => ({
-      ...state,
-      rooms: state.rooms.map(item => {
-        if (item.room_name !== room.room_name) return item
-        const newAnchor: AnchorData = {
-          id: anchorId,
-          hw_id: '',
-          x_ft: localX,
-          y_ft: localY,
-          z_ft: 0,
-        }
-        return {
-          ...item,
-          anchors: [...item.anchors, newAnchor],
-          reference_anchor_id: item.reference_anchor_id ?? anchorId,
-        }
-      }),
-      selectedRoomName: room.room_name,
-      selectedAnchorId: anchorId,
-    }))
-  }, [commitWorkspaceState])
-
-  const handleAnchorClick = useCallback((anchorId: string, roomName: string) => {
-    updateWorkspaceState(current => ({
-      ...current,
-      selectedRoomName: roomName,
-      selectedAnchorId: current.selectedAnchorId === anchorId ? null : anchorId,
-    }))
-  }, [updateWorkspaceState])
 
   const handleAnchorUpdate = useCallback((roomName: string, anchorId: string, patch: Partial<AnchorData>) => {
     commitWorkspaceState(current => ({
@@ -475,42 +522,6 @@ const AnchorManager: React.FC<AnchorManagerProps> = ({ workspaceId }) => {
       )),
     }))
   }, [commitWorkspaceState])
-
-  const handleAnchorMoveStart = useCallback((_roomName: string, _anchorId: string) => {
-    dragSnapshotRef.current = cloneState(workspaceStateRef.current)
-  }, [])
-
-  const handleAnchorMove = useCallback((roomName: string, anchorId: string, worldX: number, worldY: number) => {
-    updateWorkspaceState(current => ({
-      ...current,
-      rooms: current.rooms.map(room => {
-        if (room.room_name !== roomName) return room
-        return {
-          ...room,
-          anchors: room.anchors.map(anchor => (
-            anchor.id !== anchorId
-              ? anchor
-              : {
-                  ...anchor,
-                  x_ft: worldX - room.room_bounds_ft.min_x,
-                  y_ft: worldY - room.room_bounds_ft.min_y,
-                }
-          )),
-        }
-      }),
-      selectedRoomName: roomName,
-      selectedAnchorId: anchorId,
-    }))
-  }, [updateWorkspaceState])
-
-  const handleAnchorMoveEnd = useCallback(() => {
-    const before = dragSnapshotRef.current
-    dragSnapshotRef.current = null
-    if (!before) return
-    if (roomStateSignature(before) === roomStateSignature(workspaceStateRef.current)) return
-    setUndoStack(stack => [...stack.slice(-49), before])
-    setRedoStack([])
-  }, [])
 
   const handleNudgeAnchor = useCallback((dx: number, dy: number) => {
     const current = workspaceStateRef.current
@@ -615,14 +626,14 @@ const AnchorManager: React.FC<AnchorManagerProps> = ({ workspaceId }) => {
               <button
                 className={`am-btn am-btn--ghost${activeTool === 'select' ? ' am-btn--active' : ''}`}
                 onClick={() => setActiveTool('select')}
-                title="Select Lines — click or shift-click segments to select"
+                title="Select Lines — click sub-segments to toggle them"
               >
                 Select
               </button>
               <button
                 className={`am-btn am-btn--ghost${activeTool === 'smartSelect' ? ' am-btn--active' : ''}`}
                 onClick={() => setActiveTool('smartSelect')}
-                title="Smart Select — select connected wall segments automatically"
+                title="Smart Select — click inside a closed room to select its boundary"
               >
                 Smart Select
               </button>
@@ -642,7 +653,7 @@ const AnchorManager: React.FC<AnchorManagerProps> = ({ workspaceId }) => {
             className={`am-inner-tab${activeInternalTab === 'anchor-view' ? ' am-inner-tab--active' : ''}`}
             onClick={() => setActiveInternalTab('anchor-view')}
           >
-            Anchor View
+            Floor Plan
           </button>
           {roomViewTabs.map(tab => (
             <button
@@ -671,6 +682,7 @@ const AnchorManager: React.FC<AnchorManagerProps> = ({ workspaceId }) => {
               room={room}
               workspaceId={workspaceId}
               selectedAnchorId={workspaceState.selectedAnchorId}
+              onBack={() => setActiveInternalTab('anchor-view')}
               onAnchorSelect={anchorId => updateWorkspaceState(current => ({ ...current, selectedAnchorId: anchorId }))}
               onAnchorPlace={(localX, localY) => {
                 const roomIndex = workspaceStateRef.current.rooms.findIndex(r => r.room_name === room.room_name) + 1
@@ -738,13 +750,9 @@ const AnchorManager: React.FC<AnchorManagerProps> = ({ workspaceId }) => {
                 hoverRoomName={hoverRoomName}
                 onViewportChange={viewport => updateWorkspaceState(current => ({ ...current, viewport }))}
                 onSegmentClick={handleSegmentClick}
-                onCanvasCtrlClick={handleCanvasCtrlClick}
+                onSmartSelectClick={handleSmartSelectClick}
                 onRoomClick={roomName => updateWorkspaceState(current => ({ ...current, selectedRoomName: roomName, selectedAnchorId: null }))}
                 onRoomHover={setHoverRoomName}
-                onAnchorClick={handleAnchorClick}
-                onAnchorMoveStart={handleAnchorMoveStart}
-                onAnchorMove={handleAnchorMove}
-                onAnchorMoveEnd={handleAnchorMoveEnd}
                 onNudgeAnchor={handleNudgeAnchor}
                 onCanvasContextMenu={handleCreateRoom}
                 onRoomDoubleClick={handleRoomDoubleClick}

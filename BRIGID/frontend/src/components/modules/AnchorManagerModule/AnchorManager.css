@@ -170,6 +170,7 @@
   display: flex;
   flex: 1;
   overflow: hidden;
+  padding-left: 46px;
 }
 
 .am-canvas-wrap {
@@ -569,7 +570,7 @@
 
 .am-selection-banner {
   position: absolute;
-  left: 70px;
+  left: 14px;
   bottom: 20px;
   z-index: 11;
   display: flex;

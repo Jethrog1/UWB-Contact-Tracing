@@ -1,6 +1,5 @@
-import React, { useEffect, useRef, useState } from 'react'
+import React, { useEffect, useState } from 'react'
 import { AnchorData, RoomData } from '../../../types'
-import AnchorPreviewCanvas, { AnchorPreviewCanvasHandle } from './AnchorPreviewCanvas'
 
 interface Props {
   rooms: RoomData[]
@@ -15,7 +14,7 @@ interface Props {
   onAnchorUpdate: (roomName: string, anchorId: string, patch: Partial<AnchorData>) => void
   onAnchorDelete: (roomName: string, anchorId: string) => void
   onAnchorSelect: (anchorId: string | null) => void
-  onEdgesUpdate: (roomName: string, nextEdges: [string, string][]) => void
+  onEdgesUpdate?: (roomName: string, nextEdges: [string, string][]) => void
   onReferenceAnchorChange: (roomName: string, referenceAnchorId: string | null) => void
   onUndo: () => void
   onRedo: () => void
@@ -35,13 +34,11 @@ const AnchorEditPanel: React.FC<Props> = ({
   onAnchorUpdate,
   onAnchorDelete,
   onAnchorSelect,
-  onEdgesUpdate,
   onReferenceAnchorChange,
   onUndo,
   onRedo,
   onEscapeCanvas,
 }) => {
-  const previewRef = useRef<AnchorPreviewCanvasHandle>(null)
   const [editFields, setEditFields] = useState<Partial<AnchorData>>({})
   const selectedRoom = rooms.find(room => room.room_name === selectedRoomName) ?? null
   const selectedAnchor = selectedRoom?.anchors.find(anchor => anchor.id === selectedAnchorId) ?? null
@@ -93,8 +90,7 @@ const AnchorEditPanel: React.FC<Props> = ({
               onMouseLeave={() => onRoomHover(null)}
               onDoubleClick={() => onRoomDoubleClick(room.room_name)}
             >
-              <span>{room.room_name}</span>
-              <span>{room.anchors.length}</span>
+              {room.room_name} ({room.anchors.length} anchor{room.anchors.length !== 1 ? 's' : ''})
             </button>
           ))}
         </div>
@@ -136,7 +132,7 @@ const AnchorEditPanel: React.FC<Props> = ({
           <div className="am-panel-section am-anchor-list-section">
             <div className="am-section-label">Anchors</div>
             {selectedRoom.anchors.length === 0 ? (
-              <div className="am-panel-empty">Ctrl+Click inside the room to place anchors.</div>
+              <div className="am-panel-empty">Open room view and hold Ctrl+Click to place anchors.</div>
             ) : (
               <table className="am-anchor-table">
                 <thead>
@@ -172,40 +168,6 @@ const AnchorEditPanel: React.FC<Props> = ({
               </table>
             )}
           </div>
-
-          {selectedRoom.anchors.length > 0 && (
-            <div className="am-panel-section">
-              <div className="am-section-label" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <span>Anchor Coordinates</span>
-                <div style={{ display: 'flex', gap: '6px' }}>
-                  <button className="am-mini-btn" onClick={() => previewRef.current?.resetView()} title="Fit View">Fit</button>
-                  <button className="am-mini-btn" onClick={() => previewRef.current?.zoomIn()} title="Zoom In">+</button>
-                  <button className="am-mini-btn" onClick={() => previewRef.current?.zoomOut()} title="Zoom Out">-</button>
-                </div>
-              </div>
-              <div className="am-coord-meta" style={{ marginBottom: '8px' }}>
-                {(selectedRoom.edges?.length ?? 0)} distance edges mapped
-              </div>
-              <AnchorPreviewCanvas
-                ref={previewRef}
-                room={selectedRoom}
-                selectedAnchorId={selectedAnchorId}
-                onAnchorSelect={onAnchorSelect}
-                onEdgeDraw={(a1, a2) => {
-                  const currentEdges = selectedRoom.edges ?? []
-                  const exists = currentEdges.some(e => (e[0] === a1 && e[1] === a2) || (e[0] === a2 && e[1] === a1))
-                  if (!exists) onEdgesUpdate(selectedRoom.room_name, [...currentEdges, [a1, a2]])
-                }}
-                onEdgeDelete={(a1, a2) => {
-                  const currentEdges = selectedRoom.edges ?? []
-                  onEdgesUpdate(
-                    selectedRoom.room_name,
-                    currentEdges.filter(e => !((e[0] === a1 && e[1] === a2) || (e[0] === a2 && e[1] === a1)))
-                  )
-                }}
-              />
-            </div>
-          )}
 
           {selectedAnchor && (
             <div className="am-panel-section">

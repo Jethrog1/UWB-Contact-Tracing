@@ -38,7 +38,7 @@ from utilities.profilers.tag_profile_io import (
 from utilities.profilers.tag_profiler import validate_profile, serialize_profile
 from utilities.profilers.calibration_math import build_eval_func
 from utilities.calibration.runtime import CalibrationRuntime
-from utilities.rooms.room_data import Anchor, Room
+from utilities.rooms.room_data import Anchor, Room, segments_match
 from utilities.rooms.room_io import (
     create_empty_room,
     save_floorplan_manifest,
@@ -46,7 +46,11 @@ from utilities.rooms.room_io import (
     list_room_profiles,
 )
 from utilities.rooms.project_io import save_project_package, load_project_package
-from utilities.rooms.geometry_utils import find_connected_segments as _find_connected
+from utilities.rooms.geometry_utils import (
+    find_connected_segments as _find_connected,
+    detect_room_boundary as _detect_boundary,
+    compute_subsegment as _compute_subsegment,
+)
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("cad_server")
@@ -494,6 +498,7 @@ class CreateRoomRequest(BaseModel):
     name: str
     segments: List[List[float]]    # [[x1,y1,x2,y2], ...]
     interior_segments: List[List[float]] = []
+    existing_rooms: List[dict] = []
 
 
 class SaveManifestRequest(BaseModel):
@@ -539,6 +544,19 @@ class FindSegmentsRequest(BaseModel):
     start_idx: int
 
 
+class DetectBoundaryRequest(BaseModel):
+    segments: List[List[float]]   # [[x1,y1,x2,y2], ...]
+    click_x: float
+    click_y: float
+
+
+class ComputeSubsegmentRequest(BaseModel):
+    all_segments: List[List[float]]   # [[x1,y1,x2,y2], ...]
+    seg_idx: int
+    click_x: float
+    click_y: float
+
+
 def _segs_from_list(raw: List[List[float]]):
     return [(float(s[0]), float(s[1]), float(s[2]), float(s[3])) for s in raw]
 
@@ -554,6 +572,16 @@ async def api_rooms_list(workspace_id: Optional[str] = None):
 async def api_rooms_create(req: CreateRoomRequest):
     segs = _segs_from_list(req.segments)
     interior = _segs_from_list(req.interior_segments)
+    existing_rooms: List[Room] = []
+    try:
+        existing_rooms = [Room.from_dict(room) for room in req.existing_rooms]
+    except Exception as exc:
+        return {"success": False, "error": f"Invalid existing room data: {exc}"}
+
+    for existing_room in existing_rooms:
+        if segments_match(existing_room.segments, segs):
+            return {"success": False, "error": f"Room already defined: {existing_room.name}"}
+
     room = Room(name=req.name, segments=segs, interior_segments=interior,
                 rtls_settings={"tag_height_ft": 0.0, "filter_mode": "None", "ble_module_port": ""})
     return {"success": True, "room": room.to_dict()}
@@ -636,6 +664,24 @@ async def api_find_segments(req: FindSegmentsRequest):
     indices = _find_connected(segs, req.start_idx)
     connected = [list(segs[i]) for i in indices]
     return {"success": True, "indices": indices, "segments": connected}
+
+
+@app.post("/api/rooms/geometry/detect-boundary")
+async def api_detect_boundary(req: DetectBoundaryRequest):
+    segs = _segs_from_list(req.segments)
+    boundary = _detect_boundary(segs, req.click_x, req.click_y)
+    if boundary is None:
+        return {"success": False, "boundary": []}
+    return {"success": True, "boundary": [list(s) for s in boundary]}
+
+
+@app.post("/api/rooms/geometry/compute-subsegment")
+async def api_compute_subsegment(req: ComputeSubsegmentRequest):
+    segs = _segs_from_list(req.all_segments)
+    if req.seg_idx < 0 or req.seg_idx >= len(segs):
+        return {"success": False, "error": "seg_idx out of range"}
+    subseg = _compute_subsegment(segs, req.seg_idx, req.click_x, req.click_y)
+    return {"success": True, "subsegment": list(subseg)}
 
 
 # ===========================================================================

@@ -21,6 +21,39 @@ Point = Tuple[float, float]
 
 
 # ---------------------------------------------------------------------------
+# Segment comparison
+# ---------------------------------------------------------------------------
+
+def _points_close(a: Point, b: Point, eps: float = 1e-3) -> bool:
+    return abs(float(a[0]) - float(b[0])) <= eps and abs(float(a[1]) - float(b[1])) <= eps
+
+
+def segments_equal(seg_a: Segment, seg_b: Segment, eps: float = 1e-3) -> bool:
+    ax1, ay1, ax2, ay2 = seg_a
+    bx1, by1, bx2, by2 = seg_b
+    return (
+        _points_close((ax1, ay1), (bx1, by1), eps)
+        and _points_close((ax2, ay2), (bx2, by2), eps)
+    ) or (
+        _points_close((ax1, ay1), (bx2, by2), eps)
+        and _points_close((ax2, ay2), (bx1, by1), eps)
+    )
+
+
+def segments_match(segments_a: List[Segment], segments_b: List[Segment], eps: float = 1e-3) -> bool:
+    if len(segments_a) != len(segments_b):
+        return False
+
+    unmatched = list(segments_b)
+    for seg_a in segments_a:
+        match_index = next((idx for idx, seg_b in enumerate(unmatched) if segments_equal(seg_a, seg_b, eps)), None)
+        if match_index is None:
+            return False
+        unmatched.pop(match_index)
+    return not unmatched
+
+
+# ---------------------------------------------------------------------------
 # Anchor
 # ---------------------------------------------------------------------------
 

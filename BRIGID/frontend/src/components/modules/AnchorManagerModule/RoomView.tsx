@@ -6,6 +6,7 @@ interface RoomViewProps {
   room: RoomData
   workspaceId: string
   selectedAnchorId: string | null
+  onBack?: () => void
   onAnchorSelect: (anchorId: string | null) => void
   onAnchorPlace: (localX: number, localY: number) => void
   onAnchorUpdate: (anchorId: string, patch: Partial<AnchorData>) => void
@@ -18,6 +19,7 @@ interface RoomViewProps {
 const RoomView: React.FC<RoomViewProps> = ({
   room,
   selectedAnchorId,
+  onBack,
   onAnchorSelect,
   onAnchorPlace,
   onAnchorUpdate,
@@ -48,7 +50,12 @@ const RoomView: React.FC<RoomViewProps> = ({
     <div className="am-room-view">
       <div className="am-room-view-header">
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <div className="am-room-view-title">{room.room_name}</div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            {onBack && (
+              <button className="am-mini-btn" onClick={onBack} title="Back to floor plan">← Floor Plan</button>
+            )}
+            <div className="am-room-view-title">{room.room_name}</div>
+          </div>
           <button className="am-mini-btn" onClick={() => canvasRef.current?.fitView()} title="Fit view (F)">Fit</button>
         </div>
         <div className="am-room-view-meta">
@@ -57,7 +64,7 @@ const RoomView: React.FC<RoomViewProps> = ({
           &nbsp;·&nbsp;Ref: {room.reference_anchor_id ?? '—'}
         </div>
         <div className="am-room-view-hint">
-          Click inside room to place anchor · Click anchor to select · Drag to move · Scroll to zoom
+          Hold Ctrl and click to place anchor · Click anchor to select · Drag to move · Scroll to zoom
         </div>
       </div>
 
