@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { TagProfile } from '../../../types'
 import ProfileFormSection from './ProfileFormSection'
 import { motion, AnimatePresence } from 'motion/react'
+import { confirmAsync } from '../../common/ConfirmDialog'
 import './TagProfiler.css'
 
 const API = 'http://localhost:8765'
@@ -116,7 +117,15 @@ const TagProfiler: React.FC<TagProfilerProps> = ({ workspaceId }) => {
   useEffect(() => { loadProfileList() }, [loadProfileList])
 
   const handleNew = useCallback(async () => {
-    if (dirty && !window.confirm('Discard unsaved changes?')) return
+    if (dirty) {
+      const ok = await confirmAsync({
+        title: 'Unsaved Changes',
+        message: 'Discard unsaved changes?',
+        confirmLabel: 'Discard',
+        danger: true,
+      })
+      if (!ok) return
+    }
     try {
       const res = await fetch(`${API}/api/profile/new`, { method: 'POST' })
       const data = await res.json()
@@ -157,7 +166,15 @@ const TagProfiler: React.FC<TagProfilerProps> = ({ workspaceId }) => {
   }, [profile, loadProfileList, workspaceId])
 
   const handleLoadById = useCallback(async (tagId: string) => {
-    if (dirty && !window.confirm('Discard unsaved changes?')) return
+    if (dirty) {
+      const ok = await confirmAsync({
+        title: 'Unsaved Changes',
+        message: 'Discard unsaved changes?',
+        confirmLabel: 'Discard',
+        danger: true,
+      })
+      if (!ok) return
+    }
     try {
       const res = await fetch(`${API}/api/profile/${encodeURIComponent(tagId)}?workspace_id=${encodeURIComponent(workspaceId)}`)
       const data = await res.json()
@@ -173,7 +190,13 @@ const TagProfiler: React.FC<TagProfilerProps> = ({ workspaceId }) => {
   }, [dirty, workspaceId])
 
   const handleDelete = useCallback(async (tagId: string) => {
-    if (!window.confirm(`Delete profile "${tagId}"?`)) return
+    const ok = await confirmAsync({
+      title: 'Delete Profile',
+      message: `Delete profile "${tagId}"?`,
+      confirmLabel: 'Delete',
+      danger: true,
+    })
+    if (!ok) return
     try {
       const res = await fetch(`${API}/api/profile/${encodeURIComponent(tagId)}?workspace_id=${encodeURIComponent(workspaceId)}`, { method: 'DELETE' })
       const data = await res.json()

@@ -1,0 +1,28 @@
+{
+    "tag_id": "T0",
+    "identity": {
+        "profile_id": "Tag 0",
+        "name": "Bob",
+        "description": "Bob is navy"
+    },
+    "device": {
+        "mac_address": "DC:B4:D9:22:3B:B9",
+        "device_type": "Belt Clip-on",
+        "wrist_to_floor_ft": 3,
+        "arm_to_floor_ft": 0,
+        "hip_to_floor_ft": 3,
+        "breast_to_floor_ft": 0,
+        "description": "its a tag 0"
+    },
+    "calibration": {
+        "equations": {
+            "A0": "",
+            "A1": "",
+            "A2": "",
+            "A3": ""
+        },
+        "last_calibration_date": "",
+        "equations_enabled": false
+    },
+    "notes": ""
+}

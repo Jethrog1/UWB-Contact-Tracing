@@ -300,7 +300,8 @@ const RTLSDashboardCanvas = forwardRef<RTLSDashboardCanvasHandle, RTLSDashboardC
         }
       }
     } else if (activeRoom) {
-      const polygon = roomLocalPolygon(activeRoom)
+      const room: RoomData = activeRoom
+      const polygon = roomLocalPolygon(room)
       const points = polygon.map(([x, y]) => worldToScreen(viewport, x, y))
       if (points.length >= 3) {
         ctx.fillStyle = ROOM_FILL_ACTIVE
@@ -311,11 +312,11 @@ const RTLSDashboardCanvas = forwardRef<RTLSDashboardCanvasHandle, RTLSDashboardC
         ctx.fill()
       }
 
-      for (const seg of [...activeRoom.segments_ft, ...activeRoom.interior_segments_ft]) {
-        const localSeg = localizeSegment(activeRoom, seg)
+      for (const seg of [...room.segments_ft, ...room.interior_segments_ft]) {
+        const localSeg = localizeSegment(room, seg)
         const [x1, y1] = worldToScreen(viewport, localSeg.x1, localSeg.y1)
         const [x2, y2] = worldToScreen(viewport, localSeg.x2, localSeg.y2)
-        const isBoundary = activeRoom.segments_ft.includes(seg)
+        const isBoundary = room.segments_ft.includes(seg)
         ctx.strokeStyle = isBoundary ? ROOM_OUTLINE_ACTIVE : FLOORPLAN_SEGMENT
         ctx.lineWidth = isBoundary ? 1.9 : 1.1
         ctx.beginPath()
@@ -325,7 +326,7 @@ const RTLSDashboardCanvas = forwardRef<RTLSDashboardCanvasHandle, RTLSDashboardC
       }
     }
 
-    if (mode === 'room') {
+    if (mode === 'room' && activeRoom) {
       const anchorIds = Object.keys(anchors)
       let refX = 0
       let refY = 0
@@ -338,22 +339,10 @@ const RTLSDashboardCanvas = forwardRef<RTLSDashboardCanvasHandle, RTLSDashboardC
         const [ax, ay] = anchors[anchorId]
         const [localAx, localAy] = toRoomLocal(activeRoom, ax, ay)
         const [sx, sy] = worldToScreen(viewport, localAx, localAy)
-        const isRef = anchorId === referenceAnchorId
-        const r = isRef ? 8 : 6
         const color = anchorColor(i)
 
-        if (isRef) {
-          ctx.beginPath()
-          ctx.arc(sx, sy, r + 4, 0, Math.PI * 2)
-          ctx.strokeStyle = color
-          ctx.lineWidth = 1.5
-          ctx.setLineDash([3, 2])
-          ctx.stroke()
-          ctx.setLineDash([])
-        }
-
         ctx.beginPath()
-        ctx.arc(sx, sy, r, 0, Math.PI * 2)
+        ctx.arc(sx, sy, 6, 0, Math.PI * 2)
         ctx.fillStyle = color
         ctx.fill()
         ctx.strokeStyle = 'rgba(255,255,255,0.25)'
@@ -367,7 +356,7 @@ const RTLSDashboardCanvas = forwardRef<RTLSDashboardCanvasHandle, RTLSDashboardC
         ctx.textAlign = 'left'
         ctx.textBaseline = 'bottom'
         ctx.fillText(
-          isRef ? `${anchorId} ★ (0.0, 0.0)` : `${anchorId} (${labelX.toFixed(1)}, ${labelY.toFixed(1)})`,
+          `${anchorId} (${labelX.toFixed(1)}, ${labelY.toFixed(1)})`,
           sx + 10,
           sy - 4,
         )
@@ -399,12 +388,6 @@ const RTLSDashboardCanvas = forwardRef<RTLSDashboardCanvasHandle, RTLSDashboardC
         ctx.textAlign = 'left'
         ctx.textBaseline = 'middle'
         ctx.fillText(tag.tag_id, sx + 14, sy)
-
-        const labelX = localX - refX
-        const labelY = localY - refY
-        ctx.fillStyle = 'rgba(200, 220, 255, 0.7)'
-        ctx.font = '9px sans-serif'
-        ctx.fillText(`(${labelX.toFixed(2)}, ${labelY.toFixed(2)}) ft`, sx + 14, sy + 12)
       }
     }
   }, [

@@ -1,12 +1,12 @@
 {
-    "tag_id": "T3",
+    "tag_id": "T2",
     "identity": {
         "profile_id": "",
         "name": "",
         "description": ""
     },
     "device": {
-        "mac_address": "",
+        "mac_address": "DC:B4:D9:31:8F:59",
         "device_type": "Wrist Band",
         "wrist_to_floor_ft": 0,
         "arm_to_floor_ft": 0,
