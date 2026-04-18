@@ -10,7 +10,11 @@
       "Bash(py -3 -c \"from RTLSDashboard.rtls_runtime import RTLSRuntime, auto_detect_esp32_port; print\\('RTLSRuntime imports OK'\\)\")",
       "Bash(py -3 -c \"import importlib.util; spec = importlib.util.spec_from_file_location\\('cad_server', 'cad_server.py'\\); mod = importlib.util.module_from_spec\\(spec\\); print\\('cad_server spec OK'\\)\")",
       "Bash(npx electron-vite:*)",
-      "Bash(npm run:*)"
+      "Bash(npm run:*)",
+      "Bash(python -m venv .venv)",
+      "Bash(.venv/Scripts/pip install *)",
+      "Bash(xargs grep *)",
+      "Bash(find /c/Users/ibesh/.gemini/antigravity/scratch/UWB-Contact-Tracing/BRIGID/frontend -name \"package.json\" -type f -exec head -20 {} \\\\;)"
     ]
   }
 }

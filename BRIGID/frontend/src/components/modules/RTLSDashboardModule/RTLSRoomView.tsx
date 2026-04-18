@@ -39,6 +39,9 @@ export interface RTLSVisualSettings {
   heatRange: number
   heatPeak: number
   tagAppearance: TagAppearance
+  showInterTagLines: boolean
+  showAnchors: boolean
+  showAnchorLabels: boolean
 }
 
 export interface RTLSRoomViewHandle {
@@ -152,19 +155,28 @@ function animFrameTime(speed: number): number | null {
 
 function buildLUT(): Uint8Array {
   const lut = new Uint8Array(256 * 3)
+  // Smooth gradient from deep blue → light blue → cyan → green → yellow → orange → red → dark red.
+  // More stops = smoother transitions between regions.
   const stops: [number, number, number, number][] = [
-    [0.00, 0, 0, 200],
-    [0.10, 0, 60, 255],
-    [0.20, 0, 130, 255],
-    [0.30, 0, 180, 255],
-    [0.40, 0, 220, 210],
-    [0.50, 0, 255, 120],
-    [0.60, 100, 255, 0],
-    [0.70, 210, 255, 0],
-    [0.78, 255, 200, 0],
-    [0.86, 255, 80, 0],
-    [0.93, 215, 10, 0],
-    [1.00, 120, 0, 0],
+    [0.00,   0,   0, 120],  // deep blue (low)
+    [0.05,   0,  30, 180],
+    [0.10,   0,  70, 230],
+    [0.16,   0, 120, 255],  // blue
+    [0.22,   0, 170, 255],  // light blue
+    [0.28,   0, 210, 245],
+    [0.34,   0, 230, 200],  // cyan-teal
+    [0.40,   0, 245, 160],
+    [0.46,   0, 255, 110],  // green
+    [0.52,  80, 255,  60],
+    [0.58, 160, 255,  20],  // yellow-green
+    [0.64, 220, 255,   0],
+    [0.70, 255, 230,   0],  // yellow
+    [0.76, 255, 195,   0],
+    [0.82, 255, 150,   0],  // orange
+    [0.88, 255,  95,   0],
+    [0.93, 235,  45,   5],  // red
+    [0.97, 190,  15,   0],
+    [1.00, 120,   0,   0],  // dark red (high)
   ]
 
   for (let i = 0; i < 256; i++) {
@@ -601,8 +613,9 @@ const RTLSRoomView = forwardRef<RTLSRoomViewHandle, Props>(({
         }
 
         const [screenX, screenY] = worldToScreen(viewport, gridOXRef.current, gridOYRef.current)
-        ctx.globalAlpha = 0.72
-        ctx.imageSmoothingEnabled = false
+        ctx.globalAlpha = 0.78
+        ctx.imageSmoothingEnabled = true
+        ctx.imageSmoothingQuality = 'high'
         ctx.drawImage(
           heatCanvasRef.current,
           screenX,
@@ -610,7 +623,6 @@ const RTLSRoomView = forwardRef<RTLSRoomViewHandle, Props>(({
           gridW * CELL_FT * viewport.scale,
           gridH * CELL_FT * viewport.scale,
         )
-        ctx.imageSmoothingEnabled = true
         ctx.globalAlpha = 1
         if (polygon.length >= 3) ctx.restore()
       }
@@ -641,37 +653,28 @@ const RTLSRoomView = forwardRef<RTLSRoomViewHandle, Props>(({
     const refLocalX = referenceAnchor?.x_ft ?? 0
     const refLocalY = referenceAnchor?.y_ft ?? 0
 
-    for (const anchor of room.anchors) {
-      const [sx, sy] = worldToScreen(viewport, anchor.x_ft, anchor.y_ft)
-      const isReference = anchor === referenceAnchor
-      const radius = isReference ? 8 : 6
+    if (vs.showAnchors) {
+      for (const anchor of room.anchors) {
+        const [sx, sy] = worldToScreen(viewport, anchor.x_ft, anchor.y_ft)
+        const radius = 6
 
-      if (isReference) {
         ctx.beginPath()
-        ctx.arc(sx, sy, radius + 4, 0, Math.PI * 2)
-        ctx.strokeStyle = COLORS.anchorRef
-        ctx.lineWidth = 1.5
-        ctx.setLineDash([3, 2])
+        ctx.arc(sx, sy, radius, 0, Math.PI * 2)
+        ctx.fillStyle = COLORS.anchor
+        ctx.fill()
+        ctx.strokeStyle = 'rgba(255,255,255,0.3)'
+        ctx.lineWidth = 1
         ctx.stroke()
-        ctx.setLineDash([])
+
+        if (vs.showAnchorLabels) {
+          ctx.fillStyle = COLORS.anchorLabel
+          ctx.font = 'bold 11px "SF Mono", monospace'
+          ctx.textAlign = 'left'
+          ctx.textBaseline = 'bottom'
+          const label = `${anchor.hw_id || anchor.id} (${(anchor.x_ft - refLocalX).toFixed(1)}, ${(anchor.y_ft - refLocalY).toFixed(1)})`
+          ctx.fillText(label, sx + 10, sy - 4)
+        }
       }
-
-      ctx.beginPath()
-      ctx.arc(sx, sy, radius, 0, Math.PI * 2)
-      ctx.fillStyle = isReference ? COLORS.anchorRef : COLORS.anchor
-      ctx.fill()
-      ctx.strokeStyle = 'rgba(255,255,255,0.3)'
-      ctx.lineWidth = 1
-      ctx.stroke()
-
-      ctx.fillStyle = COLORS.anchorLabel
-      ctx.font = 'bold 11px "SF Mono", monospace'
-      ctx.textAlign = 'left'
-      ctx.textBaseline = 'bottom'
-      const label = isReference
-        ? `${anchor.hw_id || anchor.id} ★ (0.0, 0.0)`
-        : `${anchor.hw_id || anchor.id} (${(anchor.x_ft - refLocalX).toFixed(1)}, ${(anchor.y_ft - refLocalY).toFixed(1)})`
-      ctx.fillText(label, sx + 10, sy - 4)
     }
 
     if (polygon.length >= 3) {
@@ -687,10 +690,47 @@ const RTLSRoomView = forwardRef<RTLSRoomViewHandle, Props>(({
       ctx.clip()
     }
 
+    if (vs.showInterTagLines) {
+      const states = Array.from(tagStatesRef.current.values())
+      if (states.length >= 2) {
+        const LINE_COLOR = 'rgba(255, 185, 0, 0.9)'
+        ctx.strokeStyle = LINE_COLOR
+        ctx.lineWidth = 1.5
+        ctx.setLineDash([5, 4])
+        for (let i = 0; i < states.length; i++) {
+          for (let j = i + 1; j < states.length; j++) {
+            const s1 = states[i]
+            const s2 = states[j]
+            const [sx1, sy1] = worldToScreen(viewport, s1.x, s1.y)
+            const [sx2, sy2] = worldToScreen(viewport, s2.x, s2.y)
+
+            ctx.beginPath()
+            ctx.moveTo(sx1, sy1)
+            ctx.lineTo(sx2, sy2)
+            ctx.stroke()
+
+            const dist = Math.hypot(s2.x - s1.x, s2.y - s1.y)
+            const midSx = (sx1 + sx2) / 2
+            const midSy = (sy1 + sy2) / 2
+
+            ctx.setLineDash([])
+            ctx.fillStyle = LINE_COLOR
+            ctx.font = 'bold 10px "SF Mono", monospace'
+            ctx.textAlign = 'center'
+            ctx.textBaseline = 'bottom'
+            ctx.fillText(`${dist.toFixed(2)} ft`, midSx, midSy - 5)
+            ctx.setLineDash([5, 4])
+          }
+        }
+        ctx.setLineDash([])
+      }
+    }
+
     for (const state of tagStatesRef.current.values()) {
       const [sx, sy] = worldToScreen(viewport, state.x, state.y)
+      const isHuman = vs.tagAppearance === 'human'
 
-      if (vs.tagAppearance === 'human') {
+      if (isHuman) {
         const frameName = state.isWalking ? (state.walkPhase === 0 ? 'left' : 'right') : 'stand'
         const sprite = spritesRef.current[frameName]
         if (sprite) {
@@ -727,19 +767,14 @@ const RTLSRoomView = forwardRef<RTLSRoomViewHandle, Props>(({
         ctx.stroke()
       }
 
-      ctx.fillStyle = state.color
-      ctx.font = 'bold 11px sans-serif'
-      ctx.textAlign = 'left'
-      ctx.textBaseline = 'middle'
-      ctx.fillText(state.tagId, sx + TAG_DOT_R + 7, sy)
-
-      ctx.fillStyle = 'rgba(200, 220, 255, 0.7)'
-      ctx.font = '9px sans-serif'
-      ctx.fillText(
-        `(${(state.x - refLocalX).toFixed(2)}, ${(state.y - refLocalY).toFixed(2)}) ft`,
-        sx + TAG_DOT_R + 7,
-        sy + 12,
-      )
+      if (vs.tagAppearance !== 'invisible') {
+        ctx.fillStyle = isHuman ? '#ffffff' : state.color
+        ctx.font = 'bold 11px sans-serif'
+        ctx.textAlign = 'left'
+        ctx.textBaseline = 'middle'
+        const labelOffset = isHuman ? SPRITE_PX / 2 + 4 : TAG_DOT_R + 7
+        ctx.fillText(state.tagId, sx + labelOffset, sy)
+      }
     }
 
     if (polygon.length >= 3) ctx.restore()

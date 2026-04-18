@@ -11,6 +11,7 @@ import TagProfiler from './components/modules/TagProfilerModule/TagProfiler'
 import AnchorManager from './components/modules/AnchorManagerModule/AnchorManager'
 import CalibrationTool from './components/modules/CalibrationToolModule/CalibrationTool'
 import RTLSDashboard from './components/modules/RTLSDashboardModule/RTLSDashboard'
+import { ConfirmHost, confirmAsync } from './components/common/ConfirmDialog'
 import { AppModule, WorkspaceTab } from './types'
 import './App.css'
 
@@ -271,10 +272,14 @@ const App: React.FC = () => {
     if (activeTabId) window.dispatchEvent(new CustomEvent('workspace-save-as-command', { detail: { workspaceId: activeTabId } }))
   }, [activeTabId])
 
-  const handleTabClose = useCallback((id: string) => {
-    if (!window.confirm("Are you sure you would like to close this workspace? Unsaved changes may be lost.")) {
-      return
-    }
+  const handleTabClose = useCallback(async (id: string) => {
+    const ok = await confirmAsync({
+      title: 'Close Workspace',
+      message: 'Are you sure you would like to close this workspace? Unsaved changes may be lost.',
+      confirmLabel: 'Close',
+      danger: true,
+    })
+    if (!ok) return
 
     setTabs(prev => {
       const index = prev.findIndex(tab => tab.id === id)
@@ -358,6 +363,7 @@ const App: React.FC = () => {
 
   return (
     <div className="bp5-dark app-root">
+      <ConfirmHost />
       <AnimatePresence>
         {isLoading && (
           <motion.div 

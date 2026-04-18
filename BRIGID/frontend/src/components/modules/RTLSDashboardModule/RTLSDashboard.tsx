@@ -109,6 +109,9 @@ const DEFAULT_VISUAL: RTLSVisualSettings = {
   heatRange: 5.0,
   heatPeak: 70,
   tagAppearance: 'dots',
+  showInterTagLines: true,
+  showAnchors: true,
+  showAnchorLabels: true,
 }
 
 const emptySnap = (): RTLSSnapshot => ({
@@ -830,6 +833,33 @@ const RTLSDashboard: React.FC<RTLSDashboardProps> = ({ workspaceId, workspaceNam
     ) : null
   )
 
+  const renderInterTagDistancesSection = () => {
+    const positioned = snap.tags.filter(t => t.position)
+    if (positioned.length < 2) return null
+    const pairs: { key: string; t1: RTLSTag; t2: RTLSTag; dist: number }[] = []
+    for (let i = 0; i < positioned.length; i++) {
+      for (let j = i + 1; j < positioned.length; j++) {
+        const t1 = positioned[i]
+        const t2 = positioned[j]
+        const dist = Math.hypot(t2.position!.x - t1.position!.x, t2.position!.y - t1.position!.y)
+        pairs.push({ key: `${t1.tag_id}-${t2.tag_id}`, t1, t2, dist })
+      }
+    }
+    return (
+      <div className="rtls-section">
+        <div className="rtls-section-title">Inter-Tag Distances</div>
+        <div className="rtls-ble-rows">
+          {pairs.map(({ key, t1, t2, dist }) => (
+            <div key={key} className="rtls-ble-row">
+              <span>{t1.tag_id} → {t2.tag_id}</span>
+              <span style={{ color: 'rgba(255, 185, 0, 0.95)', fontWeight: 600 }}>{dist.toFixed(2)} ft</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    )
+  }
+
   const renderTagElevationSection = () => (
     <div className="rtls-section">
       <div className="rtls-section-title">Tag Elevation</div>
@@ -973,7 +1003,7 @@ const RTLSDashboard: React.FC<RTLSDashboardProps> = ({ workspaceId, workspaceNam
         </div>
       )}
       {isRoomView && renderTransportSection()}
-      {isRoomView && renderTagCoordinatesSection()}
+      {isRoomView && renderInterTagDistancesSection()}
       {renderTagElevationSection()}
       {renderSmoothingFilterSection()}
       {renderCsvSection()}
@@ -1036,6 +1066,24 @@ const RTLSDashboard: React.FC<RTLSDashboardProps> = ({ workspaceId, workspaceNam
       </div>
 
       <div className="rtls-section">
+        <div className="rtls-section-title">Inter-Tag Lines</div>
+        <div className="rtls-toggle-row">
+          <span className="rtls-toggle-label">Show Distance Lines</span>
+          <label className="rtls-toggle">
+            <input
+              type="checkbox"
+              checked={visualSettings.showInterTagLines}
+              onChange={e => setVisualSettings(current => ({ ...current, showInterTagLines: e.target.checked }))}
+            />
+            <span className="rtls-toggle-slider" />
+          </label>
+        </div>
+        <div className="rtls-runtime-note">
+          Draws dashed lines between all active tags with live distance labels. Distances are always recorded to CSV regardless of this setting.
+        </div>
+      </div>
+
+      <div className="rtls-section">
         <div className="rtls-section-title">Tag Appearance</div>
         <div className="rtls-transport-tabs">
           {([
@@ -1063,10 +1111,32 @@ const RTLSDashboard: React.FC<RTLSDashboardProps> = ({ workspaceId, workspaceNam
       </div>
 
       <div className="rtls-section">
-        <div className="rtls-section-title">Reference Alignment</div>
-        <div className="rtls-placeholder-list">
-          <div className="rtls-placeholder-item">Heat map resolution stays at 0.02 ft per cell with the same offscreen raster and lookup-table rendering strategy from the docs.</div>
-          <div className="rtls-placeholder-item">The simulated bot controls from the reference were intentionally omitted so visuals apply only to real RTLS hardware tags.</div>
+        <div className="rtls-section-title">Anchor Appearance</div>
+        <div className="rtls-toggle-row">
+          <span className="rtls-toggle-label">Show Anchors</span>
+          <label className="rtls-toggle">
+            <input
+              type="checkbox"
+              checked={visualSettings.showAnchors}
+              onChange={e => setVisualSettings(current => ({ ...current, showAnchors: e.target.checked }))}
+            />
+            <span className="rtls-toggle-slider" />
+          </label>
+        </div>
+        <div className="rtls-toggle-row">
+          <span className="rtls-toggle-label">Show Anchor Coordinates</span>
+          <label className="rtls-toggle">
+            <input
+              type="checkbox"
+              checked={visualSettings.showAnchorLabels}
+              disabled={!visualSettings.showAnchors}
+              onChange={e => setVisualSettings(current => ({ ...current, showAnchorLabels: e.target.checked }))}
+            />
+            <span className="rtls-toggle-slider" />
+          </label>
+        </div>
+        <div className="rtls-runtime-note">
+          Toggle anchor markers and their coordinate labels on the room view canvas.
         </div>
       </div>
     </>

@@ -916,11 +916,11 @@ class RTLSRuntime:
 
             # Per-anchor height correction: h = abs(anchor_z[a_id] - tag_z)
             # Global override collapses all anchors to the same fixed offset.
+            tag_info = self._tag_registry.get(t_id, {})
             if self._global_elevation_override:
                 eff_anchor_z = {aid: self._global_elevation_ft for aid in anchor_z}
                 tag_z = 0.0
             else:
-                tag_info = self._tag_registry.get(t_id, {})
                 tag_z = float(tag_info.get("tag_height_ft", 0.0))
                 eff_anchor_z = anchor_z
 
@@ -947,7 +947,10 @@ class RTLSRuntime:
 
         def _run():
             while self._loop_running:
-                self._loop_body()
+                try:
+                    self._loop_body()
+                except Exception as exc:
+                    self._append_serial_debug(f"[loop error] {exc}")
                 time.sleep(0.05)   # 20 Hz — same cadence as original root.after(50)
 
         self._loop_thread = threading.Thread(target=_run, daemon=True)
