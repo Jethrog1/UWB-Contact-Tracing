@@ -23,6 +23,7 @@ const TOOLS: { mode: ToolMode; icon: string; label: string; shortcut: string }[]
 const CADRightPanel: React.FC<Props> = ({ state, onCommand, status, workspaceId, workspaceName }) => {
   const [iobusy, setIoBusy] = useState(false)
   const [paths, setPaths] = useState<{ svg: string; pdf: string } | null>(null)
+  const [downloadsPath, setDownloadsPath] = useState<string | null>(null)
   const tool = state?.tool_mode ?? 'cursor'
 
   const getPaths = window.api?.getPaths
@@ -44,6 +45,12 @@ const CADRightPanel: React.FC<Props> = ({ state, onCommand, status, workspaceId,
       getPaths()
         .then(nextPaths => { if (!cancelled) setPaths(nextPaths) })
         .catch(() => { if (!cancelled) setPaths(null) })
+    }
+
+    if (getPaths) {
+      getPaths()
+        .then(nextPaths => { if (!cancelled) setDownloadsPath(nextPaths.downloads) })
+        .catch(() => { if (!cancelled) setDownloadsPath(null) })
     }
 
     return () => { cancelled = true }
@@ -69,12 +76,15 @@ const CADRightPanel: React.FC<Props> = ({ state, onCommand, status, workspaceId,
     if (!openFile || iobusy) return
     setIoBusy(true)
     try {
-      const result = await openFile([
-        { name: 'Floor Plans', extensions: ['pdf', 'svg', 'png', 'jpg', 'jpeg'] },
-        { name: 'PDF Files', extensions: ['pdf'] },
-        { name: 'SVG Files', extensions: ['svg'] },
-        { name: 'Images', extensions: ['png', 'jpg', 'jpeg'] },
-      ])
+      const result = await openFile(
+        [
+          { name: 'Floor Plans', extensions: ['pdf', 'svg', 'png', 'jpg', 'jpeg'] },
+          { name: 'PDF Files', extensions: ['pdf'] },
+          { name: 'SVG Files', extensions: ['svg'] },
+          { name: 'Images', extensions: ['png', 'jpg', 'jpeg'] },
+        ],
+        downloadsPath ?? undefined,
+      )
       if (!result.canceled && result.filePaths.length > 0) {
         onCommand({ type: 'import_file', filepath: result.filePaths[0] })
       }
@@ -154,19 +164,25 @@ const CADRightPanel: React.FC<Props> = ({ state, onCommand, status, workspaceId,
 
       <div className="crp-section">
         <div className="crp-section-label">Edit</div>
-        <div className="crp-icon-row">
-          <Tooltip content="Copy · Ctrl+C" placement="left">
-            <button className="crp-icon-btn" onClick={() => onCommand({ type: 'copy' })}>⎘</button>
+        <div className="crp-tool-grid">
+          <Tooltip content="Copy the selected geometry to the clipboard · Ctrl+C" placement="left">
+            <button className="crp-tool-btn" onClick={() => onCommand({ type: 'copy' })}>
+              <span className="crp-tool-label">Copy</span>
+            </button>
           </Tooltip>
-          <Tooltip content="Paste · Ctrl+V" placement="left">
-            <button className="crp-icon-btn" onClick={() => onCommand({ type: 'paste' })}>⎗</button>
+          <Tooltip content="Paste clipboard contents at the cursor · Ctrl+V" placement="left">
+            <button className="crp-tool-btn" onClick={() => onCommand({ type: 'paste' })}>
+              <span className="crp-tool-label">Paste</span>
+            </button>
           </Tooltip>
-          <Tooltip content="Delete · Del" placement="left">
-            <button className="crp-icon-btn crp-icon-btn--danger" onClick={() => onCommand({ type: 'delete' })}>⌫</button>
+          <Tooltip content="Delete the selected geometry · Del" placement="left">
+            <button className="crp-tool-btn crp-tool-btn--danger" onClick={() => onCommand({ type: 'delete' })}>
+              <span className="crp-tool-label">Delete</span>
+            </button>
           </Tooltip>
-          <Tooltip content="Escape · Esc" placement="left">
-            <button className="crp-icon-btn" onClick={() => onCommand({ type: 'escape' })}>
-              <span style={{ fontSize: 9, letterSpacing: '0.02em' }}>Esc</span>
+          <Tooltip content="Cancel the current tool action · Esc" placement="left">
+            <button className="crp-tool-btn" onClick={() => onCommand({ type: 'escape' })}>
+              <span className="crp-tool-label">Escape</span>
             </button>
           </Tooltip>
         </div>
@@ -174,12 +190,16 @@ const CADRightPanel: React.FC<Props> = ({ state, onCommand, status, workspaceId,
 
       <div className="crp-section">
         <div className="crp-section-label">Advanced</div>
-        <div className="crp-icon-row">
-          <Tooltip content="Rotate selection" placement="left">
-            <button className="crp-icon-btn" onClick={() => onCommand({ type: 'context_action', action: 'rotate' })}>↻</button>
+        <div className="crp-tool-grid">
+          <Tooltip content="Rotate the selected geometry around a chosen pivot" placement="left">
+            <button className="crp-tool-btn" onClick={() => onCommand({ type: 'context_action', action: 'rotate' })}>
+              <span className="crp-tool-label">Rotate</span>
+            </button>
           </Tooltip>
-          <Tooltip content="Trim line" placement="left">
-            <button className="crp-icon-btn crp-icon-btn--trim" onClick={() => onCommand({ type: 'context_action', action: 'trim' })}>✂</button>
+          <Tooltip content="Trim a line back to the nearest intersection" placement="left">
+            <button className="crp-tool-btn crp-tool-btn--trim" onClick={() => onCommand({ type: 'context_action', action: 'trim' })}>
+              <span className="crp-tool-label">Trim</span>
+            </button>
           </Tooltip>
         </div>
       </div>

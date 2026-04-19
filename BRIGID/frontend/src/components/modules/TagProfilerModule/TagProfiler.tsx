@@ -90,6 +90,7 @@ const TagProfiler: React.FC<TagProfilerProps> = ({ workspaceId }) => {
   const [toasts, setToasts] = useState<Toast[]>([])
   const toastCounter = useRef(0)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const handleSaveRef = useRef<(() => Promise<void>) | null>(null)
 
   // Stable toast dispatch — lives in a ref so callbacks never go stale
   const pushToastRef = useRef((message: string, kind: 'ok' | 'error') => {})
@@ -115,6 +116,20 @@ const TagProfiler: React.FC<TagProfilerProps> = ({ workspaceId }) => {
   }, [workspaceId])
 
   useEffect(() => { loadProfileList() }, [loadProfileList])
+
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent).detail as { workspaceId: string; module?: string }
+      if (detail.workspaceId !== workspaceId || (detail.module && detail.module !== 'profile')) return
+      void handleSaveRef.current?.()
+    }
+    window.addEventListener('workspace-save-command', handler)
+    window.addEventListener('workspace-save-as-command', handler)
+    return () => {
+      window.removeEventListener('workspace-save-command', handler)
+      window.removeEventListener('workspace-save-as-command', handler)
+    }
+  }, [workspaceId])
 
   const handleNew = useCallback(async () => {
     if (dirty) {
@@ -164,6 +179,8 @@ const TagProfiler: React.FC<TagProfilerProps> = ({ workspaceId }) => {
       pushToast('Could not reach backend.', 'error')
     }
   }, [profile, loadProfileList, workspaceId])
+
+  handleSaveRef.current = handleSave
 
   const handleLoadById = useCallback(async (tagId: string) => {
     if (dirty) {

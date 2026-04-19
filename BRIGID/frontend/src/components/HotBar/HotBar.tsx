@@ -1,6 +1,9 @@
-import React, { useEffect, useRef, useState } from 'react'
+import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { AppModule } from '../../types'
 import './HotBar.css'
+
+const GITHUB_URL = 'https://github.com/Jethrog1/UWB-Contact-Tracing'
 
 type MenuAction =
   | 'new-workspace'
@@ -8,9 +11,20 @@ type MenuAction =
   | 'save'
   | 'save-as'
   | 'close-tab'
+  | 'edit-undo'
+  | 'edit-redo'
+  | 'view-zoom-in'
+  | 'view-zoom-out'
+  | 'view-zoom-reset'
   | 'anchor-tool-cursor'
   | 'anchor-tool-select'
   | 'anchor-tool-smart-select'
+  | 'cad-tool-cursor'
+  | 'cad-tool-line'
+  | 'cad-tool-vertex'
+  | 'cad-tool-dim'
+  | 'cad-tool-rotate'
+  | 'cad-tool-trim'
   | null
 
 interface MenuItem {
@@ -23,7 +37,8 @@ interface MenuItem {
 
 interface MenuEntry {
   label: string
-  items: MenuItem[]
+  items?: MenuItem[]
+  href?: string
 }
 
 interface HotBarProps {
@@ -34,83 +49,83 @@ interface HotBarProps {
   onSave: () => void
   onSaveAs: () => void
   onCloseTab: () => void
+  onViewCommand?: (cmd: 'zoom_in' | 'zoom_out' | 'zoom_reset') => void
+  onEditCommand?: (cmd: 'undo' | 'redo') => void
   onAnchorToolSelect?: (tool: 'cursor' | 'select' | 'smartSelect') => void
+  onCadToolSelect?: (tool: 'cursor' | 'line' | 'vertex' | 'dim' | 'rotate' | 'trim') => void
 }
 
-const buildMenus = (hasWorkspace: boolean, activeModule: AppModule | null): MenuEntry[] => [
-  {
-    label: 'File',
-    items: [
-      { label: 'New Workspace', shortcut: 'Ctrl+N', action: 'new-workspace' },
-      { label: 'Open Workspace...', shortcut: 'Ctrl+O', action: 'open-workspace' },
+const buildMenus = (hasWorkspace: boolean, activeModule: AppModule | null): MenuEntry[] => {
+  const editEnabledModules: AppModule[] = ['cad', 'anchors']
+  const viewEnabledModules: AppModule[] = ['calibration', 'cad', 'anchors', 'rtls']
+  const editEnabled = hasWorkspace && activeModule !== null && editEnabledModules.includes(activeModule)
+  const viewEnabled = hasWorkspace && activeModule !== null && viewEnabledModules.includes(activeModule)
+
+  let toolsItems: MenuItem[]
+  if (activeModule === 'cad') {
+    toolsItems = [
+      { label: 'Cursor Tool', shortcut: 'V', action: 'cad-tool-cursor', disabled: !hasWorkspace },
+      { label: 'Line Tool', shortcut: 'L', action: 'cad-tool-line', disabled: !hasWorkspace },
+      { label: 'Vertex Manipulate', shortcut: 'N', action: 'cad-tool-vertex', disabled: !hasWorkspace },
+      { label: 'Dimension Tool', shortcut: 'D', action: 'cad-tool-dim', disabled: !hasWorkspace },
       { separator: true, label: '' },
-      { label: 'Save', shortcut: 'Ctrl+S', action: 'save', disabled: !hasWorkspace },
-      { label: 'Save As...', shortcut: 'Ctrl+Shift+S', action: 'save-as', disabled: !hasWorkspace },
-      { separator: true, label: '' },
-      { label: 'Import SVG Floor Plan...', disabled: true },
-      { separator: true, label: '' },
-      { label: 'Close Workspace', shortcut: 'Ctrl+W', action: 'close-tab', disabled: !hasWorkspace },
-    ],
-  },
-  {
-    label: 'Edit',
-    items: [
-      { label: 'Undo', shortcut: 'Ctrl+Z', disabled: true },
-      { label: 'Redo', shortcut: 'Ctrl+Y', disabled: true },
-      { separator: true, label: '' },
-      { label: 'Cut', shortcut: 'Ctrl+X', disabled: true },
-      { label: 'Copy', shortcut: 'Ctrl+C', disabled: true },
-      { label: 'Paste', shortcut: 'Ctrl+V', disabled: true },
-      { separator: true, label: '' },
-      { label: 'Select All', shortcut: 'Ctrl+A', disabled: true },
-      { label: 'Delete Selected', shortcut: 'Del', disabled: true },
-    ],
-  },
-  {
-    label: 'View',
-    items: [
-      { label: 'Zoom In', shortcut: 'Ctrl+=', disabled: true },
-      { label: 'Zoom Out', shortcut: 'Ctrl+-', disabled: true },
-      { label: 'Zoom Reset', shortcut: 'Ctrl+0', disabled: true },
-    ],
-  },
-  {
-    label: 'Tools',
-    items: activeModule === 'anchors'
-      ? [
-          { label: 'Cursor', shortcut: 'C', action: 'anchor-tool-cursor', disabled: !hasWorkspace },
-          { label: 'Select', shortcut: 'Hold Shift+Click', action: 'anchor-tool-select', disabled: !hasWorkspace },
-          { label: 'Smart Select', shortcut: 'Hold Ctrl+Shift+Click', action: 'anchor-tool-smart-select', disabled: !hasWorkspace },
-        ]
-      : [
-          { label: 'Cursor Tool', shortcut: 'V', disabled: true },
-          { label: 'Line Tool', shortcut: 'L', disabled: true },
-          { label: 'Dimension Tool', shortcut: 'D', disabled: true },
-          { label: 'Vertex Manipulate', shortcut: 'N', disabled: true },
-          { separator: true, label: '' },
-          { label: 'Rotate Selection', disabled: true },
-          { label: 'Trim Line', disabled: true },
-        ],
-  },
-  {
-    label: 'Window',
-    items: [
-      { label: 'Minimize', shortcut: 'Win+Down', disabled: true },
-      { label: 'Maximize / Restore', disabled: true },
-      { separator: true, label: '' },
-      { label: 'BRIGID Dashboard', disabled: true },
-    ],
-  },
-  {
-    label: 'Help',
-    items: [
-      { label: 'BRIGID Documentation', disabled: true },
-      { label: 'Keyboard Shortcuts', disabled: true },
-      { separator: true, label: '' },
-      { label: 'About BRIGID', disabled: true },
-    ],
-  },
-]
+      { label: 'Rotate Selection', action: 'cad-tool-rotate', disabled: !hasWorkspace },
+      { label: 'Trim Line', action: 'cad-tool-trim', disabled: !hasWorkspace },
+    ]
+  } else if (activeModule === 'anchors') {
+    toolsItems = [
+      { label: 'Cursor', shortcut: 'C', action: 'anchor-tool-cursor', disabled: !hasWorkspace },
+      { label: 'Select', shortcut: 'Shift+Click', action: 'anchor-tool-select', disabled: !hasWorkspace },
+      { label: 'Smart Select', shortcut: 'Ctrl+Shift+Click', action: 'anchor-tool-smart-select', disabled: !hasWorkspace },
+    ]
+  } else if (activeModule === 'rtls') {
+    toolsItems = [
+      { label: 'Quick Setup', disabled: true },
+    ]
+  } else {
+    toolsItems = [
+      { label: 'No tools available', disabled: true },
+    ]
+  }
+
+  return [
+    {
+      label: 'File',
+      items: [
+        { label: 'New Workspace', shortcut: 'Ctrl+N', action: 'new-workspace' },
+        { label: 'Open Workspace...', shortcut: 'Ctrl+O', action: 'open-workspace' },
+        { separator: true, label: '' },
+        { label: 'Save', shortcut: 'Ctrl+S', action: 'save', disabled: !hasWorkspace },
+        { label: 'Save As...', shortcut: 'Ctrl+Shift+S', action: 'save-as', disabled: !hasWorkspace },
+        { separator: true, label: '' },
+        { label: 'Close Workspace', shortcut: 'Ctrl+W', action: 'close-tab', disabled: !hasWorkspace },
+      ],
+    },
+    {
+      label: 'Edit',
+      items: [
+        { label: 'Undo', shortcut: 'Ctrl+Z', action: 'edit-undo', disabled: !editEnabled },
+        { label: 'Redo', shortcut: 'Ctrl+Y', action: 'edit-redo', disabled: !editEnabled },
+      ],
+    },
+    {
+      label: 'View',
+      items: [
+        { label: 'Zoom In', shortcut: 'Ctrl+=', action: 'view-zoom-in', disabled: !viewEnabled },
+        { label: 'Zoom Out', shortcut: 'Ctrl+-', action: 'view-zoom-out', disabled: !viewEnabled },
+        { label: 'Reset View', shortcut: 'Ctrl+0', action: 'view-zoom-reset', disabled: !viewEnabled },
+      ],
+    },
+    {
+      label: 'Tools',
+      items: toolsItems,
+    },
+    {
+      label: 'Help',
+      href: GITHUB_URL,
+    },
+  ]
+}
 
 const HotBar: React.FC<HotBarProps> = ({
   activeModule,
@@ -120,17 +135,49 @@ const HotBar: React.FC<HotBarProps> = ({
   onSave,
   onSaveAs,
   onCloseTab,
+  onViewCommand,
+  onEditCommand,
   onAnchorToolSelect,
+  onCadToolSelect,
 }) => {
   const [openMenu, setOpenMenu] = useState<string | null>(null)
+  const [dropdownPos, setDropdownPos] = useState<{ left: number; top: number } | null>(null)
   const barRef = useRef<HTMLDivElement>(null)
+  const buttonRefs = useRef<Record<string, HTMLButtonElement | null>>({})
+  const dropdownRef = useRef<HTMLDivElement>(null)
   const menus = buildMenus(hasWorkspace, activeModule)
+
+  const positionDropdown = useCallback((label: string) => {
+    const btn = buttonRefs.current[label]
+    if (!btn) {
+      setDropdownPos(null)
+      return
+    }
+    const rect = btn.getBoundingClientRect()
+    setDropdownPos({ left: rect.left, top: rect.bottom + 2 })
+  }, [])
+
+  useLayoutEffect(() => {
+    if (openMenu) positionDropdown(openMenu)
+  }, [openMenu, positionDropdown])
+
+  useEffect(() => {
+    if (!openMenu) return
+    const handleReposition = () => positionDropdown(openMenu)
+    window.addEventListener('resize', handleReposition)
+    window.addEventListener('scroll', handleReposition, true)
+    return () => {
+      window.removeEventListener('resize', handleReposition)
+      window.removeEventListener('scroll', handleReposition, true)
+    }
+  }, [openMenu, positionDropdown])
 
   useEffect(() => {
     const handleClick = (event: MouseEvent) => {
-      if (barRef.current && !barRef.current.contains(event.target as Node)) {
-        setOpenMenu(null)
-      }
+      const target = event.target as Node
+      if (barRef.current?.contains(target)) return
+      if (dropdownRef.current?.contains(target)) return
+      setOpenMenu(null)
     }
     document.addEventListener('mousedown', handleClick)
     return () => document.removeEventListener('mousedown', handleClick)
@@ -140,17 +187,36 @@ const HotBar: React.FC<HotBarProps> = ({
     setOpenMenu(current => (current === label ? null : label))
   }
 
+  const openHelpLink = () => {
+    setOpenMenu(null)
+    window.open(GITHUB_URL, '_blank', 'noopener,noreferrer')
+  }
+
   const runAction = (action: MenuAction) => {
     if (action === 'new-workspace') onNewWorkspace()
-    if (action === 'open-workspace') onOpenWorkspace()
-    if (action === 'save') onSave()
-    if (action === 'save-as') onSaveAs()
-    if (action === 'close-tab') onCloseTab()
-    if (action === 'anchor-tool-cursor') onAnchorToolSelect?.('cursor')
-    if (action === 'anchor-tool-select') onAnchorToolSelect?.('select')
-    if (action === 'anchor-tool-smart-select') onAnchorToolSelect?.('smartSelect')
+    else if (action === 'open-workspace') onOpenWorkspace()
+    else if (action === 'save') onSave()
+    else if (action === 'save-as') onSaveAs()
+    else if (action === 'close-tab') onCloseTab()
+    else if (action === 'edit-undo') onEditCommand?.('undo')
+    else if (action === 'edit-redo') onEditCommand?.('redo')
+    else if (action === 'view-zoom-in') onViewCommand?.('zoom_in')
+    else if (action === 'view-zoom-out') onViewCommand?.('zoom_out')
+    else if (action === 'view-zoom-reset') onViewCommand?.('zoom_reset')
+    else if (action === 'anchor-tool-cursor') onAnchorToolSelect?.('cursor')
+    else if (action === 'anchor-tool-select') onAnchorToolSelect?.('select')
+    else if (action === 'anchor-tool-smart-select') onAnchorToolSelect?.('smartSelect')
+    else if (action === 'cad-tool-cursor') onCadToolSelect?.('cursor')
+    else if (action === 'cad-tool-line') onCadToolSelect?.('line')
+    else if (action === 'cad-tool-vertex') onCadToolSelect?.('vertex')
+    else if (action === 'cad-tool-dim') onCadToolSelect?.('dim')
+    else if (action === 'cad-tool-rotate') onCadToolSelect?.('rotate')
+    else if (action === 'cad-tool-trim') onCadToolSelect?.('trim')
     setOpenMenu(null)
   }
+
+  const activeMenu = openMenu ? menus.find(m => m.label === openMenu) : null
+  const activeItems = activeMenu?.items ?? []
 
   return (
     <div className="hot-bar electron-drag" ref={barRef}>
@@ -159,50 +225,77 @@ const HotBar: React.FC<HotBarProps> = ({
       </div>
 
       <nav className="hot-bar__menus electron-no-drag">
-        {menus.map(menu => (
-          <div key={menu.label} className="hot-bar__menu-root">
-            <button
-              type="button"
-              className={`hot-bar__menu-btn ${openMenu === menu.label ? 'hot-bar__menu-btn--open' : ''}`}
-              onClick={() => toggleMenu(menu.label)}
-              onMouseEnter={() => openMenu !== null && setOpenMenu(menu.label)}
-            >
-              {menu.label}
-            </button>
-            {openMenu === menu.label && (
-              <div className="hot-bar__dropdown electron-no-drag" role="menu">
-                {menu.items.map((item, index) =>
-                  item.separator ? (
-                    <div key={index} className="hot-bar__dropdown-sep" />
-                  ) : (
-                    <button
-                      type="button"
-                      key={index}
-                      className={`hot-bar__dropdown-item electron-no-drag ${item.disabled ? 'hot-bar__dropdown-item--disabled' : ''}`}
-                      role="menuitem"
-                      onMouseDown={event => {
-                        event.preventDefault()
-                        if (!item.disabled) runAction(item.action ?? null)
-                      }}
-                      onKeyDown={event => {
-                        if ((event.key === 'Enter' || event.key === ' ') && !item.disabled) {
-                          event.preventDefault()
-                          runAction(item.action ?? null)
-                        }
-                      }}
-                    >
-                      <span className="hot-bar__dropdown-label">{item.label}</span>
-                      {item.shortcut && <span className="hot-bar__dropdown-shortcut">{item.shortcut}</span>}
-                    </button>
-                  )
-                )}
+        {menus.map(menu => {
+          if (menu.href) {
+            return (
+              <div key={menu.label} className="hot-bar__menu-root">
+                <button
+                  type="button"
+                  ref={el => { buttonRefs.current[menu.label] = el }}
+                  className="hot-bar__menu-btn"
+                  onMouseEnter={() => setOpenMenu(null)}
+                  onClick={openHelpLink}
+                  title={`Open ${menu.href}`}
+                >
+                  {menu.label}
+                </button>
               </div>
-            )}
-          </div>
-        ))}
+            )
+          }
+
+          return (
+            <div key={menu.label} className="hot-bar__menu-root">
+              <button
+                type="button"
+                ref={el => { buttonRefs.current[menu.label] = el }}
+                className={`hot-bar__menu-btn ${openMenu === menu.label ? 'hot-bar__menu-btn--open' : ''}`}
+                onClick={() => toggleMenu(menu.label)}
+                onMouseEnter={() => setOpenMenu(menu.label)}
+              >
+                {menu.label}
+              </button>
+            </div>
+          )
+        })}
       </nav>
 
       <div className="hot-bar__spacer" />
+
+      {activeMenu && dropdownPos && createPortal(
+        <div
+          ref={dropdownRef}
+          className="hot-bar__dropdown electron-no-drag"
+          role="menu"
+          style={{ position: 'fixed', left: dropdownPos.left, top: dropdownPos.top }}
+        >
+          {activeItems.map((item, index) =>
+            item.separator ? (
+              <div key={index} className="hot-bar__dropdown-sep" />
+            ) : (
+              <button
+                type="button"
+                key={index}
+                className={`hot-bar__dropdown-item electron-no-drag ${item.disabled ? 'hot-bar__dropdown-item--disabled' : ''}`}
+                role="menuitem"
+                onMouseDown={event => {
+                  event.preventDefault()
+                  if (!item.disabled) runAction(item.action ?? null)
+                }}
+                onKeyDown={event => {
+                  if ((event.key === 'Enter' || event.key === ' ') && !item.disabled) {
+                    event.preventDefault()
+                    runAction(item.action ?? null)
+                  }
+                }}
+              >
+                <span className="hot-bar__dropdown-label">{item.label}</span>
+                {item.shortcut && <span className="hot-bar__dropdown-shortcut">{item.shortcut}</span>}
+              </button>
+            )
+          )}
+        </div>,
+        document.body
+      )}
     </div>
   )
 }

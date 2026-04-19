@@ -78,7 +78,21 @@ app.add_middleware(
 
 # Per-workspace engine registry — survives between frontend reconnects
 _workspace_engines: dict[str, CADEngine] = {}
-_calibration_runtime = CalibrationRuntime()
+# Per-workspace calibration runtimes so each tab has independent transport/state.
+_calibration_runtimes: dict[str, CalibrationRuntime] = {}
+_DEFAULT_CAL_KEY = "__default__"
+
+
+def _get_calibration_runtime(workspace_id: Optional[str]) -> CalibrationRuntime:
+    key = workspace_id or _DEFAULT_CAL_KEY
+    runtime = _calibration_runtimes.get(key)
+    if runtime is None:
+        runtime = CalibrationRuntime()
+        _calibration_runtimes[key] = runtime
+        logger.info("Created new calibration runtime for workspace %r", key)
+    return runtime
+
+
 _rtls_runtime = RTLSRuntime()
 _WALK_ANIM_DIR = pathlib.Path(__file__).parent.parent / "assets" / "Walking animation"
 
@@ -147,7 +161,12 @@ async def api_workspace_paths(workspace_id: str, workspace_name: Optional[str] =
 
 @app.on_event("shutdown")
 async def shutdown_runtime() -> None:
-    _calibration_runtime.shutdown()
+    for runtime in _calibration_runtimes.values():
+        try:
+            runtime.shutdown()
+        except Exception:
+            pass
+    _calibration_runtimes.clear()
     _rtls_runtime.shutdown()
     _workspace_engines.clear()
 
@@ -386,15 +405,17 @@ async def api_calibration_runtime(workspace_id: Optional[str] = None, workspace_
     # Auto-register workspace name if provided (survives server restarts without needing /register)
     if workspace_id and workspace_name and workspace_id not in _workspace_names:
         _workspace_names[workspace_id] = workspace_name
-    return {"success": True, **_calibration_runtime.snapshot(_load_all_profiles(workspace_id, workspace_name))}
+    runtime = _get_calibration_runtime(workspace_id)
+    return {"success": True, **runtime.snapshot(_load_all_profiles(workspace_id, workspace_name))}
 
 
 @app.get("/api/calibration/serial/ports")
-async def api_calibration_serial_ports():
+async def api_calibration_serial_ports(workspace_id: Optional[str] = None):
+    runtime = _get_calibration_runtime(workspace_id)
     return {
         "success": True,
-        "ports": _calibration_runtime.get_serial_ports(),
-        "auto_detect_port": _calibration_runtime.auto_detect_serial_port(),
+        "ports": runtime.get_serial_ports(),
+        "auto_detect_port": runtime.auto_detect_serial_port(),
     }
 
 
@@ -403,51 +424,58 @@ async def api_calibration_transport_connect(req: CalibrationTransportConnectRequ
     if workspace_id and workspace_name and workspace_id not in _workspace_names:
         _workspace_names[workspace_id] = workspace_name
     profiles = _load_all_profiles(workspace_id, workspace_name)
-    ok, detail = _calibration_runtime.connect(req.mode, profiles, req.port)
+    runtime = _get_calibration_runtime(workspace_id)
+    ok, detail = runtime.connect(req.mode, profiles, req.port)
     if not ok:
         return {"success": False, "error": detail}
-    return {"success": True, "detail": detail, **_calibration_runtime.snapshot(profiles)}
+    return {"success": True, "detail": detail, **runtime.snapshot(profiles)}
 
 
 @app.post("/api/calibration/transport/disconnect")
 async def api_calibration_transport_disconnect(workspace_id: Optional[str] = None, workspace_name: Optional[str] = None):
-    _calibration_runtime.disconnect()
-    return {"success": True, **_calibration_runtime.snapshot(_load_all_profiles(workspace_id, workspace_name))}
+    runtime = _get_calibration_runtime(workspace_id)
+    runtime.disconnect()
+    return {"success": True, **runtime.snapshot(_load_all_profiles(workspace_id, workspace_name))}
 
 
 @app.post("/api/calibration/map")
-async def api_calibration_map(req: CalibrationMapUpdateRequest):
-    ok, detail = _calibration_runtime.update_map(req.anchors, req.lines, req.height_offset)
+async def api_calibration_map(req: CalibrationMapUpdateRequest, workspace_id: Optional[str] = None):
+    runtime = _get_calibration_runtime(workspace_id)
+    ok, detail = runtime.update_map(req.anchors, req.lines, req.height_offset)
     if not ok:
         return {"success": False, "error": detail}
-    return {"success": True, "detail": detail, **_calibration_runtime.snapshot(_load_all_profiles())}
+    return {"success": True, "detail": detail, **runtime.snapshot(_load_all_profiles(workspace_id))}
 
 
 @app.post("/api/calibration/reference")
-async def api_calibration_reference(req: CalibrationReferenceUpdateRequest):
-    ok, detail = _calibration_runtime.set_reference_distances(req.tag_id, req.distances, req.height)
+async def api_calibration_reference(req: CalibrationReferenceUpdateRequest, workspace_id: Optional[str] = None):
+    runtime = _get_calibration_runtime(workspace_id)
+    ok, detail = runtime.set_reference_distances(req.tag_id, req.distances, req.height)
     if not ok:
         return {"success": False, "error": detail}
-    return {"success": True, "detail": detail, **_calibration_runtime.snapshot(_load_all_profiles())}
+    return {"success": True, "detail": detail, **runtime.snapshot(_load_all_profiles(workspace_id))}
 
 
 @app.post("/api/calibration/reference/place")
-async def api_calibration_reference_place(req: CalibrationReferencePlaceRequest):
-    distances = _calibration_runtime.place_reference_dot(req.tag_id, req.x, req.y)
-    return {"success": True, "distances": distances, **_calibration_runtime.snapshot(_load_all_profiles())}
+async def api_calibration_reference_place(req: CalibrationReferencePlaceRequest, workspace_id: Optional[str] = None):
+    runtime = _get_calibration_runtime(workspace_id)
+    distances = runtime.place_reference_dot(req.tag_id, req.x, req.y)
+    return {"success": True, "distances": distances, **runtime.snapshot(_load_all_profiles(workspace_id))}
 
 
 @app.post("/api/calibration/reference/calculate")
-async def api_calibration_reference_calculate(req: CalibrationReferenceCalculateRequest):
-    ok, detail, locked = _calibration_runtime.calculate_reference(req.tag_id)
+async def api_calibration_reference_calculate(req: CalibrationReferenceCalculateRequest, workspace_id: Optional[str] = None):
+    runtime = _get_calibration_runtime(workspace_id)
+    ok, detail, locked = runtime.calculate_reference(req.tag_id)
     if not ok:
         return {"success": False, "error": detail}
-    return {"success": True, "detail": detail, "locked": locked, **_calibration_runtime.snapshot(_load_all_profiles())}
+    return {"success": True, "detail": detail, "locked": locked, **runtime.snapshot(_load_all_profiles(workspace_id))}
 
 
 @app.post("/api/calibration/fit")
-async def api_calibration_fit(req: CalibrationFitSettingsRequest):
-    ok, detail = _calibration_runtime.update_fit_settings(
+async def api_calibration_fit(req: CalibrationFitSettingsRequest, workspace_id: Optional[str] = None):
+    runtime = _get_calibration_runtime(workspace_id)
+    ok, detail = runtime.update_fit_settings(
         req.tag_id,
         req.anchor_id,
         auto=req.auto,
@@ -458,40 +486,45 @@ async def api_calibration_fit(req: CalibrationFitSettingsRequest):
     )
     if not ok:
         return {"success": False, "error": detail}
-    return {"success": True, "detail": detail, **_calibration_runtime.snapshot(_load_all_profiles())}
+    return {"success": True, "detail": detail, **runtime.snapshot(_load_all_profiles(workspace_id))}
 
 
 @app.post("/api/calibration/equation")
-async def api_calibration_equation(req: CalibrationEquationUpdateRequest):
-    ok, detail = _calibration_runtime.set_manual_equation(req.tag_id, req.anchor_id, req.equation)
+async def api_calibration_equation(req: CalibrationEquationUpdateRequest, workspace_id: Optional[str] = None):
+    runtime = _get_calibration_runtime(workspace_id)
+    ok, detail = runtime.set_manual_equation(req.tag_id, req.anchor_id, req.equation)
     if not ok:
         return {"success": False, "error": detail}
-    return {"success": True, "detail": detail, **_calibration_runtime.snapshot(_load_all_profiles())}
+    return {"success": True, "detail": detail, **runtime.snapshot(_load_all_profiles(workspace_id))}
 
 
 @app.post("/api/calibration/capture/start")
-async def api_calibration_capture_start(req: CalibrationCaptureRequest):
-    ok, detail = _calibration_runtime.start_capture(req.tag_id, req.sample_count)
+async def api_calibration_capture_start(req: CalibrationCaptureRequest, workspace_id: Optional[str] = None):
+    runtime = _get_calibration_runtime(workspace_id)
+    ok, detail = runtime.start_capture(req.tag_id, req.sample_count)
     if not ok:
         return {"success": False, "error": detail}
-    return {"success": True, "detail": detail, **_calibration_runtime.snapshot(_load_all_profiles())}
+    return {"success": True, "detail": detail, **runtime.snapshot(_load_all_profiles(workspace_id))}
 
 
 @app.post("/api/calibration/capture/cancel")
-async def api_calibration_capture_cancel():
-    _calibration_runtime.cancel_capture()
-    return {"success": True, **_calibration_runtime.snapshot(_load_all_profiles())}
+async def api_calibration_capture_cancel(workspace_id: Optional[str] = None):
+    runtime = _get_calibration_runtime(workspace_id)
+    runtime.cancel_capture()
+    return {"success": True, **runtime.snapshot(_load_all_profiles(workspace_id))}
 
 
 @app.post("/api/calibration/points/clear/{tag_id}")
-async def api_calibration_points_clear(tag_id: str):
-    _calibration_runtime.clear_points(tag_id)
-    return {"success": True, **_calibration_runtime.snapshot(_load_all_profiles())}
+async def api_calibration_points_clear(tag_id: str, workspace_id: Optional[str] = None):
+    runtime = _get_calibration_runtime(workspace_id)
+    runtime.clear_points(tag_id)
+    return {"success": True, **runtime.snapshot(_load_all_profiles(workspace_id))}
 
 
 @app.post("/api/calibration/filter")
-async def api_calibration_filter(req: CalibrationFilterRequest):
-    ok, detail = _calibration_runtime.update_filter(
+async def api_calibration_filter(req: CalibrationFilterRequest, workspace_id: Optional[str] = None):
+    runtime = _get_calibration_runtime(workspace_id)
+    ok, detail = runtime.update_filter(
         req.mode,
         ema_alpha=req.ema_alpha,
         roll_n=req.roll_n,
@@ -500,7 +533,7 @@ async def api_calibration_filter(req: CalibrationFilterRequest):
     )
     if not ok:
         return {"success": False, "error": detail}
-    return {"success": True, "detail": detail, **_calibration_runtime.snapshot(_load_all_profiles())}
+    return {"success": True, "detail": detail, **runtime.snapshot(_load_all_profiles(workspace_id))}
 
 
 @app.post("/api/calibration/tag/save/{tag_id}")
@@ -510,7 +543,8 @@ async def api_calibration_tag_save(tag_id: str, workspace_id: Optional[str] = No
     if profile is None or error:
         return {"success": False, "error": error or f"Profile not found: {tag_id}"}
 
-    calibration_data = _calibration_runtime.export_profile_equations(tag_id)
+    runtime = _get_calibration_runtime(workspace_id)
+    calibration_data = runtime.export_profile_equations(tag_id)
     profile["calibration"] = calibration_data
     ok, result = save_profile(profile, tags_dir)
     if not ok:
@@ -519,7 +553,7 @@ async def api_calibration_tag_save(tag_id: str, workspace_id: Optional[str] = No
         "success": True,
         "path": result,
         "calibration_date": calibration_data.get("last_calibration_date", ""),
-        **_calibration_runtime.snapshot(_load_all_profiles(workspace_id)),
+        **runtime.snapshot(_load_all_profiles(workspace_id)),
     }
 
 

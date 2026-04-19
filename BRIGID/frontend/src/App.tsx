@@ -253,7 +253,18 @@ const App: React.FC = () => {
   }, [])
 
   const handleOpenWorkspaceDialog = useCallback(async () => {
-    if (window.api && window.api.openFolder) {
+    if (window.api?.getPaths && window.api.openPath) {
+      try {
+        const paths = await window.api.getPaths()
+        if (paths?.profile) {
+          await window.api.openPath(paths.profile)
+          return
+        }
+      } catch {
+        // fall through to folder picker
+      }
+    }
+    if (window.api?.openFolder) {
       const { canceled, folderPath } = await window.api.openFolder()
       if (!canceled && folderPath) {
         const folderName = folderPath.split(/[/\\]/).pop() || 'Imported Workspace'
@@ -265,12 +276,20 @@ const App: React.FC = () => {
   }, [handleOpenWorkspace])
 
   const handleSave = useCallback(() => {
-    if (activeTabId) window.dispatchEvent(new CustomEvent('workspace-save-command', { detail: { workspaceId: activeTabId } }))
-  }, [activeTabId])
+    if (!activeTabId) return
+    const tab = tabs.find(t => t.id === activeTabId)
+    window.dispatchEvent(new CustomEvent('workspace-save-command', {
+      detail: { workspaceId: activeTabId, module: tab?.module ?? null },
+    }))
+  }, [activeTabId, tabs])
 
   const handleSaveAs = useCallback(() => {
-    if (activeTabId) window.dispatchEvent(new CustomEvent('workspace-save-as-command', { detail: { workspaceId: activeTabId } }))
-  }, [activeTabId])
+    if (!activeTabId) return
+    const tab = tabs.find(t => t.id === activeTabId)
+    window.dispatchEvent(new CustomEvent('workspace-save-as-command', {
+      detail: { workspaceId: activeTabId, module: tab?.module ?? null },
+    }))
+  }, [activeTabId, tabs])
 
   const handleTabClose = useCallback(async (id: string) => {
     const ok = await confirmAsync({
@@ -341,6 +360,28 @@ const App: React.FC = () => {
     }
   }, [activeTabId, activeModule])
 
+  const dispatchModuleCommand = useCallback((cmd: string) => {
+    if (!activeTabId || !activeModule || isHome) return
+    const eventMap: Partial<Record<AppModule, string>> = {
+      cad: 'cad-view-command',
+      anchors: 'anchor-view-command',
+      calibration: 'calibration-view-command',
+      rtls: 'rtls-view-command',
+    }
+    const eventName = eventMap[activeModule]
+    if (eventName) {
+      window.dispatchEvent(new CustomEvent(eventName, { detail: { cmd, workspaceId: activeTabId } }))
+    }
+  }, [activeTabId, activeModule, isHome])
+
+  const handleViewCommand = useCallback((cmd: 'zoom_in' | 'zoom_out' | 'zoom_reset') => {
+    dispatchModuleCommand(cmd)
+  }, [dispatchModuleCommand])
+
+  const handleEditCommand = useCallback((cmd: 'undo' | 'redo') => {
+    dispatchModuleCommand(cmd)
+  }, [dispatchModuleCommand])
+
   const handleOpenFolder = useCallback(async () => {
     if (!activeTabId || !activeTab) return
     try {
@@ -359,6 +400,13 @@ const App: React.FC = () => {
   const handleAnchorToolSelect = useCallback((tool: 'cursor' | 'select' | 'smartSelect') => {
     if (!activeTabId || activeModule !== 'anchors') return
     window.dispatchEvent(new CustomEvent('anchor-view-command', { detail: { cmd: 'set_tool', tool, workspaceId: activeTabId } }))
+  }, [activeModule, activeTabId])
+
+  const handleCadToolSelect = useCallback((tool: 'cursor' | 'line' | 'vertex' | 'dim' | 'rotate' | 'trim') => {
+    if (!activeTabId || activeModule !== 'cad') return
+    window.dispatchEvent(new CustomEvent('cad-view-command', {
+      detail: { cmd: 'set_tool', tool, workspaceId: activeTabId },
+    }))
   }, [activeModule, activeTabId])
 
   return (
@@ -383,20 +431,23 @@ const App: React.FC = () => {
       {!isLoading && (
         <motion.div className="app-shell" initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.6 }}>
           <HotBar
-            activeModule={activeModule}
+            activeModule={isHome ? null : activeModule}
             hasWorkspace={canCloseTab}
             onNewWorkspace={handleNewTab}
             onOpenWorkspace={handleOpenWorkspaceDialog}
             onSave={handleSave}
             onSaveAs={handleSaveAs}
             onCloseTab={() => activeTabId && handleTabClose(activeTabId)}
+            onViewCommand={handleViewCommand}
+            onEditCommand={handleEditCommand}
             onAnchorToolSelect={handleAnchorToolSelect}
+            onCadToolSelect={handleCadToolSelect}
           />
 
           <TabStrip
             tabs={tabs}
             activeTabId={activeTabId}
-            activeModule={activeModule}
+            activeModule={isHome ? null : activeModule}
             onTabSelect={(id) => {
               setActiveTabId(id)
               setIsHome(false)
