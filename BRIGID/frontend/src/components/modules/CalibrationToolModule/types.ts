@@ -71,6 +71,7 @@ export interface CalibrationCaptureRuntime {
   tag_id: string | null
   target: number
   counts: Record<string, number>
+  stall_remaining?: Record<string, number>
 }
 
 export interface CalibrationRuntimeSnapshot {

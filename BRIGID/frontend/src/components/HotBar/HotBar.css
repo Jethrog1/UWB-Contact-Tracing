@@ -65,19 +65,17 @@
   background: var(--bg-hover);
 }
 
-/* ── Dropdown ──────────────────────────────────────────────────────── */
+/* ── Dropdown (rendered via portal to document.body) ───────────────── */
 .hot-bar__dropdown {
-  position: absolute;
-  top: calc(100% + 2px);
-  left: 0;
   min-width: 220px;
   background: var(--bg-elevated);
   border: 1px solid var(--border-default);
   border-radius: var(--radius-sm);
   box-shadow: var(--shadow-floating);
-  z-index: 1000;
+  z-index: 9999;
   padding: 4px 0;
   overflow: hidden;
+  -webkit-app-region: no-drag;
 }
 
 .hot-bar__dropdown-sep {

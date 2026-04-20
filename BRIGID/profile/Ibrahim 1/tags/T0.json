@@ -16,12 +16,12 @@
     },
     "calibration": {
         "equations": {
-            "A0": "",
-            "A1": "",
-            "A2": "",
-            "A3": ""
+            "A0": "Raw (no data)",
+            "A1": "Raw (no data)",
+            "A2": "0.5147*Raw + 2.0275",
+            "A3": "0.5811*Raw + 3.5740"
         },
-        "last_calibration_date": "",
+        "last_calibration_date": "2026-04-19",
         "equations_enabled": false
     },
     "notes": ""

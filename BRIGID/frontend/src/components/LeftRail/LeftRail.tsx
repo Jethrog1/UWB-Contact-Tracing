@@ -1,5 +1,5 @@
 import React from 'react'
-import { Icon, Tooltip } from '@blueprintjs/core'
+import { Tooltip } from '@blueprintjs/core'
 import { motion } from 'motion/react'
 import { AppModule } from '../../types'
 import homeLogo from '../../assets/icons/home-logo.png'
@@ -93,19 +93,6 @@ const LeftRail: React.FC<LeftRailProps> = ({ activeModule, onModuleChange, onHom
         })}
       </nav>
 
-      {/* ── Bottom: Settings ── */}
-      <div className="left-rail__bottom">
-        <Tooltip
-          content={<span style={{ fontSize: 10, letterSpacing: '0.05em' }}>Settings</span>}
-          placement="right"
-          minimal
-          hoverOpenDelay={200}
-        >
-          <button className="left-rail__btn left-rail__btn--bottom" aria-label="Settings">
-            <Icon icon="cog" size={14} />
-          </button>
-        </Tooltip>
-      </div>
     </motion.aside>
   )
 }

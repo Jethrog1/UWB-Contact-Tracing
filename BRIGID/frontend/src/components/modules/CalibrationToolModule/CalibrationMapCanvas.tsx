@@ -26,10 +26,15 @@ interface Props {
   onCancelReferencePlacement: () => void
   onMapChange: (map: CalibrationMapRuntime) => void
   onMapCommit: (map: CalibrationMapRuntime) => void
+  onAnchorDragStart?: () => void
   onReferenceDotSelect: (selected: boolean) => void
   onReferenceDotDelete: () => void
   onAnchorDoubleClick: (anchorId: AnchorId, screenX: number, screenY: number) => void
   onReferenceDotDoubleClick: (screenX: number, screenY: number) => void
+  selectedLineKey: string | null
+  onLineSelect: (key: string | null) => void
+  onLineDelete: (key: string) => void
+  onLineCreate: (a: AnchorId, b: AnchorId) => void
 }
 
 interface Viewport {
@@ -49,8 +54,8 @@ const TAG_COLORS = ['#00f0d0', '#ffc44d', '#d16cff', '#78d0ff', '#8ee36b']
 
 const BACKGROUND = '#0a0b0d'
 const GRID = 'rgba(0,0,0,0)'
-const AXIS = 'rgba(255,255,255,0.06)'
 const LINE = 'rgba(255,255,255,0.25)'
+const LINE_SELECTED = '#ff3b3b'
 const CROSSHAIR_COLOR = '#8c96a5'
 const CROSSHAIR_SELECTED = '#c1c9d4'
 
@@ -61,6 +66,21 @@ const worldToScreen = (viewport: Viewport, x: number, y: number): [number, numbe
 const screenToWorld = (viewport: Viewport, x: number, y: number): [number, number] => (
   [(x - viewport.offsetX) / viewport.scale, (viewport.offsetY - y) / viewport.scale]
 )
+
+const lineKey = (a: string, b: string) => `${a}-${b}`
+
+// Point-to-segment distance in screen coordinates.
+const distToSegment = (px: number, py: number, x1: number, y1: number, x2: number, y2: number) => {
+  const dx = x2 - x1
+  const dy = y2 - y1
+  const lenSq = dx * dx + dy * dy
+  if (lenSq === 0) return Math.hypot(px - x1, py - y1)
+  let t = ((px - x1) * dx + (py - y1) * dy) / lenSq
+  t = Math.max(0, Math.min(1, t))
+  const cx = x1 + t * dx
+  const cy = y1 + t * dy
+  return Math.hypot(px - cx, py - cy)
+}
 
 const CalibrationMapCanvas = forwardRef<CalibrationMapCanvasHandle, Props>(({
   map,
@@ -73,20 +93,38 @@ const CalibrationMapCanvas = forwardRef<CalibrationMapCanvasHandle, Props>(({
   onCancelReferencePlacement,
   onMapChange,
   onMapCommit,
+  onAnchorDragStart,
   onReferenceDotSelect,
   onReferenceDotDelete,
   onAnchorDoubleClick,
   onReferenceDotDoubleClick,
+  selectedLineKey,
+  onLineSelect,
+  onLineDelete,
+  onLineCreate,
 }, ref) => {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const [viewport, setViewport] = useState<Viewport>({ offsetX: 0, offsetY: 0, scale: 30 })
   const [canvasSize, setCanvasSize] = useState({ width: 0, height: 0 })
   const didInitViewRef = useRef(false)
-  const dragRef = useRef<{ anchorId?: string; refDot?: boolean } | null>(null)
+  const dragRef = useRef<{ anchorId?: string; refDot?: boolean; localRef?: { x: number; y: number } } | null>(null)
   const panRef = useRef<{ active: boolean; x: number; y: number } | null>(null)
   const latestMapRef = useRef(map)
+  // Local-only reference-dot position used during drag so we don't wait on the
+  // backend round-trip between mousemove events.
+  const [dragRefPos, setDragRefPos] = useState<{ x: number; y: number } | null>(null)
+
+  // Line-creation state: user holds ctrl and clicks an anchor to start, then
+  // clicks a second anchor to commit. Ctrl is not required after the first click.
+  const [creatingFrom, setCreatingFrom] = useState<AnchorId | null>(null)
+  const [hoverAnchor, setHoverAnchor] = useState<AnchorId | null>(null)
+  const [cursorWorld, setCursorWorld] = useState<{ x: number; y: number } | null>(null)
+  const [ctrlDown, setCtrlDown] = useState(false)
 
   latestMapRef.current = map
+
+  // Effective reference dot: prefer in-progress drag pos so motion is instant.
+  const effectiveRef = dragRefPos ?? referenceDot
 
   const anchorList = useMemo(
     () => ANCHOR_IDS.map(anchorId => ({
@@ -96,33 +134,32 @@ const CalibrationMapCanvas = forwardRef<CalibrationMapCanvasHandle, Props>(({
     [map.anchors],
   )
 
-    const resetView = useCallback((insets?: { rightInset?: number; bottomInset?: number }) => {
-      const canvas = canvasRef.current
-      if (!canvas) return
-      
-      // If we somehow get a number (like from requestAnimationFrame directly), fallback to defaults
-      const isEvent = typeof insets !== 'object' || insets === null
-      const ri = (!isEvent && insets?.rightInset) != null ? insets!.rightInset! : 352
-      const bi = (!isEvent && insets?.bottomInset) != null ? insets!.bottomInset! : 290
-  
-      const xs = anchorList.map(anchor => anchor.coords[0])
-      const ys = anchorList.map(anchor => anchor.coords[1])
-      const minX = Math.min(...xs)
-      const maxX = Math.max(...xs)
-      const minY = Math.min(...ys)
-      const maxY = Math.max(...ys)
-      const span = Math.max(maxX - minX, maxY - minY, 1)
-      const availW = canvas.width - ri
-      const availH = canvas.height - bi
-      const scale = Math.min(availW, availH) * 0.45 / span
-      const centerX = (minX + maxX) / 2
-      const centerY = (minY + maxY) / 2
-      setViewport({
-        scale,
-        offsetX: availW / 2 - centerX * scale,
-        offsetY: availH / 2 + centerY * scale,
-      })
-    }, [anchorList])
+  const resetView = useCallback((insets?: { rightInset?: number; bottomInset?: number }) => {
+    const canvas = canvasRef.current
+    if (!canvas) return
+
+    const isEvent = typeof insets !== 'object' || insets === null
+    const ri = (!isEvent && insets?.rightInset) != null ? insets!.rightInset! : 352
+    const bi = (!isEvent && insets?.bottomInset) != null ? insets!.bottomInset! : 290
+
+    const xs = anchorList.map(anchor => anchor.coords[0])
+    const ys = anchorList.map(anchor => anchor.coords[1])
+    const minX = Math.min(...xs)
+    const maxX = Math.max(...xs)
+    const minY = Math.min(...ys)
+    const maxY = Math.max(...ys)
+    const span = Math.max(maxX - minX, maxY - minY, 1)
+    const availW = canvas.width - ri
+    const availH = canvas.height - bi
+    const scale = Math.min(availW, availH) * 0.45 / span
+    const centerX = (minX + maxX) / 2
+    const centerY = (minY + maxY) / 2
+    setViewport({
+      scale,
+      offsetX: availW / 2 - centerX * scale,
+      offsetY: availH / 2 + centerY * scale,
+    })
+  }, [anchorList])
 
   const zoomIn = useCallback(() => {
     setViewport(v => ({ ...v, scale: Math.min(v.scale * 1.25, 120) }))
@@ -160,6 +197,21 @@ const CalibrationMapCanvas = forwardRef<CalibrationMapCanvasHandle, Props>(({
     return () => observer.disconnect()
   }, [resetView])
 
+  // Track Ctrl key globally so the canvas knows whether we're in line-start mode.
+  useEffect(() => {
+    const down = (e: KeyboardEvent) => { if (e.key === 'Control' || e.ctrlKey) setCtrlDown(true) }
+    const up = (e: KeyboardEvent) => { if (e.key === 'Control' || !e.ctrlKey) setCtrlDown(false) }
+    const blur = () => setCtrlDown(false)
+    window.addEventListener('keydown', down)
+    window.addEventListener('keyup', up)
+    window.addEventListener('blur', blur)
+    return () => {
+      window.removeEventListener('keydown', down)
+      window.removeEventListener('keyup', up)
+      window.removeEventListener('blur', blur)
+    }
+  }, [])
+
   useEffect(() => {
     const canvas = canvasRef.current
     if (!canvas) return
@@ -188,22 +240,18 @@ const CalibrationMapCanvas = forwardRef<CalibrationMapCanvasHandle, Props>(({
       ctx.beginPath(); ctx.moveTo(0, screenY); ctx.lineTo(canvas.width, screenY); ctx.stroke()
     }
 
-
-    // Axis lines removed per user request
-
     // ── Crosshair dotted lines to anchors ─────────────────────────
-    if (referenceDot) {
-      const [rx, ry] = worldToScreen(viewport, referenceDot.x, referenceDot.y)
+    if (effectiveRef) {
+      const [rx, ry] = worldToScreen(viewport, effectiveRef.x, effectiveRef.y)
       ctx.save()
       ctx.setLineDash([5, 6])
       ctx.lineWidth = 1
       for (const { anchorId, coords } of anchorList) {
         const [ax, ay] = worldToScreen(viewport, coords[0], coords[1])
-        const dist = Math.hypot(referenceDot.x - coords[0], referenceDot.y - coords[1])
+        const dist = Math.hypot(effectiveRef.x - coords[0], effectiveRef.y - coords[1])
         ctx.strokeStyle = ANCHOR_COLORS[anchorId] + '66'
         ctx.beginPath(); ctx.moveTo(rx, ry); ctx.lineTo(ax, ay); ctx.stroke()
 
-        // Distance label aligned along line
         const mx = (rx + ax) / 2
         const my = (ry + ay) / 2
         const angle = Math.atan2(ay - ry, ax - rx)
@@ -211,7 +259,6 @@ const CalibrationMapCanvas = forwardRef<CalibrationMapCanvasHandle, Props>(({
         ctx.save()
         ctx.setLineDash([])
         ctx.translate(mx, my)
-        // Flip label so it's always readable (not upside down)
         const normAngle = ((angle % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2)
         const flipped = normAngle > Math.PI / 2 && normAngle < Math.PI * 1.5
         ctx.rotate(flipped ? angle + Math.PI : angle)
@@ -228,8 +275,6 @@ const CalibrationMapCanvas = forwardRef<CalibrationMapCanvasHandle, Props>(({
     }
 
     // ── Map lines ──────────────────────────────────────────────────
-    ctx.strokeStyle = LINE
-    ctx.lineWidth = 2
     ctx.fillStyle = '#8ea4c8'
     ctx.font = '12px var(--font-primary, sans-serif)'
     ctx.setLineDash([])
@@ -239,19 +284,48 @@ const CalibrationMapCanvas = forwardRef<CalibrationMapCanvasHandle, Props>(({
       if (!pointA || !pointB) continue
       const [x1, y1] = worldToScreen(viewport, pointA[0], pointA[1])
       const [x2, y2] = worldToScreen(viewport, pointB[0], pointB[1])
+      const isSelected = selectedLineKey === lineKey(anchorA, anchorB)
+      ctx.strokeStyle = isSelected ? LINE_SELECTED : LINE
+      ctx.lineWidth = isSelected ? 3 : 2
       ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke()
       const distance = Math.hypot(pointB[0] - pointA[0], pointB[1] - pointA[1])
+      ctx.fillStyle = isSelected ? LINE_SELECTED : '#8ea4c8'
       ctx.fillText(`${distance.toFixed(1)} ft`, (x1 + x2) / 2 + 8, (y1 + y2) / 2 - 8)
+    }
+
+    // ── Line-in-progress preview ───────────────────────────────────
+    if (creatingFrom && cursorWorld) {
+      const fromPt = map.anchors[creatingFrom]
+      if (fromPt) {
+        const [fx, fy] = worldToScreen(viewport, fromPt[0], fromPt[1])
+        const endPt = hoverAnchor && hoverAnchor !== creatingFrom
+          ? map.anchors[hoverAnchor]
+          : null
+        const [tx, ty] = endPt
+          ? worldToScreen(viewport, endPt[0], endPt[1])
+          : worldToScreen(viewport, cursorWorld.x, cursorWorld.y)
+        ctx.save()
+        ctx.setLineDash([6, 6])
+        ctx.strokeStyle = '#4fc3ff'
+        ctx.lineWidth = 2
+        ctx.beginPath(); ctx.moveTo(fx, fy); ctx.lineTo(tx, ty); ctx.stroke()
+        ctx.restore()
+      }
     }
 
     // ── Anchor dots ────────────────────────────────────────────────
     for (const { anchorId, coords } of anchorList) {
       const [screenX, screenY] = worldToScreen(viewport, coords[0], coords[1])
+      const isHighlighted =
+        (creatingFrom && hoverAnchor === anchorId && anchorId !== creatingFrom) ||
+        (!creatingFrom && ctrlDown && hoverAnchor === anchorId) ||
+        creatingFrom === anchorId
+      const radius = isHighlighted ? 10 : 8
       ctx.fillStyle = ANCHOR_COLORS[anchorId]
-      ctx.strokeStyle = '#f0f4ff'
-      ctx.lineWidth = 2
+      ctx.strokeStyle = isHighlighted ? '#4fc3ff' : '#f0f4ff'
+      ctx.lineWidth = isHighlighted ? 3 : 2
       ctx.setLineDash([])
-      ctx.beginPath(); ctx.arc(screenX, screenY, 8, 0, Math.PI * 2); ctx.fill(); ctx.stroke()
+      ctx.beginPath(); ctx.arc(screenX, screenY, radius, 0, Math.PI * 2); ctx.fill(); ctx.stroke()
       ctx.fillStyle = ANCHOR_COLORS[anchorId]
       ctx.font = 'bold 12px var(--font-primary, sans-serif)'
       ctx.fillText(anchorId, screenX + 10, screenY - 4)
@@ -260,74 +334,78 @@ const CalibrationMapCanvas = forwardRef<CalibrationMapCanvasHandle, Props>(({
       ctx.fillText(`(${coords[0].toFixed(1)}, ${coords[1].toFixed(1)})`, screenX + 10, screenY + 12)
     }
 
-    // ── Reference crosshair — small + with coordinates ─────────────
-    if (referenceDot) {
-      const [screenX, screenY] = worldToScreen(viewport, referenceDot.x, referenceDot.y)
+    // ── Reference crosshair ────────────────────────────────────────
+    if (effectiveRef) {
+      const [screenX, screenY] = worldToScreen(viewport, effectiveRef.x, effectiveRef.y)
       const color = referenceDotSelected ? CROSSHAIR_SELECTED : CROSSHAIR_COLOR
       ctx.strokeStyle = color
       ctx.lineWidth = referenceDotSelected ? 1.8 : 1.2
       ctx.setLineDash([])
-
-      // Draw small + crosshair arms (8px)
       const arm = 8
       ctx.beginPath()
       ctx.moveTo(screenX - arm, screenY); ctx.lineTo(screenX + arm, screenY)
       ctx.moveTo(screenX, screenY - arm); ctx.lineTo(screenX, screenY + arm)
       ctx.stroke()
-
-      // Coordinate label beside crosshair
       ctx.font = '9px var(--font-primary, sans-serif)'
       ctx.fillStyle = color
-      ctx.fillText(`(${referenceDot.x.toFixed(1)}, ${referenceDot.y.toFixed(1)})`, screenX + arm + 4, screenY - arm)
+      ctx.fillText(`(${effectiveRef.x.toFixed(1)}, ${effectiveRef.y.toFixed(1)})`, screenX + arm + 4, screenY - arm)
+    }
 
-      // Dashed lines to anchors with distance labels
+    // ── Inter-tag dotted distance lines (live)
+    const positionedTags = tags
+      .map((tag, index) => ({ tag, color: TAG_COLORS[index % TAG_COLORS.length], xy: tag.calibrated_xy }))
+      .filter((entry): entry is { tag: CalibrationTagRuntime; color: string; xy: [number, number] } => entry.xy != null)
+
+    if (positionedTags.length >= 2) {
       ctx.save()
-      ctx.setLineDash([4, 4])
+      ctx.setLineDash([3, 4])
       ctx.lineWidth = 1
-      for (const { anchorId, coords } of anchorList) {
-        const [ax, ay] = worldToScreen(viewport, coords[0], coords[1])
-        const floorDist = Math.hypot(referenceDot.x - coords[0], referenceDot.y - coords[1])
-        ctx.strokeStyle = '#8c96a566' // Gray lines
-        ctx.beginPath(); ctx.moveTo(screenX, screenY); ctx.lineTo(ax, ay); ctx.stroke()
-        const mx = (screenX + ax) / 2
-        const my = (screenY + ay) / 2
-        ctx.setLineDash([])
-        ctx.font = '8px var(--font-primary, sans-serif)'
-        ctx.fillStyle = '#8c96a5' // Gray text
-        ctx.fillText(`${floorDist.toFixed(2)} ft`, mx + 4, my - 4)
-        ctx.setLineDash([4, 4])
+      ctx.strokeStyle = 'rgba(255, 160, 60, 0.7)'
+      for (let i = 0; i < positionedTags.length; i++) {
+        for (let j = i + 1; j < positionedTags.length; j++) {
+          const a = positionedTags[i].xy
+          const b = positionedTags[j].xy
+          const [ax, ay] = worldToScreen(viewport, a[0], a[1])
+          const [bx, by] = worldToScreen(viewport, b[0], b[1])
+          ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(bx, by); ctx.stroke()
+
+          const distance = Math.hypot(a[0] - b[0], a[1] - b[1])
+          const label = `${distance.toFixed(2)} ft`
+          const mx = (ax + bx) / 2
+          const my = (ay + by) / 2
+          const angle = Math.atan2(by - ay, bx - ax)
+          const normAngle = ((angle % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2)
+          const flipped = normAngle > Math.PI / 2 && normAngle < Math.PI * 1.5
+
+          ctx.save()
+          ctx.setLineDash([])
+          ctx.translate(mx, my)
+          ctx.rotate(flipped ? angle + Math.PI : angle)
+          ctx.font = '10px var(--font-primary, sans-serif)'
+          ctx.textAlign = 'center'
+          ctx.fillStyle = '#ffa03c'
+          ctx.fillText(label, 0, -3)
+          ctx.restore()
+        }
       }
       ctx.restore()
     }
 
-    // ── Tags ───────────────────────────────────────────────────────
-    tags.forEach((tag, index) => {
-      const tagColor = TAG_COLORS[index % TAG_COLORS.length]
-      if (tag.raw_xy) {
-        const [screenX, screenY] = worldToScreen(viewport, tag.raw_xy[0], tag.raw_xy[1])
-        ctx.save()
-        ctx.translate(screenX, screenY); ctx.rotate(Math.PI / 4)
-        ctx.fillStyle = 'rgba(255,255,255,0.15)'
-        ctx.strokeStyle = tagColor; ctx.lineWidth = 1.5
-        ctx.setLineDash([])
-        ctx.fillRect(-6, -6, 12, 12); ctx.strokeRect(-6, -6, 12, 12)
-        ctx.restore()
-      }
-      if (tag.calibrated_xy) {
-        const [screenX, screenY] = worldToScreen(viewport, tag.calibrated_xy[0], tag.calibrated_xy[1])
-        ctx.fillStyle = tagColor
-        ctx.strokeStyle = selectedTagId === tag.tag_id ? '#ffffff' : tagColor
-        ctx.lineWidth = selectedTagId === tag.tag_id ? 2 : 1.4
-        ctx.setLineDash([])
-        ctx.beginPath()
-        ctx.arc(screenX, screenY, selectedTagId === tag.tag_id ? 8 : 6, 0, Math.PI * 2)
-        ctx.fill(); ctx.stroke()
-        ctx.fillStyle = tagColor
-        ctx.font = 'bold 12px var(--font-primary, sans-serif)'
-        ctx.fillText(tag.tag_id, screenX + 10, screenY - 4)
-      }
+    positionedTags.forEach(({ tag, color, xy }) => {
+      const [screenX, screenY] = worldToScreen(viewport, xy[0], xy[1])
+      const radius = Math.max(7, Math.min(Math.round(viewport.scale * 0.22), 14))
+      ctx.fillStyle = color
+      ctx.strokeStyle = '#ffffff'
+      ctx.lineWidth = 1.5
+      ctx.setLineDash([])
+      ctx.beginPath()
+      ctx.arc(screenX, screenY, radius, 0, Math.PI * 2)
+      ctx.fill(); ctx.stroke()
+      ctx.fillStyle = color
+      ctx.font = 'bold 12px var(--font-primary, sans-serif)'
+      ctx.fillText(tag.tag_id, screenX + radius + 3, screenY - 2)
     })
-  }, [anchorList, canvasSize, map.anchors, map.lines, referenceDot, referenceDotSelected, selectedTagId, tags, viewport])
+  }, [anchorList, canvasSize, map.anchors, map.lines, effectiveRef, referenceDotSelected, selectedTagId, tags, viewport, selectedLineKey, creatingFrom, hoverAnchor, cursorWorld, ctrlDown])
 
   // ── Hit testing ─────────────────────────────────────────────────
 
@@ -345,15 +423,33 @@ const CalibrationMapCanvas = forwardRef<CalibrationMapCanvasHandle, Props>(({
   }, [anchorList, viewport])
 
   const hitRefDot = useCallback((clientX: number, clientY: number): boolean => {
-    if (!referenceDot) return false
+    if (!effectiveRef) return false
     const canvas = canvasRef.current
     if (!canvas) return false
     const rect = canvas.getBoundingClientRect()
     const x = clientX - rect.left
     const y = clientY - rect.top
-    const [screenX, screenY] = worldToScreen(viewport, referenceDot.x, referenceDot.y)
+    const [screenX, screenY] = worldToScreen(viewport, effectiveRef.x, effectiveRef.y)
     return Math.hypot(x - screenX, y - screenY) <= 18
-  }, [referenceDot, viewport])
+  }, [effectiveRef, viewport])
+
+  const hitLine = useCallback((clientX: number, clientY: number): string | null => {
+    const canvas = canvasRef.current
+    if (!canvas) return null
+    const rect = canvas.getBoundingClientRect()
+    const x = clientX - rect.left
+    const y = clientY - rect.top
+    const threshold = 6
+    for (const [a, b] of map.lines) {
+      const pa = map.anchors[a]
+      const pb = map.anchors[b]
+      if (!pa || !pb) continue
+      const [x1, y1] = worldToScreen(viewport, pa[0], pa[1])
+      const [x2, y2] = worldToScreen(viewport, pb[0], pb[1])
+      if (distToSegment(x, y, x1, y1, x2, y2) <= threshold) return lineKey(a, b)
+    }
+    return null
+  }, [map.lines, map.anchors, viewport])
 
   const getScreenPos = useCallback((clientX: number, clientY: number): [number, number] => {
     const canvas = canvasRef.current
@@ -367,7 +463,6 @@ const CalibrationMapCanvas = forwardRef<CalibrationMapCanvasHandle, Props>(({
   const handleMouseDown = useCallback((event: React.MouseEvent<HTMLCanvasElement>) => {
     const canvas = canvasRef.current
     if (!canvas || event.button !== 0) return
-    // Let doubleClick handle double-clicks
     if (event.detail >= 2) return
     canvas.focus()
 
@@ -381,38 +476,63 @@ const CalibrationMapCanvas = forwardRef<CalibrationMapCanvasHandle, Props>(({
       return
     }
 
-    // Hit: anchor drag
-    const anchorId = hitAnchor(event.clientX, event.clientY)
+    const anchorId = hitAnchor(event.clientX, event.clientY) as AnchorId | null
+
+    // Line creation handling — takes precedence over anchor drag when appropriate.
+    if (creatingFrom) {
+      if (anchorId && anchorId !== creatingFrom) {
+        onLineCreate(creatingFrom, anchorId)
+        setCreatingFrom(null)
+        return
+      }
+      if (anchorId === creatingFrom) {
+        setCreatingFrom(null)
+        return
+      }
+      setCreatingFrom(null)
+      return
+    }
+    if (event.ctrlKey && anchorId) {
+      setCreatingFrom(anchorId)
+      onLineSelect(null)
+      return
+    }
+
     if (anchorId) {
       onReferenceDotSelect(false)
+      onLineSelect(null)
       dragRef.current = { anchorId }
+      onAnchorDragStart?.()
       return
     }
 
-    // Hit: ref dot select
     if (hitRefDot(event.clientX, event.clientY)) {
       onReferenceDotSelect(true)
-      dragRef.current = { refDot: true }
+      onLineSelect(null)
+      dragRef.current = { refDot: true, localRef: effectiveRef ? { ...effectiveRef } : undefined }
       return
     }
 
-    // Miss: deselect ref dot and start pan
+    const lineHit = hitLine(event.clientX, event.clientY)
+    if (lineHit) {
+      onLineSelect(lineHit)
+      onReferenceDotSelect(false)
+      return
+    }
+
     onReferenceDotSelect(false)
+    onLineSelect(null)
     panRef.current = { active: true, x: event.clientX, y: event.clientY }
-  }, [hitAnchor, hitRefDot, onReferencePlaced, onReferenceDotSelect, placingReference, viewport])
+  }, [hitAnchor, hitRefDot, hitLine, onReferencePlaced, onReferenceDotSelect, placingReference, viewport, creatingFrom, effectiveRef, onLineCreate, onLineSelect])
 
   const handleDoubleClick = useCallback((event: React.MouseEvent<HTMLCanvasElement>) => {
     if (placingReference) return
-
-    // Hit: anchor double-click → edit
     const anchorId = hitAnchor(event.clientX, event.clientY) as AnchorId | null
     if (anchorId) {
       const [sx, sy] = getScreenPos(event.clientX, event.clientY)
       onAnchorDoubleClick(anchorId, sx, sy)
       return
     }
-
-    // Hit: ref dot double-click → edit
     if (hitRefDot(event.clientX, event.clientY)) {
       const [sx, sy] = getScreenPos(event.clientX, event.clientY)
       onReferenceDotDoubleClick(sx, sy)
@@ -420,12 +540,21 @@ const CalibrationMapCanvas = forwardRef<CalibrationMapCanvasHandle, Props>(({
   }, [getScreenPos, hitAnchor, hitRefDot, onAnchorDoubleClick, onReferenceDotDoubleClick, placingReference])
 
   const handleMouseMove = useCallback((event: React.MouseEvent<HTMLCanvasElement>) => {
+    const canvas = canvasRef.current
+    if (!canvas) return
+    const rect = canvas.getBoundingClientRect()
+    const mx = event.clientX - rect.left
+    const my = event.clientY - rect.top
+    const [worldX, worldY] = screenToWorld(viewport, mx, my)
+
+    // Track hover (for ctrl+line-creation UX). Cheap hit test.
+    const hovered = hitAnchor(event.clientX, event.clientY) as AnchorId | null
+    setHoverAnchor(prev => (prev === hovered ? prev : hovered))
+    if (creatingFrom) {
+      setCursorWorld({ x: worldX, y: worldY })
+    }
+
     if (dragRef.current) {
-      const canvas = canvasRef.current
-      if (!canvas) return
-      const rect = canvas.getBoundingClientRect()
-      const [worldX, worldY] = screenToWorld(viewport, event.clientX - rect.left, event.clientY - rect.top)
-      
       if (dragRef.current.anchorId) {
         const nextMap: CalibrationMapRuntime = {
           ...latestMapRef.current,
@@ -437,7 +566,9 @@ const CalibrationMapCanvas = forwardRef<CalibrationMapCanvasHandle, Props>(({
         latestMapRef.current = nextMap
         onMapChange(nextMap)
       } else if (dragRef.current.refDot) {
-        onReferencePlaced(Number(worldX.toFixed(3)), Number(worldY.toFixed(3)))
+        const next = { x: Number(worldX.toFixed(3)), y: Number(worldY.toFixed(3)) }
+        dragRef.current.localRef = next
+        setDragRefPos(next)
       }
       return
     }
@@ -452,15 +583,22 @@ const CalibrationMapCanvas = forwardRef<CalibrationMapCanvasHandle, Props>(({
         offsetY: current.offsetY + dy,
       }))
     }
-  }, [onMapChange, viewport])
+  }, [onMapChange, viewport, hitAnchor, creatingFrom])
 
   const handleMouseUp = useCallback(() => {
     if (dragRef.current) {
+      const wasRefDrag = dragRef.current.refDot === true
+      const finalRef = dragRef.current.localRef
+      const wasAnchorDrag = !!dragRef.current.anchorId
       dragRef.current = null
-      onMapCommit(latestMapRef.current)
+      if (wasAnchorDrag) onMapCommit(latestMapRef.current)
+      if (wasRefDrag && finalRef) {
+        onReferencePlaced(finalRef.x, finalRef.y)
+        setDragRefPos(null)
+      }
     }
     panRef.current = null
-  }, [onMapCommit])
+  }, [onMapCommit, onReferencePlaced])
 
   const handleWheel = useCallback((event: React.WheelEvent<HTMLCanvasElement>) => {
     event.preventDefault()
@@ -479,24 +617,37 @@ const CalibrationMapCanvas = forwardRef<CalibrationMapCanvasHandle, Props>(({
 
   const handleKeyDown = useCallback((event: React.KeyboardEvent<HTMLCanvasElement>) => {
     if (event.key === 'Escape') {
+      if (dragRef.current?.anchorId) onMapCommit(latestMapRef.current)
       dragRef.current = null
       panRef.current = null
       if (placingReference) onCancelReferencePlacement()
+      if (creatingFrom) setCreatingFrom(null)
+      if (selectedLineKey) onLineSelect(null)
       event.preventDefault()
     }
     if (event.key === 'f' || event.key === 'F') {
       resetView()
       event.preventDefault()
     }
-    if ((event.key === 'Delete' || event.key === 'Backspace') && referenceDotSelected) {
-      onReferenceDotDelete()
-      event.preventDefault()
+    if (event.key === 'Delete' || event.key === 'Backspace') {
+      if (referenceDotSelected) {
+        onReferenceDotDelete()
+        event.preventDefault()
+        return
+      }
+      if (selectedLineKey) {
+        onLineDelete(selectedLineKey)
+        event.preventDefault()
+        return
+      }
     }
-  }, [onCancelReferencePlacement, onReferenceDotDelete, placingReference, referenceDotSelected, resetView])
+  }, [onCancelReferencePlacement, onMapCommit, onReferenceDotDelete, placingReference, referenceDotSelected, resetView, creatingFrom, selectedLineKey, onLineSelect, onLineDelete])
 
   const getCursor = () => {
     if (placingReference) return 'crosshair'
+    if (creatingFrom) return 'crosshair'
     if (dragRef.current || panRef.current?.active) return 'grabbing'
+    if (ctrlDown && hoverAnchor) return 'crosshair'
     return 'grab'
   }
 

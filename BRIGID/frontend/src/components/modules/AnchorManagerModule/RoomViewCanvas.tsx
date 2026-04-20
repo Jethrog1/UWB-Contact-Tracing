@@ -22,6 +22,7 @@ export interface RoomViewCanvasHandle {
 interface Props {
   room: RoomData
   selectedAnchorId: string | null
+  externalPreview?: { localX: number; localY: number } | null
   onAnchorSelect: (anchorId: string | null) => void
   onAnchorPlace: (localX: number, localY: number) => void
   onAnchorMoveStart: (anchorId: string) => void
@@ -52,6 +53,7 @@ const screenToWorld = (vp: Viewport, sx: number, sy: number): [number, number] =
 const RoomViewCanvas = forwardRef<RoomViewCanvasHandle, Props>(({
   room,
   selectedAnchorId,
+  externalPreview = null,
   onAnchorSelect,
   onAnchorPlace,
   onAnchorMoveStart,
@@ -198,7 +200,21 @@ const RoomViewCanvas = forwardRef<RoomViewCanvasHandle, Props>(({
       ctx.arc(sx, sy, 8, 0, Math.PI * 2)
       ctx.stroke()
     }
-  }, [room, allSegments, viewport, selectedAnchorId, hoverWorld, hoverSnap])
+
+    if (externalPreview) {
+      const wx = room.room_bounds_ft.min_x + externalPreview.localX
+      const wy = room.room_bounds_ft.min_y + externalPreview.localY
+      const [sx, sy] = worldToScreen(viewport, wx, wy)
+      const r = Math.max(5, Math.min(14, viewport.scale * 0.5))
+      ctx.fillStyle = COLORS.previewFill
+      ctx.strokeStyle = COLORS.previewStroke
+      ctx.lineWidth = 1.4
+      ctx.beginPath()
+      ctx.arc(sx, sy, r, 0, Math.PI * 2)
+      ctx.fill()
+      ctx.stroke()
+    }
+  }, [room, allSegments, viewport, selectedAnchorId, hoverWorld, hoverSnap, externalPreview])
 
   const getAnchorAt = useCallback((mx: number, my: number): AnchorData | null => {
     for (const anchor of room.anchors) {
@@ -234,16 +250,18 @@ const RoomViewCanvas = forwardRef<RoomViewCanvasHandle, Props>(({
       return
     }
 
-    // Click in empty space — place anchor if within room
-    const [worldX, worldY] = screenToWorld(vp, mx, my)
-    const snap = findSnapTarget(worldX, worldY, allSegments)
-    const placeX = snap?.x ?? worldX
-    const placeY = snap?.y ?? worldY
-    if (roomContainsWorldPoint(room, placeX, placeY, 0.1)) {
-      const localX = placeX - room.room_bounds_ft.min_x
-      const localY = placeY - room.room_bounds_ft.min_y
-      onAnchorPlace(localX, localY)
-      return
+    // Ctrl/Cmd + click in empty space places an anchor; plain click starts panning
+    if (e.ctrlKey || e.metaKey) {
+      const [worldX, worldY] = screenToWorld(vp, mx, my)
+      const snap = findSnapTarget(worldX, worldY, allSegments)
+      const placeX = snap?.x ?? worldX
+      const placeY = snap?.y ?? worldY
+      if (roomContainsWorldPoint(room, placeX, placeY, 0.1)) {
+        const localX = placeX - room.room_bounds_ft.min_x
+        const localY = placeY - room.room_bounds_ft.min_y
+        onAnchorPlace(localX, localY)
+        return
+      }
     }
 
     panRef.current = { active: true, lastX: e.clientX, lastY: e.clientY }
@@ -297,10 +315,17 @@ const RoomViewCanvas = forwardRef<RoomViewCanvasHandle, Props>(({
     }
   }, [onAnchorMoveEnd])
 
-  const handleWheel = useCallback((e: React.WheelEvent<HTMLCanvasElement>) => {
-    e.preventDefault()
-    const rect = e.currentTarget.getBoundingClientRect()
-    zoomAround(e.deltaY < 0 ? 1.12 : 1 / 1.12, e.clientX - rect.left, e.clientY - rect.top)
+  useEffect(() => {
+    const canvas = canvasRef.current
+    if (!canvas) return
+    const handler = (e: WheelEvent) => {
+      e.preventDefault()
+      e.stopPropagation()
+      const rect = canvas.getBoundingClientRect()
+      zoomAround(e.deltaY < 0 ? 1.12 : 1 / 1.12, e.clientX - rect.left, e.clientY - rect.top)
+    }
+    canvas.addEventListener('wheel', handler, { passive: false })
+    return () => canvas.removeEventListener('wheel', handler)
   }, [zoomAround])
 
   const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLCanvasElement>) => {
@@ -326,7 +351,6 @@ const RoomViewCanvas = forwardRef<RoomViewCanvasHandle, Props>(({
       onMouseMove={handleMouseMove}
       onMouseUp={handleMouseUp}
       onMouseLeave={() => { handleMouseUp(); setHoverWorld(null); setHoverSnap(null); setCtrlDown(false) }}
-      onWheel={handleWheel}
       onKeyDown={handleKeyDown}
       onKeyUp={handleKeyUp}
       style={{ cursor: panRef.current.active ? 'grabbing' : isHoveringAnchor ? 'grab' : ctrlDown ? 'crosshair' : 'default' }}

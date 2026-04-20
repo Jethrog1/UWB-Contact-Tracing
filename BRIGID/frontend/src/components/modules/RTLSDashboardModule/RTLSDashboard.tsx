@@ -7,6 +7,7 @@ import RTLSDashboardCanvas, {
   tagColor,
 } from './RTLSDashboardCanvas'
 import RTLSRoomView, { RTLSRoomViewHandle, RTLSVisualSettings, TagAppearance } from './RTLSRoomView'
+import { confirmAsync } from '../../common/ConfirmDialog'
 import './RTLSDashboard.css'
 
 const API = 'http://localhost:8765'
@@ -281,7 +282,32 @@ const RTLSDashboard: React.FC<RTLSDashboardProps> = ({ workspaceId, workspaceNam
   const [hoverRoomName, setHoverRoomName] = useState<string | null>(null)
   const [transportMode, setTransportMode] = useState<RtlsTransportMode>('serial')
   const [activePanelTab, setActivePanelTab] = useState<DashboardPanelTab>('setup')
+  const [loadCollapsed, setLoadCollapsed] = useState(false)
   const [visualSettings, setVisualSettings] = useState<RTLSVisualSettings>(DEFAULT_VISUAL)
+  const [workspacePaths, setWorkspacePaths] = useState<{
+    svg?: string; rooms?: string; tags?: string; projects?: string
+  }>({})
+  const [profileRootPath, setProfileRootPath] = useState<string | undefined>(undefined)
+
+  useEffect(() => {
+    let cancelled = false
+    fetch(`${API}/api/workspace/paths/${encodeURIComponent(workspaceId)}?workspace_name=${encodeURIComponent(workspaceName)}`)
+      .then(r => r.json())
+      .then(data => {
+        if (cancelled || !data.success) return
+        setWorkspacePaths({
+          svg: data.svg,
+          rooms: data.rooms,
+          tags: data.tags,
+          projects: data.projects,
+        })
+      })
+      .catch(() => { /* optional */ })
+    void window.api?.getPaths?.()
+      .then(paths => { if (!cancelled) setProfileRootPath(paths.profile) })
+      .catch(() => { /* optional */ })
+    return () => { cancelled = true }
+  }, [workspaceId, workspaceName])
 
   const floorplanCanvasRef = useRef<RTLSDashboardCanvasHandle>(null)
   const roomViewRef = useRef<RTLSRoomViewHandle>(null)
@@ -496,6 +522,48 @@ const RTLSDashboard: React.FC<RTLSDashboardProps> = ({ workspaceId, workspaceNam
     return () => window.removeEventListener('rtls-view-command', handler)
   }, [activeRoomTab?.roomName, activeTab, loadWorkspace, selectedRoomName, snap.room_name, workspaceId])
 
+  useEffect(() => {
+    const handler = async (e: Event) => {
+      const detail = (e as CustomEvent).detail as { workspaceId: string; module?: string }
+      if (detail.workspaceId !== workspaceId || (detail.module && detail.module !== 'rtls')) return
+
+      const projectPath = loadSourceRef.current.projectPath
+      if (!projectPath || rooms.length === 0) {
+        await confirmAsync({
+          title: 'Nothing to Save',
+          message: 'Open or create a .rtls project in the Anchor Manager first, then return here to run it.',
+          confirmLabel: 'OK',
+        })
+        return
+      }
+
+      try {
+        const res = await fetch(`${API}/api/rooms/project/save`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            project_path: projectPath,
+            project_name: projectName || workspaceName || 'RTLS Project',
+            rooms: rooms.map(room => ({ ...room })),
+            workspace_id: workspaceId,
+            workspace_name: workspaceName,
+          }),
+        })
+        const data = await res.json()
+        if (data.success) showMsg('RTLS project saved.', 'ok')
+        else showMsg(data.error ?? 'Could not save project.', 'error')
+      } catch {
+        showMsg('Could not reach backend.', 'error')
+      }
+    }
+    window.addEventListener('workspace-save-command', handler)
+    window.addEventListener('workspace-save-as-command', handler)
+    return () => {
+      window.removeEventListener('workspace-save-command', handler)
+      window.removeEventListener('workspace-save-as-command', handler)
+    }
+  }, [projectName, rooms, showMsg, workspaceId, workspaceName])
+
   const currentCompositeSource = useCallback((): RTLSLoadSource => {
     const current = loadSourceRef.current
     if (current.projectPath) {
@@ -520,23 +588,26 @@ const RTLSDashboard: React.FC<RTLSDashboardProps> = ({ workspaceId, workspaceNam
   }, [])
 
   const loadProject = useCallback(async () => {
-    const r = await window.api?.openFile?.([{ name: 'RTLS Project', extensions: ['rtls'] }])
+    const r = await window.api?.openFile?.(
+      [{ name: 'RTLS Project', extensions: ['rtls'] }],
+      workspacePaths.projects,
+    )
     if (r && !r.canceled && r.filePaths[0]) {
       resetViewState()
       await loadWorkspace({ projectPath: r.filePaths[0] })
     }
-  }, [loadWorkspace, resetViewState])
+  }, [loadWorkspace, resetViewState, workspacePaths.projects])
 
   const loadFolder = useCallback(async () => {
-    const r = await window.api?.openFolder?.()
+    const r = await window.api?.openFolder?.(profileRootPath)
     if (r && !r.canceled && r.folderPath) {
       resetViewState()
       await loadWorkspace({ folderPath: r.folderPath })
     }
-  }, [loadWorkspace, resetViewState])
+  }, [loadWorkspace, profileRootPath, resetViewState])
 
   const loadRoomsFolder = useCallback(async () => {
-    const r = await window.api?.openFolder?.()
+    const r = await window.api?.openFolder?.(workspacePaths.rooms)
     if (r && !r.canceled && r.folderPath) {
       resetViewState()
       await loadWorkspace({
@@ -547,27 +618,27 @@ const RTLSDashboard: React.FC<RTLSDashboardProps> = ({ workspaceId, workspaceNam
         roomsFolder: r.folderPath,
       })
     }
-  }, [currentCompositeSource, loadWorkspace, resetViewState])
+  }, [currentCompositeSource, loadWorkspace, resetViewState, workspacePaths.rooms])
 
   const loadTagsFolder = useCallback(async () => {
-    const r = await window.api?.openFolder?.()
+    const r = await window.api?.openFolder?.(workspacePaths.tags)
     if (r && !r.canceled && r.folderPath) {
       await loadWorkspace({
         ...currentCompositeSource(),
         tagsFolder: r.folderPath,
       }, { roomName: selectedRoomName || snap.room_name || undefined })
     }
-  }, [currentCompositeSource, loadWorkspace, selectedRoomName, snap.room_name])
+  }, [currentCompositeSource, loadWorkspace, selectedRoomName, snap.room_name, workspacePaths.tags])
 
   const loadSvgFolder = useCallback(async () => {
-    const r = await window.api?.openFolder?.()
+    const r = await window.api?.openFolder?.(workspacePaths.svg)
     if (r && !r.canceled && r.folderPath) {
       await loadWorkspace({
         ...currentCompositeSource(),
         svgFolder: r.folderPath,
       }, { roomName: selectedRoomName || snap.room_name || undefined })
     }
-  }, [currentCompositeSource, loadWorkspace, selectedRoomName, snap.room_name])
+  }, [currentCompositeSource, loadWorkspace, selectedRoomName, snap.room_name, workspacePaths.svg])
 
   const connect = useCallback(async () => {
     const port = transportMode === 'serial' ? (snap.selected_port || savedModulePort || snap.auto_detect_port) : ''
@@ -1160,40 +1231,24 @@ const RTLSDashboard: React.FC<RTLSDashboardProps> = ({ workspaceId, workspaceNam
     </>
   )
 
+  const roomBannerInfo = isRoomView && visibleRoom ? {
+    name: visibleRoom.room_name,
+    width: visibleRoom.room_bounds_ft.width,
+    height: visibleRoom.room_bounds_ft.height,
+    anchorCount: visibleRoom.anchors.length,
+    refLabel: (() => {
+      const refAnchor = visibleRoom.anchors.find(anchor => (
+        anchor.id === (visibleRoom.reference_anchor_id ?? null)
+        || (!!snap.reference_anchor_id && (anchor.hw_id === snap.reference_anchor_id || anchor.id === snap.reference_anchor_id))
+      ))
+      return refAnchor?.hw_id || refAnchor?.id || '—'
+    })(),
+  } : null
+
   return (
     <div className="rtls-root">
       <div className="rtls-stage">
         <div className="rtls-main-panel">
-          {roomLoaded && (
-            <div className="rtls-inner-tabbar">
-              <button
-                className={`rtls-inner-tab${activeTab === 'floor-plan' ? ' rtls-inner-tab--active' : ''}`}
-                onClick={() => void handleTabClick('floor-plan')}
-              >
-                Floor Plan
-              </button>
-              {roomTabs.map(tab => (
-                <button
-                  key={tab.id}
-                  className={`rtls-inner-tab${activeTab === tab.id ? ' rtls-inner-tab--active' : ''}`}
-                  onClick={() => void handleTabClick(tab.id)}
-                >
-                  {tab.roomName}
-                  <span
-                    className="rtls-inner-tab-close"
-                    role="button"
-                    onClick={e => {
-                      e.stopPropagation()
-                      closeRoomTab(tab.id)
-                    }}
-                  >
-                    ×
-                  </span>
-                </button>
-              ))}
-            </div>
-          )}
-
           {!roomLoaded ? (
             <div className="rtls-no-room">
               <div className="rtls-no-room-icon">{autoLoading ? '◌' : '◎'}</div>
@@ -1238,9 +1293,51 @@ const RTLSDashboard: React.FC<RTLSDashboardProps> = ({ workspaceId, workspaceNam
           )}
         </div>
 
+        {roomLoaded && roomBannerInfo && (
+          <div className="rtls-floating-banner">
+            <div className="rtls-floating-banner__meta">
+              {roomBannerInfo.width.toFixed(1)} × {roomBannerInfo.height.toFixed(1)} ft
+              {' · '}
+              {roomBannerInfo.anchorCount} anchor{roomBannerInfo.anchorCount !== 1 ? 's' : ''}
+              {' · '}
+              Ref: {roomBannerInfo.refLabel}
+            </div>
+          </div>
+        )}
+
         {statusMsg && (
           <div className={`rtls-status rtls-status--${statusMsg.kind}`}>
             {statusMsg.text}
+          </div>
+        )}
+
+        {roomLoaded && (
+          <div className="rtls-floating-tabbar">
+            <button
+              className={`rtls-inner-tab${activeTab === 'floor-plan' ? ' rtls-inner-tab--active' : ''}`}
+              onClick={() => void handleTabClick('floor-plan')}
+            >
+              Floor Plan
+            </button>
+            {roomTabs.map(tab => (
+              <button
+                key={tab.id}
+                className={`rtls-inner-tab${activeTab === tab.id ? ' rtls-inner-tab--active' : ''}`}
+                onClick={() => void handleTabClick(tab.id)}
+              >
+                {tab.roomName}
+                <span
+                  className="rtls-inner-tab-close"
+                  role="button"
+                  onClick={e => {
+                    e.stopPropagation()
+                    closeRoomTab(tab.id)
+                  }}
+                >
+                  ×
+                </span>
+              </button>
+            ))}
           </div>
         )}
 
@@ -1252,43 +1349,57 @@ const RTLSDashboard: React.FC<RTLSDashboardProps> = ({ workspaceId, workspaceNam
             </div>
           </div>
 
-          <div className="rtls-panel-body">
-            <div className="rtls-section">
-              <div className="rtls-section-title">Load</div>
-              <button className="rtls-btn rtls-btn--primary rtls-btn--full" onClick={() => void loadProject()}>
-                Load Project…
-              </button>
-              <div className="rtls-section-title" style={{ marginTop: 8 }}>Load Individually</div>
-              <div className="rtls-load-row">
-                <button className="rtls-btn" style={{ flex: 1 }} onClick={() => void loadFolder()}>Workspace…</button>
-                <button className="rtls-btn" style={{ flex: 1 }} onClick={() => void loadRoomsFolder()}>Rooms…</button>
-                <button className="rtls-btn" style={{ flex: 1 }} onClick={() => void loadTagsFolder()}>Tags…</button>
-                <button className="rtls-btn" style={{ flex: 1 }} onClick={() => void loadSvgFolder()}>SVG…</button>
+          <div className="rtls-panel-sticky">
+            <div className={`rtls-section rtls-load-section${loadCollapsed ? ' rtls-load-section--collapsed' : ''}`}>
+              <div className="rtls-load-header">
+                <div className="rtls-section-title rtls-load-title">Load</div>
+                <button
+                  type="button"
+                  className="rtls-load-toggle"
+                  onClick={() => setLoadCollapsed(value => !value)}
+                  aria-expanded={!loadCollapsed}
+                  title={loadCollapsed ? 'Maximize Load' : 'Minimize Load'}
+                >
+                  {loadCollapsed ? '+' : '−'}
+                </button>
               </div>
-              <div className="rtls-runtime-note">
-                RTLS reuses the finished Anchor Manager project: full floor plan as the environment, room tabs as focused subsets.
-              </div>
-            </div>
-
-            <div className="rtls-section">
-              <div className="rtls-section-title">Tabs</div>
-              <div className="rtls-dashboard-tabs">
-                {([
-                  ['setup', 'Setup'],
-                  ['visuals', 'Visuals'],
-                  ['analytics', 'Analytics'],
-                ] as [DashboardPanelTab, string][]).map(([tabId, label]) => (
-                  <button
-                    key={tabId}
-                    className={`rtls-btn rtls-dashboard-tab${activePanelTab === tabId ? ' rtls-dashboard-tab--active' : ''}`}
-                    onClick={() => setActivePanelTab(tabId)}
-                  >
-                    {label}
+              <div className={`rtls-load-body${loadCollapsed ? ' rtls-load-body--collapsed' : ''}`}>
+                <div className="rtls-load-body-inner">
+                  <button className="rtls-btn rtls-btn--primary rtls-btn--full" onClick={() => void loadProject()}>
+                    Load Project…
                   </button>
-                ))}
+                  <div className="rtls-section-title" style={{ marginTop: 8 }}>Load Individually</div>
+                  <div className="rtls-load-row">
+                    <button className="rtls-btn" style={{ flex: 1 }} onClick={() => void loadFolder()}>Workspace…</button>
+                    <button className="rtls-btn" style={{ flex: 1 }} onClick={() => void loadRoomsFolder()}>Rooms…</button>
+                    <button className="rtls-btn" style={{ flex: 1 }} onClick={() => void loadTagsFolder()}>Tags…</button>
+                    <button className="rtls-btn" style={{ flex: 1 }} onClick={() => void loadSvgFolder()}>SVG…</button>
+                  </div>
+                  <div className="rtls-runtime-note">
+                    RTLS reuses the finished Anchor Manager project: full floor plan as the environment, room tabs as focused subsets.
+                  </div>
+                </div>
               </div>
             </div>
 
+            <div className="rtls-dashboard-tabs rtls-dashboard-tabs--attached">
+              {([
+                ['setup', 'Setup'],
+                ['visuals', 'Visuals'],
+                ['analytics', 'Analytics'],
+              ] as [DashboardPanelTab, string][]).map(([tabId, label]) => (
+                <button
+                  key={tabId}
+                  className={`rtls-btn rtls-dashboard-tab${activePanelTab === tabId ? ' rtls-dashboard-tab--active' : ''}`}
+                  onClick={() => setActivePanelTab(tabId)}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="rtls-panel-body">
             {activePanelTab === 'setup' && renderSetupTab()}
             {activePanelTab === 'visuals' && renderVisualsTab()}
             {activePanelTab === 'analytics' && renderAnalyticsTab()}

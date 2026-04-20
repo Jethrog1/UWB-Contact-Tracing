@@ -11,9 +11,13 @@ const api = {
   cadRestart: (): Promise<{ ok: boolean }> =>
     ipcRenderer.invoke('cad:restart'),
 
-  /** Resolve platform-specific save directories (svg / pdf) */
-  getPaths: (): Promise<{ svg: string; pdf: string; profile: string }> =>
+  /** Resolve platform-specific save directories (svg / pdf / profile / downloads) */
+  getPaths: (): Promise<{ svg: string; pdf: string; profile: string; downloads: string }> =>
     ipcRenderer.invoke('app:get-paths'),
+
+  /** Read a text file from disk via the main process */
+  readTextFile: (path: string): Promise<{ success: boolean; content?: string; path?: string; error?: string }> =>
+    ipcRenderer.invoke('fs:read-text-file', path),
 
   /** Open a native file-open dialog */
   openFile: (

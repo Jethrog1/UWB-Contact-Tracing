@@ -219,7 +219,18 @@ ipcMain.handle('app:get-paths', () => ({
   svg: join(brigidRoot, 'svg'),
   pdf: join(brigidRoot, 'pdf'),
   profile: join(brigidRoot, 'Profile'),
+  downloads: app.getPath('downloads'),
 }))
+
+ipcMain.handle('fs:read-text-file', async (_event, path: string) => {
+  try {
+    const fs = await import('fs/promises')
+    const content = await fs.readFile(path, 'utf-8')
+    return { success: true, content, path }
+  } catch (error) {
+    return { success: false, error: String(error) }
+  }
+})
 
 // ── File dialogs ───────────────────────────────────────────────────────
 

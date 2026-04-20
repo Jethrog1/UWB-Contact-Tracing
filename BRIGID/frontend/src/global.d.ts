@@ -12,7 +12,7 @@ interface BrigidDesktopApi {
   getVersion: () => string
   cadStatus: () => Promise<{ running: boolean }>
   cadRestart: () => Promise<{ ok: boolean }>
-  getPaths?: () => Promise<{ svg: string; pdf: string; profile: string }>
+  getPaths?: () => Promise<{ svg: string; pdf: string; profile: string; downloads: string }>
   openFile?: (
     filters: FileDialogFilter[],
     defaultPath?: string,
@@ -25,6 +25,7 @@ interface BrigidDesktopApi {
     defaultPath?: string,
   ) => Promise<{ canceled: boolean; folderPath?: string }>
   openPath?: (path: string) => Promise<void>
+  readTextFile?: (path: string) => Promise<{ success: boolean; content?: string; path?: string; error?: string }>
 }
 
 interface Window {

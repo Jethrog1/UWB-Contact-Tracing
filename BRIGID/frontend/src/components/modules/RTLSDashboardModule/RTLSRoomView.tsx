@@ -932,16 +932,6 @@ const RTLSRoomView = forwardRef<RTLSRoomViewHandle, Props>(({
 
   return (
     <div className="rtls-room-view">
-      <div className="rtls-room-view__header">
-        <div className="rtls-room-view__title">{room.room_name}</div>
-        <div className="rtls-room-view__meta">
-          {room.room_bounds_ft.width.toFixed(1)} × {room.room_bounds_ft.height.toFixed(1)} ft
-          {' · '}
-          {room.anchors.length} anchor{room.anchors.length !== 1 ? 's' : ''}
-          {' · '}
-          Ref: {activeReferenceAnchor?.hw_id || activeReferenceAnchor?.id || '—'}
-        </div>
-      </div>
       <canvas
         ref={canvasRef}
         className="rtls-room-view__canvas"

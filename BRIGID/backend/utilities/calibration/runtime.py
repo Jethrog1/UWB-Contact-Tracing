@@ -107,11 +107,19 @@ def calc_pos(anchor_positions: dict[str, list[float]], distances_dict: dict[str,
         iy1 = y3 - h * (x2 - x1) / d
         ix2 = x3 - h * (y2 - y1) / d
         iy2 = y3 + h * (x2 - x1) / d
+        # With only 2 anchors active, trilateration is mirror-ambiguous; force the
+        # solution into the positive quadrant so tags never appear behind the wall.
+        pos1 = ix1 >= 0 and iy1 >= 0
+        pos2 = ix2 >= 0 and iy2 >= 0
+        if pos1 and not pos2:
+            return round(ix1, 3), round(iy1, 3)
+        if pos2 and not pos1:
+            return round(ix2, 3), round(iy2, 3)
         cx = sum(point[0] for point in valid) / len(valid)
         cy = sum(point[1] for point in valid) / len(valid)
         if (ix1 - cx) ** 2 + (iy1 - cy) ** 2 < (ix2 - cx) ** 2 + (iy2 - cy) ** 2:
-            return round(ix1, 3), round(iy1, 3)
-        return round(ix2, 3), round(iy2, 3)
+            return round(abs(ix1), 3), round(abs(iy1), 3)
+        return round(abs(ix2), 3), round(abs(iy2), 3)
 
     x0, y0, r0 = valid[0]
     matrix_a: list[list[float]] = []
@@ -652,6 +660,7 @@ class CalibrationRuntime:
                     "tag_id": self._capture_tid,
                     "target": self._capture_target,
                     "counts": {anchor_id: len(values) for anchor_id, values in self._capture_buf.items()},
+                    "stall_remaining": self._capture_stall_remaining_locked(now),
                 },
                 "map": {
                     "anchors": {anchor_id: list(coords) for anchor_id, coords in self._anchors.items()},
@@ -667,6 +676,30 @@ class CalibrationRuntime:
                 },
                 "tags": tags,
             }
+
+    def _capture_stall_remaining_locked(self, now: float) -> dict[str, float]:
+        """Seconds remaining before each anchor's 10s stall window expires.
+
+        Returned only for anchors that are still collecting samples and have
+        gone >=0.5s without a fresh reading. Frontend renders this as a
+        countdown next to the anchor's capture count.
+        """
+        if not self._capture_active or self._capture_phase != "collect":
+            return {}
+        out: dict[str, float] = {}
+        for anchor_id, target in self._capture_true.items():
+            values = self._capture_buf.get(anchor_id, [])
+            if len(values) >= self._capture_target:
+                continue
+            last_at = self._capture_last_sample_at.get(anchor_id, 0.0)
+            if last_at > 0 and (now - last_at) < 0.5:
+                continue
+            baseline = max(last_at, self._capture_phase_started_at)
+            remaining = 10.0 - (now - baseline)
+            if remaining < 0.0:
+                remaining = 0.0
+            out[anchor_id] = round(remaining, 1)
+        return out
 
     def _captured_points_log_locked(self, tag_id: str) -> list[str]:
         lines: list[str] = []
@@ -743,13 +776,19 @@ class CalibrationRuntime:
             all_done = True
             for anchor_id in self._capture_true:
                 values = self._capture_buf.setdefault(anchor_id, [])
-                if len(values) < self._capture_target:
-                    all_done = False
-                    raw_value = self._tag_values.get(self._capture_tid, {}).get(anchor_id, -1.0)
-                    last_at = self._capture_last_sample_at.get(anchor_id, 0.0)
-                    if raw_value > 0 and (now - last_at) >= 0.08:
-                        values.append(raw_value)
-                        self._capture_last_sample_at[anchor_id] = now
+                if len(values) >= self._capture_target:
+                    continue
+                last_at = self._capture_last_sample_at.get(anchor_id, 0.0)
+                # No new sample for this anchor in 10s — accept what we have (possibly
+                # nothing) and stop waiting on it.
+                baseline = max(last_at, self._capture_phase_started_at)
+                if (now - baseline) >= 10.0:
+                    continue
+                all_done = False
+                raw_value = self._tag_values.get(self._capture_tid, {}).get(anchor_id, -1.0)
+                if raw_value > 0 and (now - last_at) >= 0.08:
+                    values.append(raw_value)
+                    self._capture_last_sample_at[anchor_id] = now
 
             if all_done:
                 self._capture_phase = "fusing"
