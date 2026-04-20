@@ -92,6 +92,84 @@ interface RTLSLoadResponse extends RTLSSnapshot {
   floorplan_segments?: FloorplanSegment[]
 }
 
+interface RTLSAnalyticsSummary {
+  rows_analyzed: number
+  unique_tags: number
+  unique_pairs: number
+  time_windows: number
+  peak_probability_pct: number
+  avg_probability_pct: number
+  latest_window: string | null
+  highest_tag: string | null
+}
+
+interface RTLSAnalyticsWindow {
+  rank: number
+  pair: string
+  tag_a: string
+  tag_b: string
+  chunk_start: string | null
+  first_seen: string | null
+  last_seen: string | null
+  risk_band: string
+  probability_pct: number
+  predicted_positive: boolean
+  close_contact_minutes: number
+  cumulative_contact_hours: number
+  exposure_minutes: number
+  infection_pressure: number
+  mean_distance_ft: number
+  min_distance_ft: number
+}
+
+interface RTLSAnalyticsPairSummary {
+  pair: string
+  tag_a: string
+  tag_b: string
+  max_probability_pct: number
+  avg_probability_pct: number
+  latest_probability_pct: number
+  windows_analyzed: number
+  windows_above_50: number
+  total_close_contact_hours: number
+  total_exposure_hours: number
+  peak_window: string | null
+  peak_risk_band: string
+}
+
+interface RTLSAnalyticsTagSummary {
+  tag_id: string
+  max_probability_pct: number
+  avg_probability_pct: number
+  linked_pairs: number
+  total_close_contact_hours: number
+  peak_pair: string
+  peak_window: string | null
+  peak_risk_band: string
+}
+
+interface RTLSAnalyticsTrendPoint {
+  chunk_start: string | null
+  peak_probability_pct: number
+  mean_probability_pct: number
+  window_count: number
+}
+
+interface RTLSAnalyticsResponse {
+  success: boolean
+  error?: string
+  csv_path: string
+  generated_at: string
+  chunk_minutes: number
+  model_name: string
+  summary: RTLSAnalyticsSummary
+  hottest_window: RTLSAnalyticsWindow | null
+  top_windows: RTLSAnalyticsWindow[]
+  pair_leaderboard: RTLSAnalyticsPairSummary[]
+  tag_leaderboard: RTLSAnalyticsTagSummary[]
+  trend: RTLSAnalyticsTrendPoint[]
+}
+
 interface RTLSDashboardProps {
   workspaceId: string
   workspaceName: string
@@ -149,6 +227,24 @@ const normalizeRoom = (room: RoomData): RoomData => {
     reference_anchor_id: room.reference_anchor_id ?? anchors[0]?.id ?? null,
     edges: room.edges ?? [],
   }
+}
+
+const formatPercent = (value: number | null | undefined): string => (
+  typeof value === 'number' && Number.isFinite(value) ? `${value.toFixed(1)}%` : '—'
+)
+
+const formatHours = (value: number | null | undefined): string => (
+  typeof value === 'number' && Number.isFinite(value) ? `${value.toFixed(2)} h` : '—'
+)
+
+const formatMinutes = (value: number | null | undefined): string => (
+  typeof value === 'number' && Number.isFinite(value) ? `${value.toFixed(1)} min` : '—'
+)
+
+const formatDateTime = (value: string | null | undefined): string => {
+  if (!value) return '—'
+  const parsed = new Date(value)
+  return Number.isNaN(parsed.getTime()) ? value : parsed.toLocaleString()
 }
 
 const transportStatusColor = (status: string): string => {
@@ -284,8 +380,10 @@ const RTLSDashboard: React.FC<RTLSDashboardProps> = ({ workspaceId, workspaceNam
   const [activePanelTab, setActivePanelTab] = useState<DashboardPanelTab>('setup')
   const [loadCollapsed, setLoadCollapsed] = useState(false)
   const [visualSettings, setVisualSettings] = useState<RTLSVisualSettings>(DEFAULT_VISUAL)
+  const [analyticsData, setAnalyticsData] = useState<RTLSAnalyticsResponse | null>(null)
+  const [analyticsBusy, setAnalyticsBusy] = useState(false)
   const [workspacePaths, setWorkspacePaths] = useState<{
-    svg?: string; rooms?: string; tags?: string; projects?: string
+    svg?: string; rooms?: string; tags?: string; projects?: string; rtls?: string
   }>({})
   const [profileRootPath, setProfileRootPath] = useState<string | undefined>(undefined)
 
@@ -300,6 +398,7 @@ const RTLSDashboard: React.FC<RTLSDashboardProps> = ({ workspaceId, workspaceNam
           rooms: data.rooms,
           tags: data.tags,
           projects: data.projects,
+          rtls: data.rtls,
         })
       })
       .catch(() => { /* optional */ })
@@ -466,6 +565,7 @@ const RTLSDashboard: React.FC<RTLSDashboardProps> = ({ workspaceId, workspaceNam
     setRooms([])
     setFloorplanSegments([])
     setProjectName('')
+    setAnalyticsData(null)
     setRoomLoaded(false)
     setRoomTabs([])
     setSelectedRoomName(null)
@@ -721,6 +821,42 @@ const RTLSDashboard: React.FC<RTLSDashboardProps> = ({ workspaceId, workspaceNam
       showMsg('Could not change CSV logging state.', 'error')
     }
   }, [showMsg, snap.csv.enabled])
+
+  const runAnalytics = useCallback(async (csvPath?: string) => {
+    const selectedPath = (csvPath ?? snap.csv.path ?? analyticsData?.csv_path ?? '').trim()
+    if (!selectedPath) {
+      showMsg('Start Log CSV or choose a saved RTLS CSV first.', 'warn')
+      return
+    }
+    setAnalyticsBusy(true)
+    try {
+      const res = await fetch(`${API}/api/rtls/analytics/run`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ csv_path: selectedPath }),
+      })
+      const data = await res.json() as RTLSAnalyticsResponse
+      if (data.success) {
+        setAnalyticsData(data)
+        showMsg(`Analytics ready for ${data.summary.unique_pairs} tag pairs.`, 'ok')
+      } else {
+        showMsg(data.error ?? 'Analytics could not be generated.', 'warn')
+      }
+    } catch {
+      showMsg('Could not run RTLS analytics.', 'error')
+    } finally {
+      setAnalyticsBusy(false)
+    }
+  }, [analyticsData?.csv_path, showMsg, snap.csv.path])
+
+  const chooseAnalyticsCsv = useCallback(async () => {
+    const picker = await window.api?.openFile?.(
+      [{ name: 'RTLS CSV', extensions: ['csv'] }],
+      workspacePaths.rtls || undefined,
+    )
+    if (!picker || picker.canceled || !picker.filePaths[0]) return
+    await runAnalytics(picker.filePaths[0])
+  }, [runAnalytics, workspacePaths.rtls])
 
   const selectRoom = useCallback(async (roomName: string) => {
     setSelectedRoomName(roomName)
@@ -1213,21 +1349,213 @@ const RTLSDashboard: React.FC<RTLSDashboardProps> = ({ workspaceId, workspaceNam
     </>
   )
 
+  const analyticsChart = useMemo(() => {
+    const points = analyticsData?.trend ?? []
+    if (points.length === 0) return null
+    const width = 248
+    const height = 90
+    const padX = 8
+    const padY = 10
+    const usableWidth = width - (padX * 2)
+    const usableHeight = height - (padY * 2)
+    const peakMax = Math.max(1, ...points.map(point => point.peak_probability_pct))
+    const pointFor = (value: number, index: number, total: number) => {
+      const x = total <= 1 ? width / 2 : padX + ((usableWidth * index) / (total - 1))
+      const y = padY + usableHeight - ((Math.max(0, value) / peakMax) * usableHeight)
+      return `${x},${y}`
+    }
+    return {
+      width,
+      height,
+      peakMax,
+      peakLine: points.map((point, index) => pointFor(point.peak_probability_pct, index, points.length)).join(' '),
+      meanLine: points.map((point, index) => pointFor(point.mean_probability_pct, index, points.length)).join(' '),
+      firstLabel: formatDateTime(points[0]?.chunk_start),
+      lastLabel: formatDateTime(points[points.length - 1]?.chunk_start),
+    }
+  }, [analyticsData])
+
   const renderAnalyticsTab = () => (
     <>
       <div className="rtls-section">
-        <div className="rtls-section-title">Analytics</div>
+        <div className="rtls-section-title">Transmission Model</div>
+        <div className="rtls-analytics-toolbar">
+          <button
+            className="rtls-btn rtls-btn--primary"
+            disabled={analyticsBusy || (!snap.csv.path && !analyticsData?.csv_path)}
+            onClick={() => void runAnalytics()}
+          >
+            {analyticsBusy ? 'Analyzing…' : (snap.csv.enabled ? 'Analyze Live Log' : 'Analyze Last Log')}
+          </button>
+          <button className="rtls-btn" disabled={analyticsBusy} onClick={() => void chooseAnalyticsCsv()}>
+            Choose CSV…
+          </button>
+        </div>
         <div className="rtls-runtime-note">
-          This tab is staged for future exposure and occupancy views that build on the same heatmap-oriented data flow from the docs.
+          Runs the bundled model against real RTLS CSV distance logs and ranks the highest transmission-pressure windows by tag pair.
         </div>
+        {snap.csv.path && (
+          <div className="rtls-csv-path">Current log: {snap.csv.path}</div>
+        )}
+        {analyticsData?.csv_path && (
+          <div className="rtls-analytics-meta">
+            Loaded file: {analyticsData.csv_path}
+            <br />
+            Model: {analyticsData.model_name} · {analyticsData.chunk_minutes}-minute windows · Last run {formatDateTime(analyticsData.generated_at)}
+          </div>
+        )}
       </div>
-      <div className="rtls-section">
-        <div className="rtls-section-title">Planned Outputs</div>
-        <div className="rtls-placeholder-list">
-          <div className="rtls-placeholder-item">Room-level exposure summaries and trend views.</div>
-          <div className="rtls-placeholder-item">Session insights derived from live tags plus upcoming simulated visual layers.</div>
+
+      {!analyticsData ? (
+        <div className="rtls-section">
+          <div className="rtls-section-title">Ready To Analyze</div>
+          <div className="rtls-placeholder-list">
+            <div className="rtls-placeholder-item">Start `Log CSV` in Setup, collect real tag traffic, then run `Analyze Live Log`.</div>
+            <div className="rtls-placeholder-item">You can also choose any saved RTLS CSV to rank the highest-risk windows, hottest tags, and strongest pair interactions.</div>
+          </div>
         </div>
-      </div>
+      ) : (
+        <>
+          <div className="rtls-section">
+            <div className="rtls-section-title">Session Snapshot</div>
+            <div className="rtls-panel-info-grid">
+              <div className="rtls-panel-info-card">
+                <span className="rtls-panel-info-card__label">Peak Window</span>
+                <span className="rtls-panel-info-card__value">{formatPercent(analyticsData.summary.peak_probability_pct)}</span>
+              </div>
+              <div className="rtls-panel-info-card">
+                <span className="rtls-panel-info-card__label">Average Window</span>
+                <span className="rtls-panel-info-card__value">{formatPercent(analyticsData.summary.avg_probability_pct)}</span>
+              </div>
+              <div className="rtls-panel-info-card">
+                <span className="rtls-panel-info-card__label">Pairs</span>
+                <span className="rtls-panel-info-card__value">{analyticsData.summary.unique_pairs}</span>
+              </div>
+              <div className="rtls-panel-info-card">
+                <span className="rtls-panel-info-card__label">Highest Tag</span>
+                <span className="rtls-panel-info-card__value">{analyticsData.summary.highest_tag ?? '—'}</span>
+              </div>
+            </div>
+            <div className="rtls-session-grid">
+              <div className="rtls-session-cell">
+                <span className="rtls-session-label">Tags Logged</span>
+                <span className="rtls-session-value">{analyticsData.summary.unique_tags}</span>
+              </div>
+              <div className="rtls-session-cell">
+                <span className="rtls-session-label">Windows</span>
+                <span className="rtls-session-value">{analyticsData.summary.time_windows}</span>
+              </div>
+              <div className="rtls-session-cell">
+                <span className="rtls-session-label">Rows Analyzed</span>
+                <span className="rtls-session-value">{analyticsData.summary.rows_analyzed}</span>
+              </div>
+              <div className="rtls-session-cell">
+                <span className="rtls-session-label">Latest Window</span>
+                <span className="rtls-session-value">{formatDateTime(analyticsData.summary.latest_window)}</span>
+              </div>
+            </div>
+          </div>
+
+          {analyticsData.hottest_window && (
+            <div className="rtls-section">
+              <div className="rtls-section-title">Hottest Window</div>
+              <div className="rtls-analytics-hero">
+                <div className="rtls-analytics-hero__header">
+                  <div>
+                    <div className="rtls-analytics-hero__pair">{analyticsData.hottest_window.pair}</div>
+                    <div className="rtls-analytics-hero__time">{formatDateTime(analyticsData.hottest_window.chunk_start)}</div>
+                  </div>
+                  <div className={`rtls-risk-pill rtls-risk-pill--${analyticsData.hottest_window.risk_band.toLowerCase()}`}>
+                    {analyticsData.hottest_window.risk_band}
+                  </div>
+                </div>
+                <div className="rtls-analytics-hero__score">
+                  {formatPercent(analyticsData.hottest_window.probability_pct)}
+                </div>
+                <div className="rtls-analytics-hero__meta">
+                  <span>Close: {formatMinutes(analyticsData.hottest_window.close_contact_minutes)}</span>
+                  <span>Cumulative: {formatHours(analyticsData.hottest_window.cumulative_contact_hours)}</span>
+                  <span>Min distance: {analyticsData.hottest_window.min_distance_ft.toFixed(1)} ft</span>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {analyticsChart && (
+            <div className="rtls-section">
+              <div className="rtls-section-title">Room Risk Curve</div>
+              <div className="rtls-analytics-chart">
+                <svg viewBox={`0 0 ${analyticsChart.width} ${analyticsChart.height}`} className="rtls-analytics-chart__svg">
+                  <polyline className="rtls-analytics-chart__line rtls-analytics-chart__line--mean" fill="none" points={analyticsChart.meanLine} />
+                  <polyline className="rtls-analytics-chart__line rtls-analytics-chart__line--peak" fill="none" points={analyticsChart.peakLine} />
+                </svg>
+                <div className="rtls-analytics-chart__labels">
+                  <span>{analyticsChart.firstLabel}</span>
+                  <span>Peak {formatPercent(analyticsChart.peakMax)}</span>
+                  <span>{analyticsChart.lastLabel}</span>
+                </div>
+              </div>
+            </div>
+          )}
+
+          <div className="rtls-section">
+            <div className="rtls-section-title">Top Transmission Windows</div>
+            <div className="rtls-analytics-list">
+              {analyticsData.top_windows.slice(0, 6).map(windowRow => (
+                <div key={`${windowRow.pair}-${windowRow.chunk_start}-${windowRow.rank}`} className="rtls-analytics-row">
+                  <div className="rtls-analytics-row__title">
+                    <span>{windowRow.rank}. {windowRow.pair}</span>
+                    <span>{formatPercent(windowRow.probability_pct)}</span>
+                  </div>
+                  <div className="rtls-analytics-row__meta">
+                    <span>{formatDateTime(windowRow.chunk_start)}</span>
+                    <span>{windowRow.risk_band}</span>
+                    <span>{formatMinutes(windowRow.close_contact_minutes)} close</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="rtls-section">
+            <div className="rtls-section-title">Tag Pressure Leaderboard</div>
+            <div className="rtls-analytics-list">
+              {analyticsData.tag_leaderboard.slice(0, 5).map(tag => (
+                <div key={`${tag.tag_id}-${tag.peak_window}`} className="rtls-analytics-row">
+                  <div className="rtls-analytics-row__title">
+                    <span>{tag.tag_id}</span>
+                    <span>{formatPercent(tag.max_probability_pct)}</span>
+                  </div>
+                  <div className="rtls-analytics-row__meta">
+                    <span>{tag.peak_pair}</span>
+                    <span>{tag.peak_risk_band}</span>
+                    <span>{tag.linked_pairs} pairs</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="rtls-section">
+            <div className="rtls-section-title">Pair Leaderboard</div>
+            <div className="rtls-analytics-list">
+              {analyticsData.pair_leaderboard.slice(0, 5).map(pair => (
+                <div key={`${pair.pair}-${pair.peak_window}`} className="rtls-analytics-row">
+                  <div className="rtls-analytics-row__title">
+                    <span>{pair.pair}</span>
+                    <span>{formatPercent(pair.max_probability_pct)}</span>
+                  </div>
+                  <div className="rtls-analytics-row__meta">
+                    <span>{pair.windows_above_50} hot windows</span>
+                    <span>{formatHours(pair.total_close_contact_hours)} close</span>
+                    <span>{pair.peak_risk_band}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </>
+      )}
     </>
   )
 
