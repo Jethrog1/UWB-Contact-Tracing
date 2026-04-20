@@ -45,12 +45,19 @@ ensure_backend_env() {
     "$BACKEND_PYTHON" -m pip install -r requirements.txt
 }
 
+ensure_ml_compat_env() {
+    echo "[*] Verifying RTLS analytics compatibility runtime..."
+    cd "$BACKEND_DIR"
+    "$BACKEND_PYTHON" setup_backend.py --ensure-ml-compat
+}
+
 echo "====================================="
 echo "   BRIGID RTLS Desktop Platform"
 echo "====================================="
 echo
 
 ensure_backend_env
+ensure_ml_compat_env
 
 if [ "$WITH_BACKEND" -eq 1 ]; then
     echo "[*] Starting Python backend..."

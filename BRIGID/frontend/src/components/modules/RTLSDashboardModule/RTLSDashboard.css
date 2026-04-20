@@ -1067,6 +1067,170 @@
   background: rgba(255, 255, 255, 0.02);
 }
 
+.rtls-analytics-toolbar {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.rtls-analytics-toolbar .rtls-btn {
+  flex: 1;
+}
+
+.rtls-analytics-meta {
+  margin-top: 6px;
+  font-size: var(--text-xs);
+  line-height: 1.45;
+  color: var(--text-muted);
+}
+
+.rtls-analytics-hero {
+  padding: 10px;
+  border: 1px solid rgba(95, 136, 184, 0.32);
+  border-radius: var(--radius-sm);
+  background:
+    linear-gradient(180deg, rgba(74, 107, 151, 0.16), rgba(255, 255, 255, 0.02)),
+    rgba(255, 255, 255, 0.02);
+}
+
+.rtls-analytics-hero__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.rtls-analytics-hero__pair {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text-primary);
+  letter-spacing: 0.03em;
+}
+
+.rtls-analytics-hero__time {
+  margin-top: 2px;
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+
+.rtls-analytics-hero__score {
+  margin-top: 10px;
+  font-family: var(--font-mono);
+  font-size: 26px;
+  color: #f5fbff;
+}
+
+.rtls-analytics-hero__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+}
+
+.rtls-risk-pill {
+  padding: 3px 8px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.rtls-risk-pill--critical {
+  color: #ffd1d1;
+  background: rgba(190, 51, 51, 0.24);
+  border-color: rgba(232, 96, 96, 0.4);
+}
+
+.rtls-risk-pill--high {
+  color: #ffe1b5;
+  background: rgba(180, 110, 20, 0.22);
+  border-color: rgba(255, 177, 31, 0.4);
+}
+
+.rtls-risk-pill--elevated {
+  color: #d7ebff;
+  background: rgba(74, 107, 151, 0.22);
+  border-color: rgba(102, 158, 222, 0.35);
+}
+
+.rtls-risk-pill--low {
+  color: #d7f7df;
+  background: rgba(50, 120, 77, 0.18);
+  border-color: rgba(66, 209, 126, 0.3);
+}
+
+.rtls-analytics-chart {
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  background: rgba(255, 255, 255, 0.02);
+  padding: 8px;
+}
+
+.rtls-analytics-chart__svg {
+  display: block;
+  width: 100%;
+  height: 92px;
+}
+
+.rtls-analytics-chart__line {
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.rtls-analytics-chart__line--peak {
+  stroke: #9ad1ff;
+}
+
+.rtls-analytics-chart__line--mean {
+  stroke: rgba(255, 255, 255, 0.46);
+}
+
+.rtls-analytics-chart__labels {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 6px;
+  font-size: 10px;
+  color: var(--text-muted);
+}
+
+.rtls-analytics-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.rtls-analytics-row {
+  padding: 8px 9px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.rtls-analytics-row__title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  color: var(--text-primary);
+  font-size: var(--text-base);
+  font-weight: 600;
+}
+
+.rtls-analytics-row__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 4px;
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+}
+
 /* ── Responsive ───────────────────────────────────────────────────── */
 
 @media (max-width: 1200px) {

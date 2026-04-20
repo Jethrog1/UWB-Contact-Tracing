@@ -31,6 +31,7 @@ from config import (
     ensure_workspace_dirs, delete_workspace_if_empty,
     rename_workspace_folder, list_existing_workspaces,
 )
+from RTLSDashboard.analytics_runtime import analyze_csv_log
 from RTLSDashboard.rtls_runtime import RTLSRuntime
 from utilities.profilers.tag_profile_io import (
     create_empty_profile,
@@ -861,6 +862,10 @@ class RtlsElevationRequest(BaseModel):
     value_ft: Optional[float] = None
 
 
+class RtlsAnalyticsRequest(BaseModel):
+    csv_path: Optional[str] = None
+
+
 def _load_workspace_profiles(workspace_id: Optional[str], workspace_name: Optional[str] = None) -> list[dict]:
     """Load all tag profiles from workspace-specific or global tags dir."""
     tags_dir = _resolve_tags_dir(workspace_id, workspace_name)
@@ -1222,3 +1227,20 @@ async def api_rtls_csv_stop():
     """Stop CSV distance logging."""
     _rtls_runtime.stop_csv_logging()
     return {"success": True, **_rtls_runtime.snapshot()}
+
+
+@app.post("/api/rtls/analytics/run")
+async def api_rtls_analytics_run(req: RtlsAnalyticsRequest):
+    csv_path = (req.csv_path or _rtls_runtime.snapshot().get("csv", {}).get("path") or "").strip()
+    if not csv_path:
+        return {
+            "success": False,
+            "error": "No RTLS CSV log is available yet. Start Log CSV or choose a saved CSV first.",
+        }
+    try:
+        return {"success": True, **analyze_csv_log(csv_path)}
+    except (FileNotFoundError, RuntimeError, ValueError) as exc:
+        return {"success": False, "error": str(exc)}
+    except Exception:
+        logger.exception("RTLS analytics run failed for %s", csv_path)
+        return {"success": False, "error": "RTLS analytics failed unexpectedly."}
