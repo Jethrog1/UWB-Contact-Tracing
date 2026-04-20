@@ -103,6 +103,18 @@
   color: var(--text-primary);
 }
 
+.crp-tool-btn--danger:hover {
+  background: rgba(255, 91, 77, 0.12);
+  border-color: rgba(255, 91, 77, 0.3);
+  color: #ff5b4d;
+}
+
+.crp-tool-btn--trim:hover {
+  background: rgba(255, 91, 77, 0.08);
+  border-color: rgba(255, 91, 77, 0.2);
+  color: #ff5b4d;
+}
+
 .crp-tool-icon {
   font-size: 13px;
   line-height: 1;

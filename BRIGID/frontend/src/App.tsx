@@ -11,6 +11,7 @@ import TagProfiler from './components/modules/TagProfilerModule/TagProfiler'
 import AnchorManager from './components/modules/AnchorManagerModule/AnchorManager'
 import CalibrationTool from './components/modules/CalibrationToolModule/CalibrationTool'
 import RTLSDashboard from './components/modules/RTLSDashboardModule/RTLSDashboard'
+import { ConfirmHost, confirmAsync } from './components/common/ConfirmDialog'
 import { AppModule, WorkspaceTab } from './types'
 import './App.css'
 
@@ -192,6 +193,11 @@ const App: React.FC = () => {
   
   const [existingWorkspaces, setExistingWorkspaces] = useState<WorkspaceInfo[]>([])
   const [isLoading, setIsLoading] = useState(true)
+
+  const [bleIdleEnabled, setBleIdleEnabled] = useState(false)
+  const [bleIdleAvailable, setBleIdleAvailable] = useState(true)
+  const [bleIdleTags, setBleIdleTags] = useState<Array<{ tag_id: string; mac_address: string; status: string }>>([])
+  const [bleIdleDetail, setBleIdleDetail] = useState<string>('')
   
   // Track per-tab workspace name for renaming (keeps names stable)
   const tabNamesRef = useRef<Record<string, string>>({})
@@ -252,7 +258,18 @@ const App: React.FC = () => {
   }, [])
 
   const handleOpenWorkspaceDialog = useCallback(async () => {
-    if (window.api && window.api.openFolder) {
+    if (window.api?.getPaths && window.api.openPath) {
+      try {
+        const paths = await window.api.getPaths()
+        if (paths?.profile) {
+          await window.api.openPath(paths.profile)
+          return
+        }
+      } catch {
+        // fall through to folder picker
+      }
+    }
+    if (window.api?.openFolder) {
       const { canceled, folderPath } = await window.api.openFolder()
       if (!canceled && folderPath) {
         const folderName = folderPath.split(/[/\\]/).pop() || 'Imported Workspace'
@@ -264,17 +281,29 @@ const App: React.FC = () => {
   }, [handleOpenWorkspace])
 
   const handleSave = useCallback(() => {
-    if (activeTabId) window.dispatchEvent(new CustomEvent('workspace-save-command', { detail: { workspaceId: activeTabId } }))
-  }, [activeTabId])
+    if (!activeTabId) return
+    const tab = tabs.find(t => t.id === activeTabId)
+    window.dispatchEvent(new CustomEvent('workspace-save-command', {
+      detail: { workspaceId: activeTabId, module: tab?.module ?? null },
+    }))
+  }, [activeTabId, tabs])
 
   const handleSaveAs = useCallback(() => {
-    if (activeTabId) window.dispatchEvent(new CustomEvent('workspace-save-as-command', { detail: { workspaceId: activeTabId } }))
-  }, [activeTabId])
+    if (!activeTabId) return
+    const tab = tabs.find(t => t.id === activeTabId)
+    window.dispatchEvent(new CustomEvent('workspace-save-as-command', {
+      detail: { workspaceId: activeTabId, module: tab?.module ?? null },
+    }))
+  }, [activeTabId, tabs])
 
-  const handleTabClose = useCallback((id: string) => {
-    if (!window.confirm("Are you sure you would like to close this workspace? Unsaved changes may be lost.")) {
-      return
-    }
+  const handleTabClose = useCallback(async (id: string) => {
+    const ok = await confirmAsync({
+      title: 'Close Workspace',
+      message: 'Are you sure you would like to close this workspace? Unsaved changes may be lost.',
+      confirmLabel: 'Close',
+      danger: true,
+    })
+    if (!ok) return
 
     setTabs(prev => {
       const index = prev.findIndex(tab => tab.id === id)
@@ -336,6 +365,28 @@ const App: React.FC = () => {
     }
   }, [activeTabId, activeModule])
 
+  const dispatchModuleCommand = useCallback((cmd: string) => {
+    if (!activeTabId || !activeModule || isHome) return
+    const eventMap: Partial<Record<AppModule, string>> = {
+      cad: 'cad-view-command',
+      anchors: 'anchor-view-command',
+      calibration: 'calibration-view-command',
+      rtls: 'rtls-view-command',
+    }
+    const eventName = eventMap[activeModule]
+    if (eventName) {
+      window.dispatchEvent(new CustomEvent(eventName, { detail: { cmd, workspaceId: activeTabId } }))
+    }
+  }, [activeTabId, activeModule, isHome])
+
+  const handleViewCommand = useCallback((cmd: 'zoom_in' | 'zoom_out' | 'zoom_reset') => {
+    dispatchModuleCommand(cmd)
+  }, [dispatchModuleCommand])
+
+  const handleEditCommand = useCallback((cmd: 'undo' | 'redo') => {
+    dispatchModuleCommand(cmd)
+  }, [dispatchModuleCommand])
+
   const handleOpenFolder = useCallback(async () => {
     if (!activeTabId || !activeTab) return
     try {
@@ -356,8 +407,92 @@ const App: React.FC = () => {
     window.dispatchEvent(new CustomEvent('anchor-view-command', { detail: { cmd: 'set_tool', tool, workspaceId: activeTabId } }))
   }, [activeModule, activeTabId])
 
+  const handleCadToolSelect = useCallback((tool: 'cursor' | 'line' | 'vertex' | 'dim' | 'rotate' | 'trim') => {
+    if (!activeTabId || activeModule !== 'cad') return
+    window.dispatchEvent(new CustomEvent('cad-view-command', {
+      detail: { cmd: 'set_tool', tool, workspaceId: activeTabId },
+    }))
+  }, [activeModule, activeTabId])
+
+  const handleRtlsQuickSetup = useCallback(() => {
+    if (!activeTabId || activeModule !== 'rtls' || isHome) return
+    window.dispatchEvent(new CustomEvent('rtls-quick-setup', {
+      detail: { workspaceId: activeTabId },
+    }))
+  }, [activeModule, activeTabId, isHome])
+
+  useEffect(() => {
+    const handler = (event: KeyboardEvent) => {
+      if (!(event.ctrlKey || event.metaKey)) return
+      if (event.altKey || event.shiftKey) return
+      if (event.key.toLowerCase() !== 'q') return
+      if (activeModule !== 'rtls' || !activeTabId || isHome) return
+      event.preventDefault()
+      handleRtlsQuickSetup()
+    }
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  }, [activeModule, activeTabId, isHome, handleRtlsQuickSetup])
+
+  useEffect(() => {
+    let cancelled = false
+    const poll = async () => {
+      try {
+        const res = await fetch(`${API}/api/ble_idle/status`)
+        if (!res.ok) return
+        const data = await res.json()
+        if (cancelled) return
+        setBleIdleEnabled(Boolean(data.enabled))
+        setBleIdleAvailable(Boolean(data.available))
+        setBleIdleTags(Array.isArray(data.tags) ? data.tags : [])
+        setBleIdleDetail(typeof data.detail === 'string' ? data.detail : '')
+      } catch {
+        // ignore
+      }
+    }
+    poll()
+    const interval = window.setInterval(poll, 3000)
+    return () => {
+      cancelled = true
+      window.clearInterval(interval)
+    }
+  }, [])
+
+  const handleBleIdleToggle = useCallback(async () => {
+    if (bleIdleEnabled) {
+      try {
+        const res = await fetch(`${API}/api/ble_idle/disable`, { method: 'POST' })
+        const data = await res.json().catch(() => ({}))
+        setBleIdleEnabled(Boolean(data.enabled))
+      } catch {
+        // ignore
+      }
+      return
+    }
+    const workspaceName = activeTab?.name ?? tabNamesRef.current[activeTabId ?? ''] ?? null
+    try {
+      const res = await fetch(`${API}/api/ble_idle/enable`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          workspace_id: activeTabId,
+          workspace_name: workspaceName,
+        }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (data?.success === false && data?.error) {
+        alert(`Active BLE Idle: ${data.error}`)
+      }
+      setBleIdleEnabled(Boolean(data.enabled))
+      if (typeof data.available === 'boolean') setBleIdleAvailable(data.available)
+    } catch (exc) {
+      alert(`Active BLE Idle could not start: ${String(exc)}`)
+    }
+  }, [activeTab, activeTabId, bleIdleEnabled])
+
   return (
     <div className="bp5-dark app-root">
+      <ConfirmHost />
       <AnimatePresence>
         {isLoading && (
           <motion.div 
@@ -377,20 +512,29 @@ const App: React.FC = () => {
       {!isLoading && (
         <motion.div className="app-shell" initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.6 }}>
           <HotBar
-            activeModule={activeModule}
+            activeModule={isHome ? null : activeModule}
             hasWorkspace={canCloseTab}
             onNewWorkspace={handleNewTab}
             onOpenWorkspace={handleOpenWorkspaceDialog}
             onSave={handleSave}
             onSaveAs={handleSaveAs}
             onCloseTab={() => activeTabId && handleTabClose(activeTabId)}
+            onViewCommand={handleViewCommand}
+            onEditCommand={handleEditCommand}
             onAnchorToolSelect={handleAnchorToolSelect}
+            onCadToolSelect={handleCadToolSelect}
+            bleIdleEnabled={bleIdleEnabled}
+            bleIdleAvailable={bleIdleAvailable}
+            bleIdleTags={bleIdleTags}
+            bleIdleDetail={bleIdleDetail}
+            onBleIdleToggle={handleBleIdleToggle}
+            onRtlsQuickSetup={handleRtlsQuickSetup}
           />
 
           <TabStrip
             tabs={tabs}
             activeTabId={activeTabId}
-            activeModule={activeModule}
+            activeModule={isHome ? null : activeModule}
             onTabSelect={(id) => {
               setActiveTabId(id)
               setIsHome(false)

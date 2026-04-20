@@ -1,6 +1,7 @@
-import React, { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from 'react'
+import React, { forwardRef, useCallback, useEffect, useImperativeHandle, useRef } from 'react'
 import { RoomData, SegmentData } from '../../../types'
 import { chainSegmentsToPolygon, pointInPolygon } from '../AnchorManagerModule/anchorGeometry'
+import { FloorplanSettings } from './RTLSDashboard'
 
 export interface RTLSViewport {
   offsetX: number
@@ -25,6 +26,7 @@ interface RTLSDashboardCanvasProps {
   anchors: Record<string, [number, number]>
   tags: RTLSTagState[]
   referenceAnchorId?: string
+  floorplanSettings?: FloorplanSettings
   onRoomClick?: (roomName: string) => void
   onRoomDoubleClick?: (roomName: string) => void
   onRoomHover?: (roomName: string | null) => void
@@ -45,6 +47,12 @@ const ROOM_OUTLINE_HOVER = '#3a78c0'
 const ROOM_FILL = 'rgba(74, 158, 255, 0.035)'
 const ROOM_FILL_ACTIVE = 'rgba(74, 158, 255, 0.08)'
 const ROOM_FILL_HOVER = 'rgba(74, 158, 255, 0.055)'
+const ANCHOR_COLOR_FP = '#ff9b38'
+const ANCHOR_LABEL_COLOR = '#ffffff'
+
+const FP_CELL_FT = 0.02
+const FP_BASE_HEAT = 0.08
+const FP_MARGIN_FT = 1.0
 
 const TAG_PALETTE = [
   '#3a9fe8', '#e67e22', '#9b59b6', '#27ae60',
@@ -68,22 +76,6 @@ const worldToScreen = (vp: RTLSViewport, wx: number, wy: number): [number, numbe
 const screenToWorld = (vp: RTLSViewport, sx: number, sy: number): [number, number] => (
   [(sx - vp.offsetX) / vp.scale, (sy - vp.offsetY) / vp.scale]
 )
-
-const distPointToSegScreen = (
-  px: number,
-  py: number,
-  x1: number,
-  y1: number,
-  x2: number,
-  y2: number,
-): number => {
-  const dx = x2 - x1
-  const dy = y2 - y1
-  const lenSq = dx * dx + dy * dy
-  if (lenSq < 1e-8) return Math.hypot(px - x1, py - y1)
-  const t = Math.max(0, Math.min(1, ((px - x1) * dx + (py - y1) * dy) / lenSq))
-  return Math.hypot(px - (x1 + t * dx), py - (y1 + t * dy))
-}
 
 const segmentBounds = (segments: SegmentData[]): { minX: number; minY: number; maxX: number; maxY: number } | null => {
   if (segments.length === 0) return null
@@ -143,27 +135,221 @@ const roomAtPoint = (rooms: RoomData[], worldX: number, worldY: number): string 
   return null
 }
 
-const RTLSDashboardCanvas = forwardRef<RTLSDashboardCanvasHandle, RTLSDashboardCanvasProps>(({
-  mode,
-  floorplanSegments,
-  rooms,
-  activeRoomName,
-  currentRoom,
-  hoverRoomName,
-  anchors,
-  tags,
-  referenceAnchorId,
-  onRoomClick,
-  onRoomDoubleClick,
-  onRoomHover,
-}, ref) => {
+function buildLUT(): Uint8Array {
+  const lut = new Uint8Array(256 * 3)
+  const stops: [number, number, number, number][] = [
+    [0.00, 0, 0, 120],
+    [0.05, 0, 30, 180],
+    [0.10, 0, 70, 230],
+    [0.16, 0, 120, 255],
+    [0.22, 0, 170, 255],
+    [0.28, 0, 210, 245],
+    [0.34, 0, 230, 200],
+    [0.40, 0, 245, 160],
+    [0.46, 0, 255, 110],
+    [0.52, 80, 255, 60],
+    [0.58, 160, 255, 20],
+    [0.64, 220, 255, 0],
+    [0.70, 255, 230, 0],
+    [0.76, 255, 195, 0],
+    [0.82, 255, 150, 0],
+    [0.88, 255, 95, 0],
+    [0.93, 235, 45, 5],
+    [0.97, 190, 15, 0],
+    [1.00, 120, 0, 0],
+  ]
+  for (let i = 0; i < 256; i++) {
+    const value = i / 255
+    let start = stops[0]
+    let end = stops[1]
+    for (let j = 0; j < stops.length - 1; j++) {
+      if (value >= stops[j][0] && value <= stops[j + 1][0]) {
+        start = stops[j]
+        end = stops[j + 1]
+        break
+      }
+    }
+    const span = end[0] - start[0]
+    const t = span > 0 ? (value - start[0]) / span : 0
+    const eased = t * t * (3 - 2 * t)
+    lut[i * 3] = Math.round(start[1] + (end[1] - start[1]) * eased)
+    lut[i * 3 + 1] = Math.round(start[2] + (end[2] - start[2]) * eased)
+    lut[i * 3 + 2] = Math.round(start[3] + (end[3] - start[3]) * eased)
+  }
+  return lut
+}
+
+const LUT = buildLUT()
+const LUT32 = new Uint32Array(256)
+for (let i = 0; i < 256; i++) {
+  LUT32[i] = LUT[i * 3]
+    | (LUT[i * 3 + 1] << 8)
+    | (LUT[i * 3 + 2] << 16)
+    | (210 << 24)
+}
+
+function depositHeat(
+  p1x: number,
+  p1y: number,
+  p2x: number,
+  p2y: number,
+  heat: Float32Array,
+  heatMask: Uint8Array,
+  gridW: number,
+  gridH: number,
+  gridOX: number,
+  gridOY: number,
+  gradientRate: number,
+  rangeFt: number,
+  cellFt: number,
+): void {
+  const maxDist = rangeFt
+  const fieldRad = rangeFt * 0.28
+  const depositBase = 0.005 / gradientRate
+
+  const pdx = p2x - p1x
+  const pdy = p2y - p1y
+  const dist2 = pdx * pdx + pdy * pdy
+  if (dist2 >= maxDist * maxDist) return
+
+  const dist = Math.sqrt(dist2)
+  const closeness = 1 - dist / maxDist
+  const strength = depositBase * Math.pow(closeness, 2.2)
+  if (strength <= 0) return
+
+  const x1g = (p1x - gridOX) / cellFt
+  const y1g = (p1y - gridOY) / cellFt
+  const x2g = (p2x - gridOX) / cellFt
+  const y2g = (p2y - gridOY) / cellFt
+
+  const iterR = Math.min(60, Math.max(3, fieldRad / cellFt))
+  const iterR2 = iterR * iterR
+  const pad = Math.ceil(iterR) + 1
+  const minX = Math.max(0, Math.floor(Math.min(x1g, x2g) - pad))
+  const maxX = Math.min(gridW - 1, Math.ceil(Math.max(x1g, x2g) + pad))
+  const minY = Math.max(0, Math.floor(Math.min(y1g, y2g) - pad))
+  const maxY = Math.min(gridH - 1, Math.ceil(Math.max(y1g, y2g) + pad))
+  if (minX > maxX || minY > maxY) return
+
+  const sdx = x2g - x1g
+  const sdy = y2g - y1g
+  const slen2 = sdx * sdx + sdy * sdy
+  const midX = (x1g + x2g) * 0.5
+  const midY = (y1g + y2g) * 0.5
+  const mR2 = Math.pow(Math.max(2.0, iterR * 0.95), 2) * 2
+
+  for (let gy = minY; gy <= maxY; gy++) {
+    const rowBase = gy * gridW
+    for (let gx = minX; gx <= maxX; gx++) {
+      const idx = rowBase + gx
+      if (!heatMask[idx]) continue
+
+      const px = gx + 0.5
+      const py = gy + 0.5
+
+      let dSeg2: number
+      if (slen2 < 1e-6) {
+        const ex = px - x1g
+        const ey = py - y1g
+        dSeg2 = ex * ex + ey * ey
+      } else {
+        const t = Math.max(0, Math.min(1, ((px - x1g) * sdx + (py - y1g) * sdy) / slen2))
+        const ex = px - (x1g + t * sdx)
+        const ey = py - (y1g + t * sdy)
+        dSeg2 = ex * ex + ey * ey
+      }
+      if (dSeg2 >= iterR2) continue
+
+      const r = dSeg2 / iterR2
+      const falloff = (1 - r) * (1 - r)
+
+      const mdx = px - midX
+      const mdy = py - midY
+      const md2 = mdx * mdx + mdy * mdy
+      const midpointWeight = md2 < mR2 ? Math.pow(1 - md2 / mR2, 2) : 0
+
+      const next = heat[idx] + falloff * (0.65 + 0.35 * midpointWeight) * strength
+      heat[idx] = next < 1 ? next : 1
+    }
+  }
+}
+
+interface RuntimeProps {
+  mode: 'floor-plan' | 'room'
+  floorplanSegments: SegmentData[]
+  rooms: RoomData[]
+  activeRoomName: string | null
+  activeRoom: RoomData | null
+  hoverRoomName?: string | null
+  anchors: Record<string, [number, number]>
+  tags: RTLSTagState[]
+  referenceAnchorId?: string
+  floorplanSettings?: FloorplanSettings
+}
+
+const RTLSDashboardCanvas = forwardRef<RTLSDashboardCanvasHandle, RTLSDashboardCanvasProps>((
+  props,
+  ref,
+) => {
+  const {
+    mode,
+    floorplanSegments,
+    rooms,
+    activeRoomName,
+    currentRoom,
+    hoverRoomName,
+    anchors,
+    tags,
+    referenceAnchorId,
+    floorplanSettings,
+    onRoomClick,
+    onRoomDoubleClick,
+    onRoomHover,
+  } = props
+
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const vpRef = useRef<RTLSViewport>({ offsetX: 0, offsetY: 0, scale: 20 })
   const dragRef = useRef<{ x: number; y: number } | null>(null)
-  const [canvasVersion, setCanvasVersion] = useState(0)
   const hoverRoomRef = useRef<string | null>(null)
+  const rafRef = useRef(0)
 
   const activeRoom = currentRoom ?? rooms.find(room => room.room_name === activeRoomName) ?? null
+
+  const propsRef = useRef<RuntimeProps>({
+    mode,
+    floorplanSegments,
+    rooms,
+    activeRoomName,
+    activeRoom,
+    hoverRoomName,
+    anchors,
+    tags,
+    referenceAnchorId,
+    floorplanSettings,
+  })
+  propsRef.current = {
+    mode,
+    floorplanSegments,
+    rooms,
+    activeRoomName,
+    activeRoom,
+    hoverRoomName,
+    anchors,
+    tags,
+    referenceAnchorId,
+    floorplanSettings,
+  }
+
+  // Floor-plan heat grid
+  const heatRef = useRef<Float32Array>(new Float32Array(0))
+  const heatMaskRef = useRef<Uint8Array>(new Uint8Array(0))
+  const heatCanvasRef = useRef<HTMLCanvasElement | null>(null)
+  const gridWRef = useRef(0)
+  const gridHRef = useRef(0)
+  const gridOXRef = useRef(0)
+  const gridOYRef = useRef(0)
+  const heatKeyRef = useRef('')
+
   const displaySegments = mode === 'room'
     ? (activeRoom
         ? [...activeRoom.segments_ft, ...activeRoom.interior_segments_ft].map(segment => localizeSegment(activeRoom, segment))
@@ -199,8 +385,7 @@ const RTLSDashboardCanvas = forwardRef<RTLSDashboardCanvasHandle, RTLSDashboardC
       offsetX: (canvas.width - width * Math.max(2, scale)) / 2 - bounds.minX * Math.max(2, scale),
       offsetY: (canvas.height - height * Math.max(2, scale)) / 2 - bounds.minY * Math.max(2, scale),
     }
-    setCanvasVersion(version => version + 1)
-  }, [activeRoom, displaySegments, mode])
+  }, [activeRoom, displaySegments, mode, rooms])
 
   const zoomBy = useCallback((factor: number) => {
     const canvas = canvasRef.current
@@ -214,7 +399,6 @@ const RTLSDashboardCanvas = forwardRef<RTLSDashboardCanvasHandle, RTLSDashboardC
       offsetX: pivotX - (pivotX - prev.offsetX) * (nextScale / prev.scale),
       offsetY: pivotY - (pivotY - prev.offsetY) * (nextScale / prev.scale),
     }
-    setCanvasVersion(version => version + 1)
   }, [])
 
   useImperativeHandle(ref, () => ({
@@ -246,20 +430,127 @@ const RTLSDashboardCanvas = forwardRef<RTLSDashboardCanvasHandle, RTLSDashboardC
     resetView()
   }, [mode, activeRoomName, activeRoom?.room_name, floorplanSegments.length, rooms.length, resetView])
 
-  useEffect(() => {
+  const ensureFloorplanHeatGrid = useCallback(() => {
+    const runtime = propsRef.current
+    const bounds = roomBounds(runtime.rooms) ?? segmentBounds(runtime.floorplanSegments)
+    if (!bounds) return false
+    const key = `${bounds.minX.toFixed(2)}|${bounds.minY.toFixed(2)}|${bounds.maxX.toFixed(2)}|${bounds.maxY.toFixed(2)}|${runtime.rooms.length}`
+    if (key === heatKeyRef.current && heatRef.current.length > 0) return true
+
+    const ox = bounds.minX - FP_MARGIN_FT
+    const oy = bounds.minY - FP_MARGIN_FT
+    const widthFt = (bounds.maxX - bounds.minX) + FP_MARGIN_FT * 2
+    const heightFt = (bounds.maxY - bounds.minY) + FP_MARGIN_FT * 2
+    const gridW = Math.max(4, Math.ceil(widthFt / FP_CELL_FT))
+    const gridH = Math.max(4, Math.ceil(heightFt / FP_CELL_FT))
+
+    gridOXRef.current = ox
+    gridOYRef.current = oy
+    gridWRef.current = gridW
+    gridHRef.current = gridH
+
+    const totalCells = gridW * gridH
+    heatRef.current = new Float32Array(totalCells).fill(FP_BASE_HEAT)
+
+    const heatCanvas = document.createElement('canvas')
+    heatCanvas.width = gridW
+    heatCanvas.height = gridH
+    heatCanvasRef.current = heatCanvas
+
+    const mask = new Uint8Array(totalCells)
+    const polygons: [number, number][][] = []
+    for (const room of runtime.rooms) {
+      if (room.segments_ft.length < 3) continue
+      const polygon = roomPolygon(room)
+      if (polygon.length >= 3) polygons.push(polygon)
+    }
+    if (polygons.length === 0) {
+      mask.fill(1)
+    } else {
+      for (let gy = 0; gy < gridH; gy++) {
+        for (let gx = 0; gx < gridW; gx++) {
+          const wx = ox + (gx + 0.5) * FP_CELL_FT
+          const wy = oy + (gy + 0.5) * FP_CELL_FT
+          let inside = 0
+          for (const polygon of polygons) {
+            if (pointInPolygon(wx, wy, polygon)) { inside = 1; break }
+          }
+          mask[gy * gridW + gx] = inside
+        }
+      }
+    }
+    heatMaskRef.current = mask
+    heatKeyRef.current = key
+    return true
+  }, [])
+
+  const updateFloorplanHeat = useCallback((settings: FloorplanSettings) => {
+    if (!ensureFloorplanHeatGrid()) return
+    const gridW = gridWRef.current
+    const gridH = gridHRef.current
+    const heat = heatRef.current
+    const mask = heatMaskRef.current
+    if (heat.length === 0) return
+
+    const decayRate = Math.max(0.90, 1 - 0.002 / settings.heatGradientRate)
+    const decayBlend = 1 - decayRate
+    for (let i = 0; i < heat.length; i++) {
+      if (!mask[i]) { heat[i] = FP_BASE_HEAT; continue }
+      heat[i] += (FP_BASE_HEAT - heat[i]) * decayBlend
+    }
+
+    const positioned = propsRef.current.tags.filter(t => t.position)
+    for (let i = 0; i < positioned.length; i++) {
+      for (let j = i + 1; j < positioned.length; j++) {
+        depositHeat(
+          positioned[i].position!.x,
+          positioned[i].position!.y,
+          positioned[j].position!.x,
+          positioned[j].position!.y,
+          heat,
+          mask,
+          gridW,
+          gridH,
+          gridOXRef.current,
+          gridOYRef.current,
+          settings.heatGradientRate,
+          settings.heatRange,
+          FP_CELL_FT,
+        )
+      }
+    }
+
+    const heatCanvas = heatCanvasRef.current
+    if (!heatCanvas) return
+    const ctx = heatCanvas.getContext('2d')
+    if (!ctx) return
+    const imageData = ctx.createImageData(gridW, gridH)
+    const data32 = new Uint32Array(imageData.data.buffer)
+    const maxLut = Math.max(1, (settings.heatPeak / 100 * 255) | 0)
+    const heatSpan = 1 - FP_BASE_HEAT
+    const scale = maxLut / heatSpan
+    for (let i = 0; i < heat.length; i++) {
+      const idx = Math.min(maxLut, Math.max(0, ((heat[i] - FP_BASE_HEAT) * scale) | 0))
+      data32[i] = LUT32[idx]
+    }
+    ctx.putImageData(imageData, 0, 0)
+  }, [ensureFloorplanHeatGrid])
+
+  const drawFrame = useCallback(() => {
     const canvas = canvasRef.current
     const ctx = canvas?.getContext('2d')
     if (!canvas || !ctx) return
-
     const viewport = vpRef.current
+    const runtime = propsRef.current
+
     ctx.clearRect(0, 0, canvas.width, canvas.height)
     ctx.fillStyle = BG
     ctx.fillRect(0, 0, canvas.width, canvas.height)
 
-    if (mode === 'floor-plan') {
-      for (const room of rooms) {
-        const isActive = room.room_name === activeRoomName
-        const isHovered = room.room_name === hoverRoomName && !isActive
+    if (runtime.mode === 'floor-plan') {
+      for (const room of runtime.rooms) {
+        const isActive = room.room_name === runtime.activeRoomName
+        const isHovered = room.room_name === runtime.hoverRoomName && !isActive
         const polygon = roomPolygon(room)
         const points = polygon.map(([x, y]) => worldToScreen(viewport, x, y))
         if (points.length >= 3) {
@@ -272,7 +563,42 @@ const RTLSDashboardCanvas = forwardRef<RTLSDashboardCanvasHandle, RTLSDashboardC
         }
       }
 
-      for (const seg of floorplanSegments) {
+      if (runtime.floorplanSettings?.heatMap && heatCanvasRef.current) {
+        const gridW = gridWRef.current
+        const gridH = gridHRef.current
+        if (gridW > 0 && gridH > 0) {
+          ctx.save()
+          ctx.beginPath()
+          let clipped = false
+          for (const room of runtime.rooms) {
+            if (room.segments_ft.length < 3) continue
+            const polygon = roomPolygon(room)
+            if (polygon.length < 3) continue
+            const pts = polygon.map(([x, y]) => worldToScreen(viewport, x, y))
+            ctx.moveTo(pts[0][0], pts[0][1])
+            for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i][0], pts[i][1])
+            ctx.closePath()
+            clipped = true
+          }
+          if (clipped) ctx.clip()
+
+          const [screenX, screenY] = worldToScreen(viewport, gridOXRef.current, gridOYRef.current)
+          ctx.globalAlpha = 0.78
+          ctx.imageSmoothingEnabled = true
+          ctx.imageSmoothingQuality = 'high'
+          ctx.drawImage(
+            heatCanvasRef.current,
+            screenX,
+            screenY,
+            gridW * FP_CELL_FT * viewport.scale,
+            gridH * FP_CELL_FT * viewport.scale,
+          )
+          ctx.globalAlpha = 1
+          ctx.restore()
+        }
+      }
+
+      for (const seg of runtime.floorplanSegments) {
         const [x1, y1] = worldToScreen(viewport, seg.x1, seg.y1)
         const [x2, y2] = worldToScreen(viewport, seg.x2, seg.y2)
         ctx.strokeStyle = (seg as SegmentData & { role?: string }).role === 'non_wall'
@@ -285,9 +611,9 @@ const RTLSDashboardCanvas = forwardRef<RTLSDashboardCanvasHandle, RTLSDashboardC
         ctx.stroke()
       }
 
-      for (const room of rooms) {
-        const isActive = room.room_name === activeRoomName
-        const isHovered = room.room_name === hoverRoomName && !isActive
+      for (const room of runtime.rooms) {
+        const isActive = room.room_name === runtime.activeRoomName
+        const isHovered = room.room_name === runtime.hoverRoomName && !isActive
         ctx.strokeStyle = isActive ? ROOM_OUTLINE_ACTIVE : isHovered ? ROOM_OUTLINE_HOVER : ROOM_OUTLINE
         ctx.lineWidth = isActive ? 2.4 : isHovered ? 1.8 : 1.4
         for (const seg of room.segments_ft) {
@@ -299,8 +625,38 @@ const RTLSDashboardCanvas = forwardRef<RTLSDashboardCanvasHandle, RTLSDashboardC
           ctx.stroke()
         }
       }
-    } else if (activeRoom) {
-      const polygon = roomLocalPolygon(activeRoom)
+
+      if (runtime.floorplanSettings?.showAnchors) {
+        for (const room of runtime.rooms) {
+          for (const anchor of room.anchors) {
+            const wx = room.room_bounds_ft.min_x + anchor.x_ft
+            const wy = room.room_bounds_ft.min_y + anchor.y_ft
+            const [sx, sy] = worldToScreen(viewport, wx, wy)
+            ctx.beginPath()
+            ctx.arc(sx, sy, 5, 0, Math.PI * 2)
+            ctx.fillStyle = ANCHOR_COLOR_FP
+            ctx.fill()
+            ctx.strokeStyle = 'rgba(255,255,255,0.3)'
+            ctx.lineWidth = 1
+            ctx.stroke()
+
+            if (runtime.floorplanSettings.showAnchorLabels) {
+              ctx.fillStyle = ANCHOR_LABEL_COLOR
+              ctx.font = 'bold 10px "SF Mono", monospace'
+              ctx.textAlign = 'left'
+              ctx.textBaseline = 'bottom'
+              ctx.fillText(
+                `${anchor.hw_id || anchor.id} (${anchor.x_ft.toFixed(1)}, ${anchor.y_ft.toFixed(1)})`,
+                sx + 8,
+                sy - 4,
+              )
+            }
+          }
+        }
+      }
+    } else if (runtime.activeRoom) {
+      const room: RoomData = runtime.activeRoom
+      const polygon = roomLocalPolygon(room)
       const points = polygon.map(([x, y]) => worldToScreen(viewport, x, y))
       if (points.length >= 3) {
         ctx.fillStyle = ROOM_FILL_ACTIVE
@@ -311,11 +667,11 @@ const RTLSDashboardCanvas = forwardRef<RTLSDashboardCanvasHandle, RTLSDashboardC
         ctx.fill()
       }
 
-      for (const seg of [...activeRoom.segments_ft, ...activeRoom.interior_segments_ft]) {
-        const localSeg = localizeSegment(activeRoom, seg)
+      for (const seg of [...room.segments_ft, ...room.interior_segments_ft]) {
+        const localSeg = localizeSegment(room, seg)
         const [x1, y1] = worldToScreen(viewport, localSeg.x1, localSeg.y1)
         const [x2, y2] = worldToScreen(viewport, localSeg.x2, localSeg.y2)
-        const isBoundary = activeRoom.segments_ft.includes(seg)
+        const isBoundary = room.segments_ft.includes(seg)
         ctx.strokeStyle = isBoundary ? ROOM_OUTLINE_ACTIVE : FLOORPLAN_SEGMENT
         ctx.lineWidth = isBoundary ? 1.9 : 1.1
         ctx.beginPath()
@@ -323,37 +679,22 @@ const RTLSDashboardCanvas = forwardRef<RTLSDashboardCanvasHandle, RTLSDashboardC
         ctx.lineTo(x2, y2)
         ctx.stroke()
       }
-    }
 
-    if (mode === 'room') {
-      const anchorIds = Object.keys(anchors)
+      const anchorIds = Object.keys(runtime.anchors)
       let refX = 0
       let refY = 0
-      if (referenceAnchorId && anchors[referenceAnchorId]) {
-        [refX, refY] = toRoomLocal(activeRoom, anchors[referenceAnchorId][0], anchors[referenceAnchorId][1])
+      if (runtime.referenceAnchorId && runtime.anchors[runtime.referenceAnchorId]) {
+        [refX, refY] = toRoomLocal(room, runtime.anchors[runtime.referenceAnchorId][0], runtime.anchors[runtime.referenceAnchorId][1])
       }
-
       for (let i = 0; i < anchorIds.length; i++) {
         const anchorId = anchorIds[i]
-        const [ax, ay] = anchors[anchorId]
-        const [localAx, localAy] = toRoomLocal(activeRoom, ax, ay)
+        const [ax, ay] = runtime.anchors[anchorId]
+        const [localAx, localAy] = toRoomLocal(room, ax, ay)
         const [sx, sy] = worldToScreen(viewport, localAx, localAy)
-        const isRef = anchorId === referenceAnchorId
-        const r = isRef ? 8 : 6
         const color = anchorColor(i)
 
-        if (isRef) {
-          ctx.beginPath()
-          ctx.arc(sx, sy, r + 4, 0, Math.PI * 2)
-          ctx.strokeStyle = color
-          ctx.lineWidth = 1.5
-          ctx.setLineDash([3, 2])
-          ctx.stroke()
-          ctx.setLineDash([])
-        }
-
         ctx.beginPath()
-        ctx.arc(sx, sy, r, 0, Math.PI * 2)
+        ctx.arc(sx, sy, 6, 0, Math.PI * 2)
         ctx.fillStyle = color
         ctx.fill()
         ctx.strokeStyle = 'rgba(255,255,255,0.25)'
@@ -367,15 +708,15 @@ const RTLSDashboardCanvas = forwardRef<RTLSDashboardCanvasHandle, RTLSDashboardC
         ctx.textAlign = 'left'
         ctx.textBaseline = 'bottom'
         ctx.fillText(
-          isRef ? `${anchorId} ★ (0.0, 0.0)` : `${anchorId} (${labelX.toFixed(1)}, ${labelY.toFixed(1)})`,
+          `${anchorId} (${labelX.toFixed(1)}, ${labelY.toFixed(1)})`,
           sx + 10,
           sy - 4,
         )
       }
 
-      for (const tag of tags) {
+      for (const tag of runtime.tags) {
         if (!tag.position) continue
-        const [localX, localY] = toRoomLocal(activeRoom, tag.position.x, tag.position.y)
+        const [localX, localY] = toRoomLocal(room, tag.position.x, tag.position.y)
         const [sx, sy] = worldToScreen(viewport, localX, localY)
         const radius = 8
         const grad = ctx.createRadialGradient(sx, sy, 0, sx, sy, radius * 2.5)
@@ -399,26 +740,30 @@ const RTLSDashboardCanvas = forwardRef<RTLSDashboardCanvasHandle, RTLSDashboardC
         ctx.textAlign = 'left'
         ctx.textBaseline = 'middle'
         ctx.fillText(tag.tag_id, sx + 14, sy)
-
-        const labelX = localX - refX
-        const labelY = localY - refY
-        ctx.fillStyle = 'rgba(200, 220, 255, 0.7)'
-        ctx.font = '9px sans-serif'
-        ctx.fillText(`(${labelX.toFixed(2)}, ${labelY.toFixed(2)}) ft`, sx + 14, sy + 12)
       }
     }
-  }, [
-    activeRoom,
-    activeRoomName,
-    anchors,
-    canvasVersion,
-    floorplanSegments,
-    hoverRoomName,
-    mode,
-    referenceAnchorId,
-    rooms,
-    tags,
-  ])
+  }, [])
+
+  useEffect(() => {
+    let heatTick = 0
+    const loop = () => {
+      const runtime = propsRef.current
+      if (runtime.mode === 'floor-plan' && runtime.floorplanSettings?.heatMap) {
+        heatTick += 1
+        if (heatTick % 2 === 0) updateFloorplanHeat(runtime.floorplanSettings)
+      }
+      drawFrame()
+      rafRef.current = window.requestAnimationFrame(loop)
+    }
+    rafRef.current = window.requestAnimationFrame(loop)
+    return () => window.cancelAnimationFrame(rafRef.current)
+  }, [drawFrame, updateFloorplanHeat])
+
+  useEffect(() => {
+    if (mode === 'floor-plan') {
+      heatKeyRef.current = ''
+    }
+  }, [mode, rooms])
 
   const updateHover = useCallback((clientX: number, clientY: number) => {
     if (mode !== 'floor-plan' || !onRoomHover) return
@@ -445,7 +790,6 @@ const RTLSDashboardCanvas = forwardRef<RTLSDashboardCanvasHandle, RTLSDashboardC
     dragRef.current = { x: e.clientX, y: e.clientY }
     vpRef.current.offsetX += dx
     vpRef.current.offsetY += dy
-    setCanvasVersion(version => version + 1)
   }
 
   const onMouseUp = () => { dragRef.current = null }
@@ -485,7 +829,6 @@ const RTLSDashboardCanvas = forwardRef<RTLSDashboardCanvasHandle, RTLSDashboardC
       offsetX: mouseX - worldX * nextScale,
       offsetY: mouseY - worldY * nextScale,
     }
-    setCanvasVersion(version => version + 1)
   }, [])
 
   useEffect(() => {

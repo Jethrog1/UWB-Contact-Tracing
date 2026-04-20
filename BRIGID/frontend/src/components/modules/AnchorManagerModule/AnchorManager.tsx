@@ -1,19 +1,14 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { AnchorData, FloorplanManifest, RoomData, SegmentData } from '../../../types'
-import AnchorEditPanel from './AnchorEditPanel'
+import AnchorEditPanel, { AnchorPanelPage } from './AnchorEditPanel'
 import AnchorManagerCanvas, { AnchorManagerCanvasHandle, AnchorManagerViewport } from './AnchorManagerCanvas'
-import RoomView from './RoomView'
 import { roomContainsWorldPoint, segmentsMatch } from './anchorGeometry'
+import { confirmAsync } from '../../common/ConfirmDialog'
 import './AnchorManager.css'
 
 const API = 'http://localhost:8765'
 
 type ActiveTool = 'cursor' | 'select' | 'smartSelect'
-
-interface RoomViewTab {
-  id: string
-  roomName: string
-}
 
 type LoadedSegment = SegmentData & { color?: string }
 
@@ -161,8 +156,6 @@ const findMatchingRoomName = (rooms: RoomData[], segments: SegmentData[]): strin
 const AnchorManager: React.FC<AnchorManagerProps> = ({ workspaceId, workspaceName }) => {
   const rootRef = useRef<HTMLDivElement>(null)
   const canvasRef = useRef<AnchorManagerCanvasHandle>(null)
-  const fileInputRef = useRef<HTMLInputElement>(null)
-  const manifestInputRef = useRef<HTMLInputElement>(null)
   const roomCounter = useRef(1)
   const anchorCounter = useRef<Record<string, number>>({})
   const fitAfterLoadRef = useRef(false)
@@ -177,13 +170,27 @@ const AnchorManager: React.FC<AnchorManagerProps> = ({ workspaceId, workspaceNam
   const [createDialog, setCreateDialog] = useState<CreateRoomDialog>({ open: false, name: '', segments: [] })
   const [activeTool, setActiveTool] = useState<ActiveTool>('cursor')
   const [hoverRoomName, setHoverRoomName] = useState<string | null>(null)
-  const [roomViewTabs, setRoomViewTabs] = useState<RoomViewTab[]>([])
-  const [activeInternalTab, setActiveInternalTab] = useState<string>('anchor-view')
+  const [panelPage, setPanelPage] = useState<AnchorPanelPage>('rooms')
+  const [placementPreview, setPlacementPreview] = useState<{ roomName: string; localX: number; localY: number } | null>(null)
   const [serialPortState, setSerialPortState] = useState<SerialPortState>({
     ports: [],
     autoDetectPort: '',
     loading: false,
   })
+  const [workspacePaths, setWorkspacePaths] = useState<{ svg?: string; rooms?: string }>({})
+
+  useEffect(() => {
+    let cancelled = false
+    fetch(`${API}/api/workspace/paths/${encodeURIComponent(workspaceId)}?workspace_name=${encodeURIComponent(workspaceName)}`)
+      .then(r => r.json())
+      .then(data => {
+        if (!cancelled && data.success) {
+          setWorkspacePaths({ svg: data.svg, rooms: data.rooms })
+        }
+      })
+      .catch(() => { /* workspace paths are optional */ })
+    return () => { cancelled = true }
+  }, [workspaceId, workspaceName])
 
   useEffect(() => {
     workspaceStateRef.current = workspaceState
@@ -270,102 +277,120 @@ const AnchorManager: React.FC<AnchorManagerProps> = ({ workspaceId, workspaceNam
     })
   }, [])
 
-  const handleLoadSVGFile = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0]
-    if (!file) return
+  const ingestSvgContent = useCallback((text: string, sourceName: string) => {
+    try {
+      const parser = new DOMParser()
+      const doc = parser.parseFromString(text, 'image/svg+xml')
+      const root = doc.documentElement
 
+      const cadMinX = parseFloat(root.getAttribute('data-cad-min-x') ?? 'NaN')
+      const cadMinY = parseFloat(root.getAttribute('data-cad-min-y') ?? 'NaN')
+      const cadScale = parseFloat(root.getAttribute('data-cad-scale') ?? 'NaN')
+      const cadOffX = parseFloat(root.getAttribute('data-cad-offset-x') ?? 'NaN')
+      const cadOffY = parseFloat(root.getAttribute('data-cad-offset-y') ?? 'NaN')
+      const docSize = 1000
+      const hasCadMetadata = !Number.isNaN(cadMinX) && !Number.isNaN(cadMinY) && !Number.isNaN(cadScale) && cadScale > 0
+
+      const toWorldX = hasCadMetadata
+        ? (screenX: number) => (screenX - cadOffX) / cadScale + cadMinX
+        : (screenX: number) => screenX
+      const toWorldY = hasCadMetadata
+        ? (screenY: number) => (docSize - screenY - cadOffY) / cadScale + cadMinY
+        : (screenY: number) => screenY
+
+      const segments: LoadedSegment[] = Array.from(doc.querySelectorAll('line')).map(line => ({
+        x1: toWorldX(parseFloat(line.getAttribute('x1') ?? '0')),
+        y1: toWorldY(parseFloat(line.getAttribute('y1') ?? '0')),
+        x2: toWorldX(parseFloat(line.getAttribute('x2') ?? '0')),
+        y2: toWorldY(parseFloat(line.getAttribute('y2') ?? '0')),
+        color: line.getAttribute('stroke') ?? undefined,
+      }))
+
+      if (segments.length === 0) {
+        showStatus('No line segments found in SVG.', 'error')
+        return
+      }
+
+      fitAfterLoadRef.current = true
+      replaceWorkspaceState({
+        ...workspaceStateRef.current,
+        allSegments: segments,
+        geometrySegments: segments,
+        rooms: [],
+        selectedRoomName: null,
+        selectedAnchorId: null,
+        selectedSegments: [],
+        svgPath: sourceName,
+        svgContent: text,
+        projectName: sourceName.replace(/\.svg$/i, ''),
+        viewport: DEFAULT_VIEWPORT,
+      })
+      showStatus(`Loaded ${segments.length} segment${segments.length === 1 ? '' : 's'} from ${sourceName}`, 'ok')
+    } catch (error) {
+      showStatus(`Failed to parse SVG: ${String(error)}`, 'error')
+    }
+  }, [replaceWorkspaceState])
+
+  const handleLoadSVG = useCallback(async () => {
+    const openFile = window.api?.openFile
+    const readTextFile = window.api?.readTextFile
+    if (!openFile || !readTextFile) {
+      showStatus('File dialogs are unavailable in this environment.', 'error')
+      return
+    }
+    const result = await openFile([{ name: 'SVG Files', extensions: ['svg'] }], workspacePaths.svg)
+    if (result.canceled || !result.filePaths[0]) return
     showStatus('Loading SVG...', 'ok')
-    const reader = new FileReader()
-    reader.onload = loadEvent => {
-      try {
-        const text = loadEvent.target?.result as string
-        const parser = new DOMParser()
-        const doc = parser.parseFromString(text, 'image/svg+xml')
-        const root = doc.documentElement
-
-        const cadMinX = parseFloat(root.getAttribute('data-cad-min-x') ?? 'NaN')
-        const cadMinY = parseFloat(root.getAttribute('data-cad-min-y') ?? 'NaN')
-        const cadScale = parseFloat(root.getAttribute('data-cad-scale') ?? 'NaN')
-        const cadOffX = parseFloat(root.getAttribute('data-cad-offset-x') ?? 'NaN')
-        const cadOffY = parseFloat(root.getAttribute('data-cad-offset-y') ?? 'NaN')
-        const docSize = 1000
-        const hasCadMetadata = !Number.isNaN(cadMinX) && !Number.isNaN(cadMinY) && !Number.isNaN(cadScale) && cadScale > 0
-
-        const toWorldX = hasCadMetadata
-          ? (screenX: number) => (screenX - cadOffX) / cadScale + cadMinX
-          : (screenX: number) => screenX
-        const toWorldY = hasCadMetadata
-          ? (screenY: number) => (docSize - screenY - cadOffY) / cadScale + cadMinY
-          : (screenY: number) => screenY
-
-        const segments: LoadedSegment[] = Array.from(doc.querySelectorAll('line')).map(line => ({
-          x1: toWorldX(parseFloat(line.getAttribute('x1') ?? '0')),
-          y1: toWorldY(parseFloat(line.getAttribute('y1') ?? '0')),
-          x2: toWorldX(parseFloat(line.getAttribute('x2') ?? '0')),
-          y2: toWorldY(parseFloat(line.getAttribute('y2') ?? '0')),
-          color: line.getAttribute('stroke') ?? undefined,
-        }))
-
-        if (segments.length === 0) {
-          showStatus('No line segments found in SVG.', 'error')
-          return
-        }
-
-        fitAfterLoadRef.current = true
-        replaceWorkspaceState({
-          ...workspaceStateRef.current,
-          allSegments: segments,
-          geometrySegments: segments,
-          rooms: [],
-          selectedRoomName: null,
-          selectedAnchorId: null,
-          selectedSegments: [],
-          svgPath: file.name,
-          svgContent: text,
-          projectName: file.name.replace(/\.svg$/i, ''),
-          viewport: DEFAULT_VIEWPORT,
-        })
-        showStatus(`Loaded ${segments.length} segment${segments.length === 1 ? '' : 's'} from ${file.name}`, 'ok')
-      } catch (error) {
-        showStatus(`Failed to parse SVG: ${String(error)}`, 'error')
-      }
+    const readResult = await readTextFile(result.filePaths[0])
+    if (!readResult.success || typeof readResult.content !== 'string') {
+      showStatus(readResult.error ?? 'Could not read file.', 'error')
+      return
     }
-    reader.onerror = () => showStatus('Could not read file.', 'error')
-    reader.readAsText(file)
-    event.target.value = ''
-  }, [replaceWorkspaceState])
+    const baseName = result.filePaths[0].split(/[\\/]/).pop() ?? 'plan.svg'
+    ingestSvgContent(readResult.content, baseName)
+  }, [ingestSvgContent, workspacePaths.svg])
 
-  const handleLoadManifestFile = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0]
-    if (!file) return
-    const reader = new FileReader()
-    reader.onload = loadEvent => {
-      try {
-        const manifest = JSON.parse(loadEvent.target?.result as string) as FloorplanManifest
-        const rooms = (manifest.rooms ?? []).map(normalizeRoom)
-        fitAfterLoadRef.current = true
-        replaceWorkspaceState({
-          ...workspaceStateRef.current,
-          rooms,
-          allSegments: workspaceStateRef.current.allSegments.length > 0
-            ? workspaceStateRef.current.allSegments
-            : deriveSegmentsFromRooms(rooms),
-          geometrySegments: workspaceStateRef.current.geometrySegments,
-          svgPath: manifest.svg_file ?? workspaceStateRef.current.svgPath,
-          projectName: manifest.project_name ?? 'Project',
-          selectedRoomName: rooms[0]?.room_name ?? null,
-          selectedAnchorId: null,
-          selectedSegments: [],
-          viewport: DEFAULT_VIEWPORT,
-        })
-        showStatus(`Loaded ${rooms.length} room${rooms.length === 1 ? '' : 's'} from ${file.name}`, 'ok')
-      } catch {
-        showStatus('Invalid manifest JSON.', 'error')
-      }
+  const handleLoadManifest = useCallback(async () => {
+    const openFile = window.api?.openFile
+    const readTextFile = window.api?.readTextFile
+    if (!openFile || !readTextFile) {
+      showStatus('File dialogs are unavailable in this environment.', 'error')
+      return
     }
-    reader.readAsText(file)
-    event.target.value = ''
-  }, [replaceWorkspaceState])
+    const result = await openFile(
+      [{ name: 'Rooms Manifest', extensions: ['json'] }],
+      workspacePaths.rooms,
+    )
+    if (result.canceled || !result.filePaths[0]) return
+    const readResult = await readTextFile(result.filePaths[0])
+    if (!readResult.success || typeof readResult.content !== 'string') {
+      showStatus(readResult.error ?? 'Could not read file.', 'error')
+      return
+    }
+    const baseName = result.filePaths[0].split(/[\\/]/).pop() ?? 'rooms.json'
+    try {
+      const manifest = JSON.parse(readResult.content) as FloorplanManifest
+      const rooms = (manifest.rooms ?? []).map(normalizeRoom)
+      fitAfterLoadRef.current = true
+      replaceWorkspaceState({
+        ...workspaceStateRef.current,
+        rooms,
+        allSegments: workspaceStateRef.current.allSegments.length > 0
+          ? workspaceStateRef.current.allSegments
+          : deriveSegmentsFromRooms(rooms),
+        geometrySegments: workspaceStateRef.current.geometrySegments,
+        svgPath: manifest.svg_file ?? workspaceStateRef.current.svgPath,
+        projectName: manifest.project_name ?? 'Project',
+        selectedRoomName: rooms[0]?.room_name ?? null,
+        selectedAnchorId: null,
+        selectedSegments: [],
+        viewport: DEFAULT_VIEWPORT,
+      })
+      showStatus(`Loaded ${rooms.length} room${rooms.length === 1 ? '' : 's'} from ${baseName}`, 'ok')
+    } catch {
+      showStatus('Invalid manifest JSON.', 'error')
+    }
+  }, [replaceWorkspaceState, workspacePaths.rooms])
 
   const handleSaveManifest = useCallback(async () => {
     try {
@@ -503,6 +528,7 @@ const AnchorManager: React.FC<AnchorManagerProps> = ({ workspaceId, workspaceNam
       }
 
       updateWorkspaceState(state => ({ ...state, selectedSegments: boundary }))
+      setActiveTool('cursor')
     } catch {
       showStatus('Backend unreachable.', 'error')
     }
@@ -552,11 +578,41 @@ const AnchorManager: React.FC<AnchorManagerProps> = ({ workspaceId, workspaceNam
       }))
       roomCounter.current += 1
       setCreateDialog({ open: false, name: '', segments: [] })
+      setActiveTool('cursor')
       showStatus(`Room "${nextRoom.room_name}" created.`, 'ok')
     } catch {
       showStatus('Backend unreachable.', 'error')
     }
   }, [commitWorkspaceState, createDialog])
+
+  const handleSelectRoom = useCallback((roomName: string | null) => {
+    updateWorkspaceState(current => ({ ...current, selectedRoomName: roomName }))
+  }, [updateWorkspaceState])
+
+  const handleSelectAnchor = useCallback((anchorId: string | null) => {
+    updateWorkspaceState(current => ({ ...current, selectedAnchorId: anchorId }))
+  }, [updateWorkspaceState])
+
+  const handleViewportChange = useCallback((viewport: AnchorManagerViewport) => {
+    updateWorkspaceState(current => ({ ...current, viewport }))
+  }, [updateWorkspaceState])
+
+  const handleRoomCanvasClick = useCallback((roomName: string) => {
+    updateWorkspaceState(current => ({ ...current, selectedRoomName: roomName, selectedAnchorId: null }))
+  }, [updateWorkspaceState])
+
+  const handleSetAllAnchorZ = useCallback((roomName: string, zValue: number) => {
+    commitWorkspaceState(current => ({
+      ...current,
+      rooms: current.rooms.map(room => {
+        if (room.room_name !== roomName) return room
+        return {
+          ...room,
+          anchors: room.anchors.map(anchor => ({ ...anchor, z_ft: zValue })),
+        }
+      }),
+    }))
+  }, [commitWorkspaceState])
 
 
   const handleAnchorUpdate = useCallback((roomName: string, anchorId: string, patch: Partial<AnchorData>) => {
@@ -649,24 +705,66 @@ const AnchorManager: React.FC<AnchorManagerProps> = ({ workspaceId, workspaceNam
   }, [commitWorkspaceState])
 
   const handleRoomDoubleClick = useCallback((roomName: string) => {
-    const tabId = `room-view-${roomName}`
-    setRoomViewTabs(prev => {
-      if (prev.some(t => t.id === tabId)) return prev
-      return [...prev, { id: tabId, roomName }]
+    updateWorkspaceState(current => ({ ...current, selectedRoomName: roomName, selectedAnchorId: null }))
+    setPanelPage('room-detail')
+  }, [updateWorkspaceState])
+
+  const handleAnchorPlace = useCallback((roomName: string, localX: number, localY: number) => {
+    const rooms = workspaceStateRef.current.rooms
+    const roomIndex = rooms.findIndex(r => r.room_name === roomName) + 1
+    if (roomIndex <= 0) return
+    const room = rooms[roomIndex - 1]
+    const nextIdx = anchorCounter.current[roomName] ?? room.anchors.length
+    anchorCounter.current[roomName] = nextIdx + 1
+    const anchorId = `R${roomIndex}A${nextIdx}`
+    const defaultHwId = `A${nextIdx}`
+    commitWorkspaceState(state => ({
+      ...state,
+      rooms: state.rooms.map(r => r.room_name !== roomName ? r : {
+        ...r,
+        anchors: [...r.anchors, { id: anchorId, hw_id: defaultHwId, x_ft: localX, y_ft: localY, z_ft: 0 }],
+        reference_anchor_id: r.reference_anchor_id ?? anchorId,
+      }),
+      selectedAnchorId: anchorId,
+    }))
+  }, [commitWorkspaceState])
+
+  const handleDeleteRoom = useCallback((roomName: string) => {
+    commitWorkspaceState(current => {
+      const remaining = current.rooms.filter(r => r.room_name !== roomName)
+      return {
+        ...current,
+        rooms: remaining,
+        selectedRoomName: current.selectedRoomName === roomName ? null : current.selectedRoomName,
+        selectedAnchorId: null,
+      }
     })
-    setActiveInternalTab(tabId)
+    delete anchorCounter.current[roomName]
+    setPanelPage('rooms')
+  }, [commitWorkspaceState])
+
+  const handleAnchorMoveStart = useCallback((_roomName: string, _anchorId: string) => {
+    dragSnapshotRef.current = cloneState(workspaceStateRef.current)
   }, [])
 
-  const handleCloseRoomTab = useCallback((tabId: string) => {
-    setRoomViewTabs(prev => {
-      const remaining = prev.filter(t => t.id !== tabId)
-      setActiveInternalTab(current => {
-        if (current !== tabId) return current
-        const idx = prev.findIndex(t => t.id === tabId)
-        return remaining[idx - 1]?.id ?? 'anchor-view'
-      })
-      return remaining
-    })
+  const handleAnchorMove = useCallback((roomName: string, anchorId: string, localX: number, localY: number) => {
+    updateWorkspaceState(current => ({
+      ...current,
+      rooms: current.rooms.map(r => r.room_name !== roomName ? r : {
+        ...r,
+        anchors: r.anchors.map(a => a.id !== anchorId ? a : { ...a, x_ft: localX, y_ft: localY }),
+      }),
+      selectedAnchorId: anchorId,
+    }))
+  }, [updateWorkspaceState])
+
+  const handleAnchorMoveEnd = useCallback(() => {
+    const before = dragSnapshotRef.current
+    dragSnapshotRef.current = null
+    if (!before) return
+    if (roomStateSignature(before) === roomStateSignature(workspaceStateRef.current)) return
+    setUndoStack(stack => [...stack.slice(-49), before])
+    setRedoStack([])
   }, [])
 
   useEffect(() => {
@@ -706,6 +804,28 @@ const AnchorManager: React.FC<AnchorManagerProps> = ({ workspaceId, workspaceNam
   }, [handleRedo, handleUndo, workspaceId])
 
   useEffect(() => {
+    const handler = async (e: Event) => {
+      const detail = (e as CustomEvent).detail as { workspaceId: string; module?: string }
+      if (detail.workspaceId !== workspaceId || (detail.module && detail.module !== 'anchors')) return
+      if (!workspaceState.svgContent.trim()) {
+        await confirmAsync({
+          title: 'No Floor Plan Loaded',
+          message: 'Load an SVG floor plan before saving the project. Use "Load SVG" in the Anchor Manager toolbar.',
+          confirmLabel: 'OK',
+        })
+        return
+      }
+      await handleSaveProject()
+    }
+    window.addEventListener('workspace-save-command', handler)
+    window.addEventListener('workspace-save-as-command', handler)
+    return () => {
+      window.removeEventListener('workspace-save-command', handler)
+      window.removeEventListener('workspace-save-as-command', handler)
+    }
+  }, [workspaceId, workspaceState.svgContent, handleSaveProject])
+
+  useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
       if ((event.key !== 'c' && event.key !== 'C') || event.ctrlKey || event.metaKey || event.altKey) return
       const root = rootRef.current
@@ -729,102 +849,14 @@ const AnchorManager: React.FC<AnchorManagerProps> = ({ workspaceId, workspaceNam
       <div className="am-toolbar">
         <span className="am-project-name">{workspaceState.projectName}</span>
         <div className="am-toolbar-actions">
-          <button className="am-btn am-btn--ghost" onClick={() => fileInputRef.current?.click()}>Load SVG</button>
-          <button className="am-btn am-btn--ghost" onClick={() => manifestInputRef.current?.click()}>Load Rooms</button>
+          <button className="am-btn am-btn--ghost" onClick={handleLoadSVG}>Load SVG</button>
+          <button className="am-btn am-btn--ghost" onClick={handleLoadManifest}>Load Rooms</button>
           <button className="am-btn am-btn--secondary" onClick={handleSaveManifest}>Save Rooms</button>
           <button className="am-btn am-btn--secondary" onClick={handleSaveProject}>Save Project</button>
-          <input ref={fileInputRef} type="file" accept=".svg" style={{ display: 'none' }} onChange={handleLoadSVGFile} />
-          <input ref={manifestInputRef} type="file" accept=".json,.rooms.json" style={{ display: 'none' }} onChange={handleLoadManifestFile} />
         </div>
         {status && <div className={`am-status am-status--${statusKind}`}>{status}</div>}
       </div>
 
-      {(workspaceState.allSegments.length > 0 || roomViewTabs.length > 0) && (
-        <div className="am-inner-tabbar">
-          <button
-            className={`am-inner-tab${activeInternalTab === 'anchor-view' ? ' am-inner-tab--active' : ''}`}
-            onClick={() => setActiveInternalTab('anchor-view')}
-          >
-            Floor Plan
-          </button>
-          {roomViewTabs.map(tab => (
-            <button
-              key={tab.id}
-              className={`am-inner-tab${activeInternalTab === tab.id ? ' am-inner-tab--active' : ''}`}
-              onClick={() => setActiveInternalTab(tab.id)}
-            >
-              {tab.roomName}
-              <span
-                className="am-inner-tab-close"
-                role="button"
-                onClick={e => { e.stopPropagation(); handleCloseRoomTab(tab.id) }}
-              >×</span>
-            </button>
-          ))}
-        </div>
-      )}
-
-      {activeInternalTab !== 'anchor-view' && roomViewTabs.length > 0 ? (
-        (() => {
-          const tab = roomViewTabs.find(t => t.id === activeInternalTab)
-          const room = tab ? workspaceState.rooms.find(r => r.room_name === tab.roomName) : null
-          return room ? (
-            <RoomView
-              key={tab!.id}
-              room={room}
-              workspaceId={workspaceId}
-              selectedAnchorId={workspaceState.selectedAnchorId}
-              onBack={() => setActiveInternalTab('anchor-view')}
-              onAnchorSelect={anchorId => updateWorkspaceState(current => ({ ...current, selectedAnchorId: anchorId }))}
-              onAnchorPlace={(localX, localY) => {
-                const roomIndex = workspaceStateRef.current.rooms.findIndex(r => r.room_name === room.room_name) + 1
-                const nextIdx = anchorCounter.current[room.room_name] ?? room.anchors.length
-                anchorCounter.current[room.room_name] = nextIdx + 1
-                const anchorId = `R${roomIndex}A${nextIdx}`
-                commitWorkspaceState(state => ({
-                  ...state,
-                  rooms: state.rooms.map(r => r.room_name !== room.room_name ? r : {
-                    ...r,
-                    anchors: [...r.anchors, { id: anchorId, hw_id: '', x_ft: localX, y_ft: localY, z_ft: 0 }],
-                    reference_anchor_id: r.reference_anchor_id ?? anchorId,
-                  }),
-                  selectedAnchorId: anchorId,
-                }))
-              }}
-              onAnchorUpdate={(anchorId, patch) => handleAnchorUpdate(room.room_name, anchorId, patch)}
-              onAnchorDelete={anchorId => handleAnchorDelete(room.room_name, anchorId)}
-              onAnchorMoveStart={(_anchorId) => { dragSnapshotRef.current = cloneState(workspaceStateRef.current) }}
-              onAnchorMove={(anchorId, localX, localY) => {
-                updateWorkspaceState(current => ({
-                  ...current,
-                  rooms: current.rooms.map(r => r.room_name !== room.room_name ? r : {
-                    ...r,
-                    anchors: r.anchors.map(a => a.id !== anchorId ? a : { ...a, x_ft: localX, y_ft: localY }),
-                  }),
-                  selectedAnchorId: anchorId,
-                }))
-              }}
-              onAnchorMoveEnd={() => {
-                const before = dragSnapshotRef.current
-                dragSnapshotRef.current = null
-                if (!before) return
-                if (roomStateSignature(before) === roomStateSignature(workspaceStateRef.current)) return
-                setUndoStack(stack => [...stack.slice(-49), before])
-                setRedoStack([])
-              }}
-              serialPorts={serialPortState.ports}
-              autoDetectPort={serialPortState.autoDetectPort}
-              serialPortsLoading={serialPortState.loading}
-              onRefreshSerialPorts={loadSerialPorts}
-              onRoomSettingsUpdate={patch => handleRoomSettingsUpdate(room.room_name, patch)}
-            />
-          ) : (
-            <div className="am-room-view">
-              <div className="am-panel-empty">Room no longer exists. Close this tab.</div>
-            </div>
-          )
-        })()
-      ) : (
       <div className="am-workspace">
         <div className="am-canvas-wrap">
           {workspaceState.allSegments.length === 0 ? (
@@ -845,15 +877,18 @@ const AnchorManager: React.FC<AnchorManagerProps> = ({ workspaceId, workspaceNam
                 viewport={workspaceState.viewport}
                 activeTool={activeTool}
                 hoverRoomName={hoverRoomName}
-                onViewportChange={viewport => updateWorkspaceState(current => ({ ...current, viewport }))}
+                placementRoomName={panelPage === 'room-detail' ? workspaceState.selectedRoomName : null}
+                onViewportChange={handleViewportChange}
                 onToolChange={setActiveTool}
                 onSegmentClick={handleSegmentClick}
                 onSmartSelectClick={handleSmartSelectClick}
-                onRoomClick={roomName => updateWorkspaceState(current => ({ ...current, selectedRoomName: roomName, selectedAnchorId: null }))}
+                onRoomClick={handleRoomCanvasClick}
                 onRoomHover={setHoverRoomName}
                 onNudgeAnchor={handleNudgeAnchor}
                 onCanvasContextMenu={handleCreateRoom}
                 onRoomDoubleClick={handleRoomDoubleClick}
+                onAnchorPlace={handleAnchorPlace}
+                onPlacementPreviewChange={setPlacementPreview}
               />
 
               <AnchorEditPanel
@@ -861,22 +896,70 @@ const AnchorManager: React.FC<AnchorManagerProps> = ({ workspaceId, workspaceNam
                 selectedRoomName={workspaceState.selectedRoomName}
                 selectedAnchorId={workspaceState.selectedAnchorId}
                 hoverRoomName={hoverRoomName}
-                canUndo={undoStack.length > 0}
-                canRedo={redoStack.length > 0}
-                onRoomSelect={roomName => updateWorkspaceState(current => ({ ...current, selectedRoomName: roomName }))}
+                panelPage={panelPage}
+                serialPorts={serialPortState.ports}
+                autoDetectPort={serialPortState.autoDetectPort}
+                serialPortsLoading={serialPortState.loading}
+                externalPreview={placementPreview}
+                onPageChange={setPanelPage}
+                onRoomSelect={handleSelectRoom}
                 onRoomHover={setHoverRoomName}
                 onRoomDoubleClick={handleRoomDoubleClick}
                 onAnchorUpdate={handleAnchorUpdate}
                 onAnchorDelete={handleAnchorDelete}
                 onEdgesUpdate={handleEdgesUpdate}
-                onAnchorSelect={anchorId => updateWorkspaceState(current => ({ ...current, selectedAnchorId: anchorId }))}
+                onAnchorSelect={handleSelectAnchor}
+                onAnchorPlace={handleAnchorPlace}
+                onAnchorMoveStart={handleAnchorMoveStart}
+                onAnchorMove={handleAnchorMove}
+                onAnchorMoveEnd={handleAnchorMoveEnd}
                 onReferenceAnchorChange={handleReferenceAnchorChange}
-                onUndo={handleUndo}
-                onRedo={handleRedo}
+                onRefreshSerialPorts={loadSerialPorts}
+                onRoomSettingsUpdate={handleRoomSettingsUpdate}
+                onSetAllAnchorZ={handleSetAllAnchorZ}
               />
 
+              {workspaceState.rooms.length > 0 && (
+                <div className="am-room-dock">
+                  <div className="am-room-dock-label">Rooms</div>
+                  <div className="am-room-dock-scroll">
+                    {workspaceState.rooms.map(room => {
+                      const isActive = room.room_name === workspaceState.selectedRoomName
+                      const isHovered = room.room_name === hoverRoomName && !isActive
+                      return (
+                        <div
+                          key={room.room_name}
+                          className={`am-room-dock-tab${isActive ? ' active' : ''}${isHovered ? ' hovered' : ''}`}
+                          onClick={() => updateWorkspaceState(current => ({
+                            ...current,
+                            selectedRoomName: current.selectedRoomName === room.room_name ? null : room.room_name,
+                            selectedAnchorId: null,
+                          }))}
+                          onMouseEnter={() => setHoverRoomName(room.room_name)}
+                          onMouseLeave={() => setHoverRoomName(null)}
+                          onDoubleClick={() => handleRoomDoubleClick(room.room_name)}
+                          title={`${room.anchors.length} anchor${room.anchors.length !== 1 ? 's' : ''} · double-click for detail`}
+                          role="button"
+                        >
+                          <span>{room.room_name}</span>
+                          <button
+                            type="button"
+                            className="am-room-dock-tab-close"
+                            onClick={e => { e.stopPropagation(); handleDeleteRoom(room.room_name) }}
+                            title={`Delete ${room.room_name}`}
+                            aria-label={`Delete ${room.room_name}`}
+                          >
+                            ×
+                          </button>
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
+              )}
+
               {workspaceState.selectedSegments.length > 0 && (
-                <div className="am-selection-banner">
+                <div className={`am-selection-banner${workspaceState.rooms.length > 0 ? ' am-selection-banner--above-dock' : ''}`}>
                   <div className="am-selection-copy">
                     {workspaceState.selectedSegments.length} segment{workspaceState.selectedSegments.length === 1 ? '' : 's'} selected
                   </div>
@@ -895,7 +978,6 @@ const AnchorManager: React.FC<AnchorManagerProps> = ({ workspaceId, workspaceNam
           )}
         </div>
       </div>
-      )}
 
       {createDialog.open && (
         <div className="am-dialog-overlay" onClick={() => setCreateDialog(dialog => ({ ...dialog, open: false }))}>

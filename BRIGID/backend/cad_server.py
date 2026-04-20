@@ -32,6 +32,7 @@ from config import (
     rename_workspace_folder, list_existing_workspaces,
 )
 from RTLSDashboard.rtls_runtime import RTLSRuntime
+from utilities.ble_idle import ble_idle_service
 from utilities.profilers.tag_profile_io import (
     create_empty_profile,
     save_profile,
@@ -78,12 +79,66 @@ app.add_middleware(
 
 # Per-workspace engine registry — survives between frontend reconnects
 _workspace_engines: dict[str, CADEngine] = {}
-_calibration_runtime = CalibrationRuntime()
+# Per-workspace calibration runtimes so each tab has independent transport/state.
+_calibration_runtimes: dict[str, CalibrationRuntime] = {}
+_DEFAULT_CAL_KEY = "__default__"
+
+
+def _get_calibration_runtime(workspace_id: Optional[str]) -> CalibrationRuntime:
+    key = workspace_id or _DEFAULT_CAL_KEY
+    runtime = _calibration_runtimes.get(key)
+    if runtime is None:
+        runtime = CalibrationRuntime()
+        _calibration_runtimes[key] = runtime
+        logger.info("Created new calibration runtime for workspace %r", key)
+    return runtime
+
+
 _rtls_runtime = RTLSRuntime()
 _WALK_ANIM_DIR = pathlib.Path(__file__).parent.parent / "assets" / "Walking animation"
 
 # Workspace registry: workspace_id → workspace_name (for path resolution)
 _workspace_names: dict[str, str] = {}
+
+
+def _ble_idle_dispatch(event_type: str, tag_id: str, payload: str) -> None:
+    """Fan BLE Idle events out to any runtime currently bridged to the service."""
+    try:
+        if _rtls_runtime.is_bridged_to_ble_idle():
+            if event_type == "data":
+                _rtls_runtime.ingest_ble_data(tag_id, payload)
+            elif event_type == "status":
+                _rtls_runtime.ingest_ble_status(tag_id, payload)
+    except Exception as exc:  # pragma: no cover - defensive
+        logger.debug("ble_idle -> rtls dispatch failed: %s", exc)
+
+    for runtime in list(_calibration_runtimes.values()):
+        try:
+            if not runtime.is_bridged_to_ble_idle():
+                continue
+            if event_type == "data":
+                runtime.ingest_ble_data(tag_id, payload)
+            elif event_type == "status":
+                runtime.ingest_ble_status(tag_id, payload)
+        except Exception as exc:  # pragma: no cover - defensive
+            logger.debug("ble_idle -> calibration dispatch failed: %s", exc)
+
+
+ble_idle_service.subscribe(_ble_idle_dispatch)
+
+
+def _ble_idle_current_statuses() -> dict[str, str]:
+    return {tag["tag_id"]: tag["status"] for tag in ble_idle_service.status().get("tags", [])}
+
+
+def _resync_ble_idle_profiles(workspace_id: Optional[str], workspace_name: Optional[str] = None) -> None:
+    """Refresh the idle service's MAC list from the given workspace's profiles."""
+    if not ble_idle_service.is_enabled():
+        return
+    try:
+        ble_idle_service.sync_profiles(_load_all_profiles(workspace_id, workspace_name))
+    except Exception as exc:  # pragma: no cover - defensive
+        logger.debug("ble_idle sync_profiles failed: %s", exc)
 
 
 def _resolve_tags_dir(workspace_id: Optional[str], workspace_name: Optional[str] = None) -> str:
@@ -147,7 +202,16 @@ async def api_workspace_paths(workspace_id: str, workspace_name: Optional[str] =
 
 @app.on_event("shutdown")
 async def shutdown_runtime() -> None:
-    _calibration_runtime.shutdown()
+    try:
+        ble_idle_service.disable()
+    except Exception:
+        pass
+    for runtime in _calibration_runtimes.values():
+        try:
+            runtime.shutdown()
+        except Exception:
+            pass
+    _calibration_runtimes.clear()
     _rtls_runtime.shutdown()
     _workspace_engines.clear()
 
@@ -335,6 +399,7 @@ async def api_profile_save(req: SaveProfileRequest, workspace_id: Optional[str] 
     ok, result = save_profile(req.profile, tags_dir)
     if not ok:
         return {"success": False, "error": result}
+    _resync_ble_idle_profiles(workspace_id)
     return {"success": True, "tag_id": req.profile.get("tag_id", ""), "path": result}
 
 
@@ -359,6 +424,7 @@ async def api_profile_delete(tag_id: str, workspace_id: Optional[str] = None):
     ok, error = delete_profile(tag_id, tags_dir)
     if not ok:
         return {"success": False, "error": error}
+    _resync_ble_idle_profiles(workspace_id)
     return {"success": True}
 
 
@@ -386,15 +452,17 @@ async def api_calibration_runtime(workspace_id: Optional[str] = None, workspace_
     # Auto-register workspace name if provided (survives server restarts without needing /register)
     if workspace_id and workspace_name and workspace_id not in _workspace_names:
         _workspace_names[workspace_id] = workspace_name
-    return {"success": True, **_calibration_runtime.snapshot(_load_all_profiles(workspace_id, workspace_name))}
+    runtime = _get_calibration_runtime(workspace_id)
+    return {"success": True, **runtime.snapshot(_load_all_profiles(workspace_id, workspace_name))}
 
 
 @app.get("/api/calibration/serial/ports")
-async def api_calibration_serial_ports():
+async def api_calibration_serial_ports(workspace_id: Optional[str] = None):
+    runtime = _get_calibration_runtime(workspace_id)
     return {
         "success": True,
-        "ports": _calibration_runtime.get_serial_ports(),
-        "auto_detect_port": _calibration_runtime.auto_detect_serial_port(),
+        "ports": runtime.get_serial_ports(),
+        "auto_detect_port": runtime.auto_detect_serial_port(),
     }
 
 
@@ -403,51 +471,62 @@ async def api_calibration_transport_connect(req: CalibrationTransportConnectRequ
     if workspace_id and workspace_name and workspace_id not in _workspace_names:
         _workspace_names[workspace_id] = workspace_name
     profiles = _load_all_profiles(workspace_id, workspace_name)
-    ok, detail = _calibration_runtime.connect(req.mode, profiles, req.port)
+    runtime = _get_calibration_runtime(workspace_id)
+    if req.mode == "ble" and ble_idle_service.is_enabled():
+        ble_idle_service.sync_profiles(profiles)
+        ok, detail = runtime.bridge_to_ble_idle(profiles, initial_statuses=_ble_idle_current_statuses())
+    else:
+        ok, detail = runtime.connect(req.mode, profiles, req.port)
     if not ok:
         return {"success": False, "error": detail}
-    return {"success": True, "detail": detail, **_calibration_runtime.snapshot(profiles)}
+    return {"success": True, "detail": detail, **runtime.snapshot(profiles)}
 
 
 @app.post("/api/calibration/transport/disconnect")
 async def api_calibration_transport_disconnect(workspace_id: Optional[str] = None, workspace_name: Optional[str] = None):
-    _calibration_runtime.disconnect()
-    return {"success": True, **_calibration_runtime.snapshot(_load_all_profiles(workspace_id, workspace_name))}
+    runtime = _get_calibration_runtime(workspace_id)
+    runtime.disconnect()
+    return {"success": True, **runtime.snapshot(_load_all_profiles(workspace_id, workspace_name))}
 
 
 @app.post("/api/calibration/map")
-async def api_calibration_map(req: CalibrationMapUpdateRequest):
-    ok, detail = _calibration_runtime.update_map(req.anchors, req.lines, req.height_offset)
+async def api_calibration_map(req: CalibrationMapUpdateRequest, workspace_id: Optional[str] = None):
+    runtime = _get_calibration_runtime(workspace_id)
+    ok, detail = runtime.update_map(req.anchors, req.lines, req.height_offset)
     if not ok:
         return {"success": False, "error": detail}
-    return {"success": True, "detail": detail, **_calibration_runtime.snapshot(_load_all_profiles())}
+    return {"success": True, "detail": detail, **runtime.snapshot(_load_all_profiles(workspace_id))}
 
 
 @app.post("/api/calibration/reference")
-async def api_calibration_reference(req: CalibrationReferenceUpdateRequest):
-    ok, detail = _calibration_runtime.set_reference_distances(req.tag_id, req.distances, req.height)
+async def api_calibration_reference(req: CalibrationReferenceUpdateRequest, workspace_id: Optional[str] = None):
+    runtime = _get_calibration_runtime(workspace_id)
+    ok, detail = runtime.set_reference_distances(req.tag_id, req.distances, req.height)
     if not ok:
         return {"success": False, "error": detail}
-    return {"success": True, "detail": detail, **_calibration_runtime.snapshot(_load_all_profiles())}
+    return {"success": True, "detail": detail, **runtime.snapshot(_load_all_profiles(workspace_id))}
 
 
 @app.post("/api/calibration/reference/place")
-async def api_calibration_reference_place(req: CalibrationReferencePlaceRequest):
-    distances = _calibration_runtime.place_reference_dot(req.tag_id, req.x, req.y)
-    return {"success": True, "distances": distances, **_calibration_runtime.snapshot(_load_all_profiles())}
+async def api_calibration_reference_place(req: CalibrationReferencePlaceRequest, workspace_id: Optional[str] = None):
+    runtime = _get_calibration_runtime(workspace_id)
+    distances = runtime.place_reference_dot(req.tag_id, req.x, req.y)
+    return {"success": True, "distances": distances, **runtime.snapshot(_load_all_profiles(workspace_id))}
 
 
 @app.post("/api/calibration/reference/calculate")
-async def api_calibration_reference_calculate(req: CalibrationReferenceCalculateRequest):
-    ok, detail, locked = _calibration_runtime.calculate_reference(req.tag_id)
+async def api_calibration_reference_calculate(req: CalibrationReferenceCalculateRequest, workspace_id: Optional[str] = None):
+    runtime = _get_calibration_runtime(workspace_id)
+    ok, detail, locked = runtime.calculate_reference(req.tag_id)
     if not ok:
         return {"success": False, "error": detail}
-    return {"success": True, "detail": detail, "locked": locked, **_calibration_runtime.snapshot(_load_all_profiles())}
+    return {"success": True, "detail": detail, "locked": locked, **runtime.snapshot(_load_all_profiles(workspace_id))}
 
 
 @app.post("/api/calibration/fit")
-async def api_calibration_fit(req: CalibrationFitSettingsRequest):
-    ok, detail = _calibration_runtime.update_fit_settings(
+async def api_calibration_fit(req: CalibrationFitSettingsRequest, workspace_id: Optional[str] = None):
+    runtime = _get_calibration_runtime(workspace_id)
+    ok, detail = runtime.update_fit_settings(
         req.tag_id,
         req.anchor_id,
         auto=req.auto,
@@ -458,40 +537,45 @@ async def api_calibration_fit(req: CalibrationFitSettingsRequest):
     )
     if not ok:
         return {"success": False, "error": detail}
-    return {"success": True, "detail": detail, **_calibration_runtime.snapshot(_load_all_profiles())}
+    return {"success": True, "detail": detail, **runtime.snapshot(_load_all_profiles(workspace_id))}
 
 
 @app.post("/api/calibration/equation")
-async def api_calibration_equation(req: CalibrationEquationUpdateRequest):
-    ok, detail = _calibration_runtime.set_manual_equation(req.tag_id, req.anchor_id, req.equation)
+async def api_calibration_equation(req: CalibrationEquationUpdateRequest, workspace_id: Optional[str] = None):
+    runtime = _get_calibration_runtime(workspace_id)
+    ok, detail = runtime.set_manual_equation(req.tag_id, req.anchor_id, req.equation)
     if not ok:
         return {"success": False, "error": detail}
-    return {"success": True, "detail": detail, **_calibration_runtime.snapshot(_load_all_profiles())}
+    return {"success": True, "detail": detail, **runtime.snapshot(_load_all_profiles(workspace_id))}
 
 
 @app.post("/api/calibration/capture/start")
-async def api_calibration_capture_start(req: CalibrationCaptureRequest):
-    ok, detail = _calibration_runtime.start_capture(req.tag_id, req.sample_count)
+async def api_calibration_capture_start(req: CalibrationCaptureRequest, workspace_id: Optional[str] = None):
+    runtime = _get_calibration_runtime(workspace_id)
+    ok, detail = runtime.start_capture(req.tag_id, req.sample_count)
     if not ok:
         return {"success": False, "error": detail}
-    return {"success": True, "detail": detail, **_calibration_runtime.snapshot(_load_all_profiles())}
+    return {"success": True, "detail": detail, **runtime.snapshot(_load_all_profiles(workspace_id))}
 
 
 @app.post("/api/calibration/capture/cancel")
-async def api_calibration_capture_cancel():
-    _calibration_runtime.cancel_capture()
-    return {"success": True, **_calibration_runtime.snapshot(_load_all_profiles())}
+async def api_calibration_capture_cancel(workspace_id: Optional[str] = None):
+    runtime = _get_calibration_runtime(workspace_id)
+    runtime.cancel_capture()
+    return {"success": True, **runtime.snapshot(_load_all_profiles(workspace_id))}
 
 
 @app.post("/api/calibration/points/clear/{tag_id}")
-async def api_calibration_points_clear(tag_id: str):
-    _calibration_runtime.clear_points(tag_id)
-    return {"success": True, **_calibration_runtime.snapshot(_load_all_profiles())}
+async def api_calibration_points_clear(tag_id: str, workspace_id: Optional[str] = None):
+    runtime = _get_calibration_runtime(workspace_id)
+    runtime.clear_points(tag_id)
+    return {"success": True, **runtime.snapshot(_load_all_profiles(workspace_id))}
 
 
 @app.post("/api/calibration/filter")
-async def api_calibration_filter(req: CalibrationFilterRequest):
-    ok, detail = _calibration_runtime.update_filter(
+async def api_calibration_filter(req: CalibrationFilterRequest, workspace_id: Optional[str] = None):
+    runtime = _get_calibration_runtime(workspace_id)
+    ok, detail = runtime.update_filter(
         req.mode,
         ema_alpha=req.ema_alpha,
         roll_n=req.roll_n,
@@ -500,7 +584,7 @@ async def api_calibration_filter(req: CalibrationFilterRequest):
     )
     if not ok:
         return {"success": False, "error": detail}
-    return {"success": True, "detail": detail, **_calibration_runtime.snapshot(_load_all_profiles())}
+    return {"success": True, "detail": detail, **runtime.snapshot(_load_all_profiles(workspace_id))}
 
 
 @app.post("/api/calibration/tag/save/{tag_id}")
@@ -510,7 +594,8 @@ async def api_calibration_tag_save(tag_id: str, workspace_id: Optional[str] = No
     if profile is None or error:
         return {"success": False, "error": error or f"Profile not found: {tag_id}"}
 
-    calibration_data = _calibration_runtime.export_profile_equations(tag_id)
+    runtime = _get_calibration_runtime(workspace_id)
+    calibration_data = runtime.export_profile_equations(tag_id)
     profile["calibration"] = calibration_data
     ok, result = save_profile(profile, tags_dir)
     if not ok:
@@ -519,7 +604,7 @@ async def api_calibration_tag_save(tag_id: str, workspace_id: Optional[str] = No
         "success": True,
         "path": result,
         "calibration_date": calibration_data.get("last_calibration_date", ""),
-        **_calibration_runtime.snapshot(_load_all_profiles(workspace_id)),
+        **runtime.snapshot(_load_all_profiles(workspace_id)),
     }
 
 
@@ -827,6 +912,10 @@ class RtlsElevationRequest(BaseModel):
     value_ft: Optional[float] = None
 
 
+class RtlsNoiseCancelRequest(BaseModel):
+    enabled: bool
+
+
 def _load_workspace_profiles(workspace_id: Optional[str], workspace_name: Optional[str] = None) -> list[dict]:
     """Load all tag profiles from workspace-specific or global tags dir."""
     tags_dir = _resolve_tags_dir(workspace_id, workspace_name)
@@ -1124,7 +1213,11 @@ async def api_rtls_workspace_load(req: RtlsWorkspaceLoadRequest):
 
 @app.post("/api/rtls/transport/connect")
 async def api_rtls_transport_connect(req: RtlsConnectRequest):
-    ok, detail = _rtls_runtime.connect(req.mode or "serial", req.port)
+    mode = req.mode or "serial"
+    if mode == "ble" and ble_idle_service.is_enabled():
+        ok, detail = _rtls_runtime.bridge_to_ble_idle(initial_statuses=_ble_idle_current_statuses())
+    else:
+        ok, detail = _rtls_runtime.connect(mode, req.port)
     return {"success": ok, "error": None if ok else detail, **_rtls_runtime.snapshot()}
 
 
@@ -1174,6 +1267,12 @@ async def api_rtls_elevation(req: RtlsElevationRequest):
     return {"success": True, **_rtls_runtime.snapshot()}
 
 
+@app.post("/api/rtls/noise_cancel")
+async def api_rtls_noise_cancel(req: RtlsNoiseCancelRequest):
+    _rtls_runtime.set_noise_cancel(req.enabled)
+    return {"success": True, **_rtls_runtime.snapshot()}
+
+
 @app.post("/api/rtls/csv/start")
 async def api_rtls_csv_start():
     """Start CSV distance logging into workspace RTLS/ folder."""
@@ -1188,3 +1287,41 @@ async def api_rtls_csv_stop():
     """Stop CSV distance logging."""
     _rtls_runtime.stop_csv_logging()
     return {"success": True, **_rtls_runtime.snapshot()}
+
+
+# ===========================================================================
+# Active BLE Idle endpoints
+# ===========================================================================
+
+class BleIdleEnableRequest(BaseModel):
+    workspace_id: Optional[str] = None
+    workspace_name: Optional[str] = None
+
+
+@app.get("/api/ble_idle/status")
+async def api_ble_idle_status():
+    return {"success": True, **ble_idle_service.status()}
+
+
+@app.post("/api/ble_idle/enable")
+async def api_ble_idle_enable(req: BleIdleEnableRequest):
+    if req.workspace_id and req.workspace_name and req.workspace_id not in _workspace_names:
+        _workspace_names[req.workspace_id] = req.workspace_name
+    profiles = _load_all_profiles(req.workspace_id, req.workspace_name)
+    ok, detail = ble_idle_service.enable(profiles)
+    if not ok:
+        return {"success": False, "error": detail, **ble_idle_service.status()}
+    return {"success": True, "detail": detail, **ble_idle_service.status()}
+
+
+@app.post("/api/ble_idle/disable")
+async def api_ble_idle_disable():
+    ble_idle_service.disable()
+    # Any runtime that was bridged must drop back to idle state so the UI
+    # reflects "Disconnected" until the user reconnects.
+    if _rtls_runtime.is_bridged_to_ble_idle():
+        _rtls_runtime.disconnect()
+    for runtime in list(_calibration_runtimes.values()):
+        if runtime.is_bridged_to_ble_idle():
+            runtime.disconnect()
+    return {"success": True, **ble_idle_service.status()}

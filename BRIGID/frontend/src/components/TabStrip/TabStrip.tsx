@@ -19,12 +19,12 @@ interface TabStripProps {
   onViewCommand?: (cmd: string) => void
 }
 
-const VIEW_CONTROLS: { cmd: string; icon: string; label: string; title: string }[] = [
+const VIEW_CONTROLS: { cmd: string; icon: string; label: string; title: string; hideIcon?: boolean }[] = [
   { cmd: 'undo',       icon: 'undo',        label: '',           title: 'Undo (Ctrl+Z)' },
   { cmd: 'redo',       icon: 'redo',        label: '',           title: 'Redo (Ctrl+Y)' },
   { cmd: 'zoom_in',   icon: 'zoom-in',     label: '',           title: 'Zoom In' },
   { cmd: 'zoom_out',  icon: 'zoom-out',    label: '',           title: 'Zoom Out' },
-  { cmd: 'zoom_reset', icon: 'zoom-to-fit', label: 'Reset View', title: 'Reset View (0)' },
+  { cmd: 'zoom_reset', icon: 'zoom-to-fit', label: 'Reset View', title: 'Reset View (0)', hideIcon: true },
 ]
 
 const TabStrip: React.FC<TabStripProps> = ({
@@ -217,7 +217,7 @@ const TabStrip: React.FC<TabStripProps> = ({
                 onClick={() => handleViewCmd(vc.cmd)}
                 disabled={!activeTabId}
               >
-                <Icon icon={vc.icon as any} size={11} />
+                {!vc.hideIcon && <Icon icon={vc.icon as any} size={11} />}
                 {vc.label && <span className="tab-strip__view-label">{vc.label}</span>}
               </button>
             )

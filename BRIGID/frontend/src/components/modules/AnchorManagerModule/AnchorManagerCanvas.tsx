@@ -9,6 +9,7 @@ import React, {
 import { RoomData, SegmentData } from '../../../types'
 import {
   chainSegmentsToPolygon,
+  findSnapTarget,
   getClickedSubsegment,
   pointInPolygon,
   roomContainsWorldPoint,
@@ -49,6 +50,7 @@ interface AnchorManagerCanvasProps {
   viewport: AnchorManagerViewport
   activeTool: ActiveTool
   hoverRoomName: string | null
+  placementRoomName: string | null
   onViewportChange: (viewport: AnchorManagerViewport) => void
   onToolChange?: (tool: ActiveTool) => void
   onSegmentClick: (seg: SegmentData, shiftHeld: boolean, worldX: number, worldY: number) => void
@@ -58,6 +60,8 @@ interface AnchorManagerCanvasProps {
   onSmartSelectClick?: (worldX: number, worldY: number, shiftHeld: boolean) => void
   onCanvasContextMenu?: () => void
   onRoomDoubleClick?: (roomName: string) => void
+  onAnchorPlace?: (roomName: string, localX: number, localY: number) => void
+  onPlacementPreviewChange?: (preview: { roomName: string; localX: number; localY: number } | null) => void
 }
 
 const COLORS = {
@@ -112,6 +116,7 @@ const AnchorManagerCanvas = forwardRef<AnchorManagerCanvasHandle, AnchorManagerC
   viewport,
   activeTool,
   hoverRoomName,
+  placementRoomName,
   onViewportChange,
   onToolChange,
   onSegmentClick,
@@ -121,12 +126,16 @@ const AnchorManagerCanvas = forwardRef<AnchorManagerCanvasHandle, AnchorManagerC
   onSmartSelectClick,
   onCanvasContextMenu,
   onRoomDoubleClick,
+  onAnchorPlace,
+  onPlacementPreviewChange,
 }, ref) => {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const canvasSizeRef = useRef<{ width: number; height: number }>({ width: 0, height: 0 })
   const [canvasVersion, setCanvasVersion] = useState(0)
   const [hoverSeg, setHoverSeg] = useState<SegmentData | null>(null)
   const [transientTool, setTransientTool] = useState<ActiveTool | null>(null)
+  const [placementPreview, setPlacementPreview] = useState<{ worldX: number; worldY: number } | null>(null)
+  const [placementSnap, setPlacementSnap] = useState<{ x: number; y: number } | null>(null)
   const panRef = useRef<{ active: boolean; lastX: number; lastY: number }>({
     active: false,
     lastX: 0,
@@ -285,6 +294,27 @@ const AnchorManagerCanvas = forwardRef<AnchorManagerCanvasHandle, AnchorManagerC
         ctx.stroke()
       }
     }
+
+    if (placementPreview) {
+      const [sx, sy] = worldToScreen(viewport, placementPreview.worldX, placementPreview.worldY)
+      const r = Math.max(5, Math.min(14, viewport.scale * 0.5))
+      ctx.fillStyle = COLORS.previewFill
+      ctx.strokeStyle = COLORS.previewStroke
+      ctx.lineWidth = 1.4
+      ctx.beginPath()
+      ctx.arc(sx, sy, r, 0, Math.PI * 2)
+      ctx.fill()
+      ctx.stroke()
+    }
+
+    if (placementSnap) {
+      const [sx, sy] = worldToScreen(viewport, placementSnap.x, placementSnap.y)
+      ctx.strokeStyle = COLORS.snap
+      ctx.lineWidth = 1.5
+      ctx.beginPath()
+      ctx.arc(sx, sy, 8, 0, Math.PI * 2)
+      ctx.stroke()
+    }
   }, [
     allSegments,
     hoverRoomName,
@@ -294,6 +324,8 @@ const AnchorManagerCanvas = forwardRef<AnchorManagerCanvasHandle, AnchorManagerC
     selectedSegments,
     viewport,
     canvasVersion,
+    placementPreview,
+    placementSnap,
   ])
 
   const getSegmentAt = useCallback((mx: number, my: number): SegmentData | null => {
@@ -357,7 +389,26 @@ const AnchorManagerCanvas = forwardRef<AnchorManagerCanvasHandle, AnchorManagerC
     if (e.button !== 0) return
 
     const [worldX, worldY] = screenToWorld(viewport, mx, my)
-    const currentTool = resolveTool(activeTool, e.shiftKey, e.ctrlKey || e.metaKey)
+    const ctrlHeld = e.ctrlKey || e.metaKey
+
+    // Ctrl+click (without shift) in placement mode → place anchor in that room (with corner snap)
+    if (ctrlHeld && !e.shiftKey && placementRoomName && onAnchorPlace) {
+      const placementRoom = rooms.find(r => r.room_name === placementRoomName)
+      if (placementRoom) {
+        const roomSegs = [...placementRoom.segments_ft, ...placementRoom.interior_segments_ft]
+        const snap = findSnapTarget(worldX, worldY, roomSegs)
+        const placeX = snap?.x ?? worldX
+        const placeY = snap?.y ?? worldY
+        if (roomContainsWorldPoint(placementRoom, placeX, placeY, 0.1)) {
+          const localX = placeX - placementRoom.room_bounds_ft.min_x
+          const localY = placeY - placementRoom.room_bounds_ft.min_y
+          onAnchorPlace(placementRoomName, localX, localY)
+          return
+        }
+      }
+    }
+
+    const currentTool = resolveTool(activeTool, e.shiftKey, ctrlHeld)
 
     // Smart Select fires on any click — no segment hit-test required
     if (currentTool === 'smartSelect') {
@@ -386,15 +437,18 @@ const AnchorManagerCanvas = forwardRef<AnchorManagerCanvasHandle, AnchorManagerC
     activeTool,
     allSegments,
     getSegmentAt,
+    onAnchorPlace,
     onRoomClick,
     onSegmentClick,
     onSmartSelectClick,
+    placementRoomName,
     rooms,
     viewport,
   ])
 
   const handleMouseMove = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
-    const currentTool = resolveTool(activeTool, e.shiftKey, e.ctrlKey || e.metaKey)
+    const ctrlHeld = e.ctrlKey || e.metaKey
+    const currentTool = resolveTool(activeTool, e.shiftKey, ctrlHeld)
     setTransientTool(currentTool === activeTool ? null : currentTool)
     if (panRef.current.active) {
       const dx = e.clientX - panRef.current.lastX
@@ -409,8 +463,41 @@ const AnchorManagerCanvas = forwardRef<AnchorManagerCanvasHandle, AnchorManagerC
       return
     }
 
+    // Placement preview: ctrl held (not shift) in placement mode and cursor inside target room
+    if (placementRoomName && ctrlHeld && !e.shiftKey) {
+      const canvas = canvasRef.current
+      if (canvas) {
+        const rect = canvas.getBoundingClientRect()
+        const [wx, wy] = screenToWorld(viewport, e.clientX - rect.left, e.clientY - rect.top)
+        const room = rooms.find(r => r.room_name === placementRoomName)
+        if (room) {
+          const roomSegs = [...room.segments_ft, ...room.interior_segments_ft]
+          const snap = findSnapTarget(wx, wy, roomSegs)
+          const previewX = snap?.x ?? wx
+          const previewY = snap?.y ?? wy
+          if (roomContainsWorldPoint(room, previewX, previewY, 0.1)) {
+            setPlacementPreview({ worldX: previewX, worldY: previewY })
+            setPlacementSnap(snap ? { x: snap.x, y: snap.y } : null)
+            onPlacementPreviewChange?.({
+              roomName: placementRoomName,
+              localX: previewX - room.room_bounds_ft.min_x,
+              localY: previewY - room.room_bounds_ft.min_y,
+            })
+          } else {
+            if (placementPreview !== null) setPlacementPreview(null)
+            if (placementSnap !== null) setPlacementSnap(null)
+            onPlacementPreviewChange?.(null)
+          }
+        }
+      }
+    } else if (placementPreview !== null || placementSnap !== null) {
+      setPlacementPreview(null)
+      setPlacementSnap(null)
+      onPlacementPreviewChange?.(null)
+    }
+
     updateHoverState(e.clientX, e.clientY, rooms, currentTool)
-  }, [activeTool, onViewportChange, rooms, updateHoverState, viewport])
+  }, [activeTool, onPlacementPreviewChange, onViewportChange, placementPreview, placementSnap, placementRoomName, rooms, updateHoverState, viewport])
 
   const handleMouseUp = useCallback(() => {
     panRef.current.active = false
@@ -456,7 +543,14 @@ const AnchorManagerCanvas = forwardRef<AnchorManagerCanvasHandle, AnchorManagerC
 
   const handleKeyUp = useCallback((e: React.KeyboardEvent<HTMLCanvasElement>) => {
     if (e.key === ' ') spacePressedRef.current = false
-  }, [])
+    if (e.key === 'Control' || e.key === 'Meta') {
+      if (placementPreview !== null || placementSnap !== null) {
+        setPlacementPreview(null)
+        setPlacementSnap(null)
+        onPlacementPreviewChange?.(null)
+      }
+    }
+  }, [onPlacementPreviewChange, placementPreview, placementSnap])
 
   const handleContextMenu = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
     e.preventDefault()
@@ -485,7 +579,18 @@ const AnchorManagerCanvas = forwardRef<AnchorManagerCanvasHandle, AnchorManagerC
       onMouseDown={handleMouseDown}
       onMouseMove={handleMouseMove}
       onMouseUp={handleMouseUp}
-      onMouseLeave={() => { handleMouseUp(); hoverRoomNameRef.current = null; onRoomHover(null); setHoverSeg(null); setTransientTool(null) }}
+      onMouseLeave={() => {
+        handleMouseUp()
+        hoverRoomNameRef.current = null
+        onRoomHover(null)
+        setHoverSeg(null)
+        setTransientTool(null)
+        if (placementPreview !== null || placementSnap !== null) {
+          setPlacementPreview(null)
+          setPlacementSnap(null)
+          onPlacementPreviewChange?.(null)
+        }
+      }}
       onWheel={handleWheel}
       onKeyDown={handleKeyDown}
       onKeyUp={handleKeyUp}

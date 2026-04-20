@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react'
+import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { AnimatePresence, motion } from 'motion/react'
 import { useCADWebSocket } from './useCADWebSocket'
 import CADCanvas from './CADCanvas'
@@ -157,11 +157,20 @@ const CADModule: React.FC<CADModuleProps> = ({ workspaceId, workspaceName }) => 
     sendCommand(cmd)
   }, [sendCommand])
 
-  // Listen for view commands broadcast from TabStrip
+  // Listen for view commands broadcast from TabStrip / HotBar
   useEffect(() => {
     const handler = (e: Event) => {
-      const detail = (e as CustomEvent).detail as { cmd: string; workspaceId: string }
+      const detail = (e as CustomEvent).detail as { cmd: string; workspaceId: string; tool?: string }
       if (detail.workspaceId !== workspaceId) return  // only this workspace
+      if (detail.cmd === 'set_tool') {
+        const tool = detail.tool
+        if (tool === 'cursor' || tool === 'line' || tool === 'vertex' || tool === 'dim') {
+          sendCommand({ type: 'tool_change', tool })
+        } else if (tool === 'rotate' || tool === 'trim') {
+          sendCommand({ type: 'context_action', action: tool })
+        }
+        return
+      }
       const cmdMap: Record<string, CADCommand> = {
         undo:       { type: 'undo' },
         redo:       { type: 'redo' },
@@ -176,6 +185,35 @@ const CADModule: React.FC<CADModuleProps> = ({ workspaceId, workspaceName }) => 
     return () => window.removeEventListener('cad-view-command', handler)
   }, [workspaceId, sendCommand])
 
+  useEffect(() => {
+    const handler = async (e: Event) => {
+      const detail = (e as CustomEvent).detail as { workspaceId: string; module?: string }
+      if (detail.workspaceId !== workspaceId || (detail.module && detail.module !== 'cad')) return
+      if (!window.api?.saveFile) return
+      let defaultPath = 'floor-plan.svg'
+      try {
+        if (workspaceName) {
+          const res = await fetch(`http://localhost:8765/api/workspace/paths/${encodeURIComponent(workspaceId)}?workspace_name=${encodeURIComponent(workspaceName)}`)
+          const data = await res.json() as { success: boolean; svg?: string }
+          if (data.success && data.svg) defaultPath = `${data.svg}\\floor-plan.svg`
+        }
+      } catch { /* use fallback */ }
+      const result = await window.api.saveFile(
+        [{ name: 'SVG Files', extensions: ['svg'] }],
+        defaultPath,
+      )
+      if (!result.canceled && result.filePath) {
+        sendCommand({ type: 'export_svg', filepath: result.filePath })
+      }
+    }
+    window.addEventListener('workspace-save-command', handler)
+    window.addEventListener('workspace-save-as-command', handler)
+    return () => {
+      window.removeEventListener('workspace-save-command', handler)
+      window.removeEventListener('workspace-save-as-command', handler)
+    }
+  }, [workspaceId, workspaceName, sendCommand])
+
   // Close context menu on outside click
   useEffect(() => {
     if (!contextMenu) return
@@ -187,16 +225,23 @@ const CADModule: React.FC<CADModuleProps> = ({ workspaceId, workspaceName }) => 
     return () => window.removeEventListener('mousedown', onPointerDown)
   }, [contextMenu, sendCommand])
 
-  // Context menu: clamp position to viewport so it never overflows off-screen
-  const clampedMenuPos = useCallback(() => {
-    if (!contextMenu) return { left: 0, top: 0 }
-    const MENU_W = 240
-    const MENU_H = 320  // approximate max height
+  // Context menu: clamp position using actual measured size after render
+  const [menuPos, setMenuPos] = useState<{ left: number; top: number }>({ left: 0, top: 0 })
+
+  useLayoutEffect(() => {
+    if (!contextMenu) return
+    const menu = contextRef.current
     const area = canvasAreaRef.current
-    const rect = area ? area.getBoundingClientRect() : { left: 0, top: 0, width: window.innerWidth, height: window.innerHeight }
-    const left = Math.min(contextMenu.x, rect.width - MENU_W - 4)
-    const top = Math.min(contextMenu.y, rect.height - MENU_H - 4)
-    return { left: Math.max(0, left), top: Math.max(0, top) }
+    const MARGIN = 4
+    const menuRect = menu?.getBoundingClientRect()
+    const areaRect = area?.getBoundingClientRect() ?? { width: window.innerWidth, height: window.innerHeight } as DOMRect
+    const w = menuRect?.width ?? 0
+    const h = menuRect?.height ?? 0
+    const maxLeft = Math.max(0, areaRect.width - w - MARGIN)
+    const maxTop = Math.max(0, areaRect.height - h - MARGIN)
+    const left = Math.max(0, Math.min(contextMenu.x, maxLeft))
+    const top = Math.max(0, Math.min(contextMenu.y, maxTop))
+    setMenuPos(prev => (prev.left === left && prev.top === top ? prev : { left, top }))
   }, [contextMenu])
 
   const handleDialogConfirm = useCallback((value: number) => {
@@ -208,8 +253,6 @@ const CADModule: React.FC<CADModuleProps> = ({ workspaceId, workspaceName }) => 
     if (!dialog) return
     sendCommand({ type: 'dialog_response', request_id: dialog.request_id, value: null })
   }, [dialog, sendCommand])
-
-  const menuPos = clampedMenuPos()
 
   return (
     <>
