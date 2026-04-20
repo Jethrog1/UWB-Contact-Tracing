@@ -283,6 +283,12 @@ class RTLSRuntime:
         self._global_elevation_override: bool = False
         self._global_elevation_ft: float = 3.0   # used only when override=True
 
+        # ── Noise cancellation (per-anchor distance jump filter) ──────────────
+        # Suppresses >=2 ft jumps occurring within 0.25 s of the previous reading.
+        # State per (tag_id, anchor_id): mode ∈ {normal, disqualified, cooldown}.
+        self._noise_cancel_enabled: bool = False
+        self._noise_state: dict[tuple[str, str], dict[str, Any]] = {}
+
         # ── Serial / BLE transport ─────────────────────────────────────────────
         self._serial_port_obj: serial.Optional[Serial] = None
         self._serial_running: bool = False
@@ -294,6 +300,10 @@ class RTLSRuntime:
         self._transport_status: str = "idle"   # idle | connecting | connected | error
         self._transport_detail: str = "Disconnected."
         self._serial_debug: deque[str] = deque(maxlen=80)
+
+        # When bridged to the global BLE Idle service, the runtime consumes its
+        # feed instead of managing its own bleak stack.
+        self._bridged_to_idle: bool = False
 
         # ── CSV distance logging (ported from home_rtls.py) ───────────────────
         self._csv_enabled: bool = False
@@ -429,6 +439,8 @@ class RTLSRuntime:
                         self._tag_status.pop(tid, None)
                         self._tag_positions.pop(tid, None)
                         self._tag_seen_at.pop(tid, None)
+                        for key in [k for k in self._noise_state if k[0] == tid]:
+                            self._noise_state.pop(key, None)
 
                 # Register new tags
                 for tag_id in new_registry:
@@ -467,6 +479,62 @@ class RTLSRuntime:
                 return tid
         return None
 
+    def _apply_noise_cancel(self, tag_id: str, anchor_id: str, value: float, now: float) -> float:
+        """
+        Per-(tag, anchor) jump filter. When the gap from the previous reading is
+        <= 0.25 s and the new value is >= 2 ft away from the last accepted value,
+        the reading is disqualified and replaced with last_accepted ± 0.1 ft.
+        The reference (last_accepted) is NOT overwritten by the placeholder — the
+        next reading resolves the disqualification against the pre-jump reference:
+        if it is still >= 2 ft away, the jump is confirmed (accepted, 3 s cooldown
+        begins); otherwise the reading is accepted normally without a cooldown.
+        During cooldown no disqualification occurs.
+        """
+        if not self._noise_cancel_enabled or value <= 0.0:
+            return value
+
+        key = (tag_id, anchor_id)
+        state = self._noise_state.get(key)
+        if state is None:
+            self._noise_state[key] = {
+                "last_accepted": value,
+                "last_time": now,
+                "mode": "normal",
+                "cooldown_until": 0.0,
+            }
+            return value
+
+        if state["mode"] == "cooldown" and now >= state["cooldown_until"]:
+            state["mode"] = "normal"
+
+        dt = now - state["last_time"]
+        state["last_time"] = now
+
+        if state["mode"] == "cooldown":
+            state["last_accepted"] = value
+            return value
+
+        reference = state["last_accepted"]
+
+        if state["mode"] == "disqualified":
+            if abs(value - reference) >= 2.0:
+                state["last_accepted"] = value
+                state["mode"] = "cooldown"
+                state["cooldown_until"] = now + 3.0
+                return value
+            state["last_accepted"] = value
+            state["mode"] = "normal"
+            return value
+
+        if dt <= 0.25 and abs(value - reference) >= 2.0:
+            direction = 1.0 if value > reference else -1.0
+            placeholder = reference + direction * 0.1
+            state["mode"] = "disqualified"
+            return placeholder
+
+        state["last_accepted"] = value
+        return value
+
     def parse_and_store(self, data_str: str, fallback_tag_id: Optional[str] = None) -> None:
         """
         Parse distance line: T2 | A0:11.37 | A1:10.90 | A2:--- | A3:16.55
@@ -485,11 +553,12 @@ class RTLSRuntime:
                 fragments = parts
             if tag_id is None:
                 return
+            now = time.time()
             with self._lock:
                 if tag_id not in self._tag_data:
                     self._tag_data[tag_id] = {aid: -1.0 for aid in self._anchors}
                 self._tag_status[tag_id] = "Connected"
-                self._tag_seen_at[tag_id] = time.time()
+                self._tag_seen_at[tag_id] = now
                 for fragment in fragments:
                     tokens = fragment.replace(":", " ").split()
                     if len(tokens) < 2:
@@ -499,9 +568,11 @@ class RTLSRuntime:
                         self._tag_data[tag_id][a_id] = -1.0
                         continue
                     try:
-                        self._tag_data[tag_id][a_id] = float(val_str)
+                        raw_val = float(val_str)
                     except ValueError:
                         self._tag_data[tag_id][a_id] = -1.0
+                        continue
+                    self._tag_data[tag_id][a_id] = self._apply_noise_cancel(tag_id, a_id, raw_val, now)
         except Exception:
             pass
 
@@ -615,7 +686,9 @@ class RTLSRuntime:
 
     def disconnect(self) -> None:
         mode = self._mode
+        was_bridged = self._bridged_to_idle
         self._mode = None
+        self._bridged_to_idle = False
         self._transport_status = "idle"
         self._transport_detail = "Disconnected."
         self._selected_port = ""
@@ -628,6 +701,7 @@ class RTLSRuntime:
                 if tag_id in self._tag_data:
                     for aid in list(self._tag_data[tag_id].keys()):
                         self._tag_data[tag_id][aid] = -1.0
+            self._noise_state.clear()
 
         if mode == "serial":
             self._serial_running = False
@@ -641,7 +715,7 @@ class RTLSRuntime:
             self._serial_thread = None
             self._serial_port_obj = None
 
-        if mode == "ble":
+        if mode == "ble" and not was_bridged:
             self._ble_stop.set()
             if self._ble_thread and self._ble_thread.is_alive():
                 self._ble_thread.join(timeout=1.5)
@@ -649,6 +723,47 @@ class RTLSRuntime:
             self._ble_stop.clear()
 
         self._append_serial_debug("Transport stopped.")
+
+    # ── Active BLE Idle bridge ────────────────────────────────────────────────
+
+    def bridge_to_ble_idle(self, initial_statuses: Optional[dict[str, str]] = None) -> tuple[bool, str]:
+        """
+        Switch the runtime into "bridged" mode: no owned bleak stack; measurements
+        arrive via ingest_ble_data/ingest_ble_status from the global idle service.
+        """
+        self.disconnect()
+        self._mode = "ble"
+        self._bridged_to_idle = True
+        self._transport_status = "connected"
+        tag_count = len(self._home_py_ble_profiles())
+        self._transport_detail = f"Bridged to Active BLE Idle ({tag_count} tag(s))."
+        self._append_serial_debug(self._transport_detail)
+        if initial_statuses:
+            for tag_id, status in initial_statuses.items():
+                self.ingest_ble_status(tag_id, status)
+        return True, self._transport_detail
+
+    def is_bridged_to_ble_idle(self) -> bool:
+        return self._bridged_to_idle
+
+    def ingest_ble_data(self, tag_id: str, payload: str) -> None:
+        """Feed a raw measurement line from the global idle service."""
+        if not payload:
+            return
+        self.parse_and_store(payload, fallback_tag_id=tag_id)
+
+    def ingest_ble_status(self, tag_id: str, status: str) -> None:
+        """Feed a per-tag status update from the global idle service."""
+        resolved = self._resolve_tag_id(tag_id) or tag_id
+        with self._lock:
+            if resolved not in self._tag_status and resolved not in self._tag_registry:
+                return
+            self._tag_status[resolved] = status
+            if status != "Connected":
+                self._tag_seen_at.pop(resolved, None)
+                if resolved in self._tag_data:
+                    for aid in list(self._tag_data[resolved].keys()):
+                        self._tag_data[resolved][aid] = -1.0
 
     # ── Serial transport (preserved from rtls_main_official.py) ───────────────
 
@@ -717,10 +832,10 @@ class RTLSRuntime:
         asyncio.run(self._ble_main(profiles))
 
     async def _ble_main(self, profiles: dict[str, str]) -> None:
-        tasks = []
-        for tag_id, mac in profiles.items():
-            tasks.append(asyncio.create_task(self._ble_connect_and_listen(tag_id, mac)))
-            await self._sleep_with_stop(3.0)
+        tasks = [
+            asyncio.create_task(self._ble_connect_and_listen(tag_id, mac))
+            for tag_id, mac in profiles.items()
+        ]
         if self._mode == "ble":
             self._transport_status = "connected"
             self._transport_detail = f"BLE listeners running for {len(tasks)} tag(s)."
@@ -1054,6 +1169,12 @@ class RTLSRuntime:
         if value_ft is not None:
             self._global_elevation_ft = value_ft
 
+    def set_noise_cancel(self, enabled: bool) -> None:
+        with self._lock:
+            self._noise_cancel_enabled = bool(enabled)
+            if not self._noise_cancel_enabled:
+                self._noise_state.clear()
+
     # ── State snapshot ─────────────────────────────────────────────────────────
 
     def snapshot(self) -> dict:
@@ -1098,6 +1219,9 @@ class RTLSRuntime:
                 "elevation": {
                     "override": self._global_elevation_override,
                     "value_ft": self._global_elevation_ft,
+                },
+                "noise_cancel": {
+                    "enabled": self._noise_cancel_enabled,
                 },
                 "csv": {
                     "enabled": self._csv_enabled,

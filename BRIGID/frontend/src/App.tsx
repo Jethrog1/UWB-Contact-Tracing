@@ -193,6 +193,11 @@ const App: React.FC = () => {
   
   const [existingWorkspaces, setExistingWorkspaces] = useState<WorkspaceInfo[]>([])
   const [isLoading, setIsLoading] = useState(true)
+
+  const [bleIdleEnabled, setBleIdleEnabled] = useState(false)
+  const [bleIdleAvailable, setBleIdleAvailable] = useState(true)
+  const [bleIdleTags, setBleIdleTags] = useState<Array<{ tag_id: string; mac_address: string; status: string }>>([])
+  const [bleIdleDetail, setBleIdleDetail] = useState<string>('')
   
   // Track per-tab workspace name for renaming (keeps names stable)
   const tabNamesRef = useRef<Record<string, string>>({})
@@ -409,6 +414,82 @@ const App: React.FC = () => {
     }))
   }, [activeModule, activeTabId])
 
+  const handleRtlsQuickSetup = useCallback(() => {
+    if (!activeTabId || activeModule !== 'rtls' || isHome) return
+    window.dispatchEvent(new CustomEvent('rtls-quick-setup', {
+      detail: { workspaceId: activeTabId },
+    }))
+  }, [activeModule, activeTabId, isHome])
+
+  useEffect(() => {
+    const handler = (event: KeyboardEvent) => {
+      if (!(event.ctrlKey || event.metaKey)) return
+      if (event.altKey || event.shiftKey) return
+      if (event.key.toLowerCase() !== 'q') return
+      if (activeModule !== 'rtls' || !activeTabId || isHome) return
+      event.preventDefault()
+      handleRtlsQuickSetup()
+    }
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  }, [activeModule, activeTabId, isHome, handleRtlsQuickSetup])
+
+  useEffect(() => {
+    let cancelled = false
+    const poll = async () => {
+      try {
+        const res = await fetch(`${API}/api/ble_idle/status`)
+        if (!res.ok) return
+        const data = await res.json()
+        if (cancelled) return
+        setBleIdleEnabled(Boolean(data.enabled))
+        setBleIdleAvailable(Boolean(data.available))
+        setBleIdleTags(Array.isArray(data.tags) ? data.tags : [])
+        setBleIdleDetail(typeof data.detail === 'string' ? data.detail : '')
+      } catch {
+        // ignore
+      }
+    }
+    poll()
+    const interval = window.setInterval(poll, 3000)
+    return () => {
+      cancelled = true
+      window.clearInterval(interval)
+    }
+  }, [])
+
+  const handleBleIdleToggle = useCallback(async () => {
+    if (bleIdleEnabled) {
+      try {
+        const res = await fetch(`${API}/api/ble_idle/disable`, { method: 'POST' })
+        const data = await res.json().catch(() => ({}))
+        setBleIdleEnabled(Boolean(data.enabled))
+      } catch {
+        // ignore
+      }
+      return
+    }
+    const workspaceName = activeTab?.name ?? tabNamesRef.current[activeTabId ?? ''] ?? null
+    try {
+      const res = await fetch(`${API}/api/ble_idle/enable`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          workspace_id: activeTabId,
+          workspace_name: workspaceName,
+        }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (data?.success === false && data?.error) {
+        alert(`Active BLE Idle: ${data.error}`)
+      }
+      setBleIdleEnabled(Boolean(data.enabled))
+      if (typeof data.available === 'boolean') setBleIdleAvailable(data.available)
+    } catch (exc) {
+      alert(`Active BLE Idle could not start: ${String(exc)}`)
+    }
+  }, [activeTab, activeTabId, bleIdleEnabled])
+
   return (
     <div className="bp5-dark app-root">
       <ConfirmHost />
@@ -442,6 +523,12 @@ const App: React.FC = () => {
             onEditCommand={handleEditCommand}
             onAnchorToolSelect={handleAnchorToolSelect}
             onCadToolSelect={handleCadToolSelect}
+            bleIdleEnabled={bleIdleEnabled}
+            bleIdleAvailable={bleIdleAvailable}
+            bleIdleTags={bleIdleTags}
+            bleIdleDetail={bleIdleDetail}
+            onBleIdleToggle={handleBleIdleToggle}
+            onRtlsQuickSetup={handleRtlsQuickSetup}
           />
 
           <TabStrip

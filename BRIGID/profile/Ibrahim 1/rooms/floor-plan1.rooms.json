@@ -1,7 +1,7 @@
 {
     "project_name": "floor-plan1",
     "svg_file": "floor-plan1.svg",
-    "saved_at": "2026-04-18T18:54:45",
+    "saved_at": "2026-04-19T11:37:10",
     "units": "ft",
     "rooms": [
         {
@@ -28,7 +28,7 @@
                     "hardware_id": "A0",
                     "x_ft": 0.0,
                     "y_ft": 10.0,
-                    "z_ft": 0.0
+                    "z_ft": 0.2
                 },
                 {
                     "id": "R1A1",
@@ -36,7 +36,7 @@
                     "hardware_id": "A1",
                     "x_ft": 11.0,
                     "y_ft": 10.0,
-                    "z_ft": 0.0
+                    "z_ft": 0.2
                 },
                 {
                     "id": "R1A2",
@@ -44,7 +44,7 @@
                     "hardware_id": "A2",
                     "x_ft": 0.0,
                     "y_ft": 0.0,
-                    "z_ft": 0.0
+                    "z_ft": 0.2
                 },
                 {
                     "id": "R1A3",
@@ -52,7 +52,7 @@
                     "hardware_id": "A3",
                     "x_ft": 11.0,
                     "y_ft": 0.0,
-                    "z_ft": 0.0
+                    "z_ft": 0.2
                 }
             ],
             "edges": [],

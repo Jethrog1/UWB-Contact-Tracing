@@ -114,12 +114,149 @@
 
 .hot-bar__dropdown-label {
   flex: 1;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.hot-bar__dropdown-check {
+  display: inline-block;
+  width: 12px;
+  text-align: center;
+  font-size: 11px;
+  color: #8ab4ff;
 }
 
 .hot-bar__dropdown-shortcut {
   color: #4a5a72;
   font-size: 11px;
   white-space: nowrap;
+}
+
+/* ── BLE panel (custom dropdown content) ───────────────────────────── */
+.hot-bar__dropdown--ble {
+  min-width: 260px;
+  padding: 0;
+}
+
+.hot-bar__ble-panel {
+  display: flex;
+  flex-direction: column;
+  padding: 10px 12px;
+  gap: 8px;
+}
+
+.hot-bar__ble-header-row {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  padding-bottom: 8px;
+  border-bottom: 1px solid rgba(56, 68, 94, 0.35);
+}
+
+.hot-bar__ble-toggle-label {
+  color: var(--text-primary);
+  font-size: 12px;
+  font-family: var(--font-primary);
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.hot-bar__ble-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  min-height: 26px;
+  padding: 0 10px;
+  margin-top: 4px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  font-family: var(--font-primary);
+  font-size: var(--text-base);
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: background var(--transition-fast), border-color var(--transition-fast), color var(--transition-fast);
+}
+
+.hot-bar__ble-btn--primary {
+  background: var(--accent-primary);
+  border-color: var(--accent-primary);
+  color: #ffffff;
+}
+
+.hot-bar__ble-btn--primary:hover:not(:disabled) {
+  background: #5a82af;
+}
+
+.hot-bar__ble-btn--ghost {
+  background: transparent;
+  border-color: transparent;
+}
+
+.hot-bar__ble-btn--ghost:hover:not(:disabled) {
+  background: var(--bg-active);
+  color: var(--text-primary);
+}
+
+.hot-bar__ble-btn:disabled {
+  opacity: 0.42;
+  cursor: not-allowed;
+}
+
+.hot-bar__ble-note {
+  color: var(--text-muted);
+  font-size: 11px;
+  font-family: var(--font-primary);
+  line-height: 1.4;
+}
+
+.hot-bar__ble-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.hot-bar__ble-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 10px;
+  padding: 5px 8px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-family: var(--font-primary);
+}
+
+.hot-bar__ble-row-name {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.hot-bar__ble-row-status {
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.hot-bar__ble-dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.hot-bar__ble-empty {
+  color: var(--text-muted);
+  font-size: 11px;
+  font-family: var(--font-primary);
+  padding: 4px 2px;
+  font-style: italic;
 }
 
 /* ── Spacer ─────────────────────────────────────────────────────────── */

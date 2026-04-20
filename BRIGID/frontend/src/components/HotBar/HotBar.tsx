@@ -5,6 +5,31 @@ import './HotBar.css'
 
 const GITHUB_URL = 'https://github.com/Jethrog1/UWB-Contact-Tracing'
 
+const BLE_TAG_PALETTE = [
+  '#4b729f', '#2b8279', '#c2823a', '#a63939', '#348550',
+  '#6b46c1', '#b83280', '#c05621', '#5c8a14', '#2b6cb0',
+]
+
+const getTagColor = (str: string): string => {
+  if (!str) return 'var(--text-primary)'
+  let hash = 0
+  for (let i = 0; i < str.length; i++) hash = str.charCodeAt(i) + ((hash << 5) - hash)
+  return BLE_TAG_PALETTE[Math.abs(hash) % BLE_TAG_PALETTE.length]
+}
+
+const bleStatusColor = (status: string): string => {
+  const s = (status || '').toLowerCase()
+  if (s.includes('connected') && !s.includes('disconnect')) return '#42d17e'
+  if (s.includes('connecting')) return '#ffb11f'
+  return '#ff5b4d'
+}
+
+interface BleIdleTag {
+  tag_id: string
+  mac_address: string
+  status: string
+}
+
 type MenuAction =
   | 'new-workspace'
   | 'open-workspace'
@@ -25,6 +50,8 @@ type MenuAction =
   | 'cad-tool-dim'
   | 'cad-tool-rotate'
   | 'cad-tool-trim'
+  | 'ble-idle-toggle'
+  | 'rtls-quick-setup'
   | null
 
 interface MenuItem {
@@ -33,6 +60,7 @@ interface MenuItem {
   separator?: boolean
   disabled?: boolean
   action?: MenuAction
+  checked?: boolean
 }
 
 interface MenuEntry {
@@ -53,9 +81,18 @@ interface HotBarProps {
   onEditCommand?: (cmd: 'undo' | 'redo') => void
   onAnchorToolSelect?: (tool: 'cursor' | 'select' | 'smartSelect') => void
   onCadToolSelect?: (tool: 'cursor' | 'line' | 'vertex' | 'dim' | 'rotate' | 'trim') => void
+  bleIdleEnabled?: boolean
+  bleIdleAvailable?: boolean
+  bleIdleTags?: BleIdleTag[]
+  bleIdleDetail?: string
+  onBleIdleToggle?: () => void
+  onRtlsQuickSetup?: () => void
 }
 
-const buildMenus = (hasWorkspace: boolean, activeModule: AppModule | null): MenuEntry[] => {
+const buildMenus = (
+  hasWorkspace: boolean,
+  activeModule: AppModule | null,
+): MenuEntry[] => {
   const editEnabledModules: AppModule[] = ['cad', 'anchors']
   const viewEnabledModules: AppModule[] = ['calibration', 'cad', 'anchors', 'rtls']
   const editEnabled = hasWorkspace && activeModule !== null && editEnabledModules.includes(activeModule)
@@ -80,7 +117,7 @@ const buildMenus = (hasWorkspace: boolean, activeModule: AppModule | null): Menu
     ]
   } else if (activeModule === 'rtls') {
     toolsItems = [
-      { label: 'Quick Setup', disabled: true },
+      { label: 'Quick Setup', shortcut: 'Ctrl+Q', action: 'rtls-quick-setup', disabled: !hasWorkspace },
     ]
   } else {
     toolsItems = [
@@ -121,6 +158,10 @@ const buildMenus = (hasWorkspace: boolean, activeModule: AppModule | null): Menu
       items: toolsItems,
     },
     {
+      label: 'BLE',
+      items: [],
+    },
+    {
       label: 'Help',
       href: GITHUB_URL,
     },
@@ -139,6 +180,12 @@ const HotBar: React.FC<HotBarProps> = ({
   onEditCommand,
   onAnchorToolSelect,
   onCadToolSelect,
+  bleIdleEnabled = false,
+  bleIdleAvailable = true,
+  bleIdleTags = [],
+  bleIdleDetail = '',
+  onBleIdleToggle,
+  onRtlsQuickSetup,
 }) => {
   const [openMenu, setOpenMenu] = useState<string | null>(null)
   const [dropdownPos, setDropdownPos] = useState<{ left: number; top: number } | null>(null)
@@ -212,6 +259,8 @@ const HotBar: React.FC<HotBarProps> = ({
     else if (action === 'cad-tool-dim') onCadToolSelect?.('dim')
     else if (action === 'cad-tool-rotate') onCadToolSelect?.('rotate')
     else if (action === 'cad-tool-trim') onCadToolSelect?.('trim')
+    else if (action === 'ble-idle-toggle') onBleIdleToggle?.()
+    else if (action === 'rtls-quick-setup') onRtlsQuickSetup?.()
     setOpenMenu(null)
   }
 
@@ -264,33 +313,86 @@ const HotBar: React.FC<HotBarProps> = ({
       {activeMenu && dropdownPos && createPortal(
         <div
           ref={dropdownRef}
-          className="hot-bar__dropdown electron-no-drag"
+          className={`hot-bar__dropdown electron-no-drag ${openMenu === 'BLE' ? 'hot-bar__dropdown--ble' : ''}`}
           role="menu"
           style={{ position: 'fixed', left: dropdownPos.left, top: dropdownPos.top }}
         >
-          {activeItems.map((item, index) =>
-            item.separator ? (
-              <div key={index} className="hot-bar__dropdown-sep" />
-            ) : (
+          {openMenu === 'BLE' ? (
+            <div className="hot-bar__ble-panel">
+              <div className="hot-bar__ble-header-row">
+                <span className="hot-bar__ble-toggle-label">Active BLE Idle</span>
+              </div>
+              {bleIdleDetail && (
+                <div className="hot-bar__ble-note">{bleIdleDetail}</div>
+              )}
+              {bleIdleTags.length > 0 ? (
+                <div className="hot-bar__ble-rows">
+                  {bleIdleTags.map(tag => (
+                    <div key={tag.tag_id} className="hot-bar__ble-row">
+                      <span className="hot-bar__ble-row-name">
+                        <span
+                          className="hot-bar__ble-dot"
+                          style={{ background: getTagColor(tag.tag_id) }}
+                        />
+                        {tag.tag_id}
+                      </span>
+                      <span
+                        className="hot-bar__ble-row-status"
+                        style={{ color: bleStatusColor(tag.status) }}
+                      >
+                        {tag.status}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="hot-bar__ble-empty">
+                  {bleIdleEnabled ? 'Waiting for tags…' : 'No tags configured.'}
+                </div>
+              )}
               <button
                 type="button"
-                key={index}
-                className={`hot-bar__dropdown-item electron-no-drag ${item.disabled ? 'hot-bar__dropdown-item--disabled' : ''}`}
-                role="menuitem"
-                onMouseDown={event => {
-                  event.preventDefault()
-                  if (!item.disabled) runAction(item.action ?? null)
-                }}
-                onKeyDown={event => {
-                  if ((event.key === 'Enter' || event.key === ' ') && !item.disabled) {
-                    event.preventDefault()
-                    runAction(item.action ?? null)
-                  }
+                className={`hot-bar__ble-btn ${bleIdleEnabled ? 'hot-bar__ble-btn--ghost' : 'hot-bar__ble-btn--primary'}`}
+                disabled={!bleIdleAvailable}
+                onClick={() => {
+                  if (bleIdleAvailable) onBleIdleToggle?.()
                 }}
               >
-                <span className="hot-bar__dropdown-label">{item.label}</span>
-                {item.shortcut && <span className="hot-bar__dropdown-shortcut">{item.shortcut}</span>}
+                {bleIdleEnabled ? 'Disconnect' : 'Connect'}
               </button>
+            </div>
+          ) : (
+            activeItems.map((item, index) =>
+              item.separator ? (
+                <div key={index} className="hot-bar__dropdown-sep" />
+              ) : (
+                <button
+                  type="button"
+                  key={index}
+                  className={`hot-bar__dropdown-item electron-no-drag ${item.disabled ? 'hot-bar__dropdown-item--disabled' : ''}`}
+                  role="menuitem"
+                  onMouseDown={event => {
+                    event.preventDefault()
+                    if (!item.disabled) runAction(item.action ?? null)
+                  }}
+                  onKeyDown={event => {
+                    if ((event.key === 'Enter' || event.key === ' ') && !item.disabled) {
+                      event.preventDefault()
+                      runAction(item.action ?? null)
+                    }
+                  }}
+                >
+                  <span className="hot-bar__dropdown-label">
+                    {item.checked !== undefined && (
+                      <span className="hot-bar__dropdown-check" aria-hidden="true">
+                        {item.checked ? '\u2713' : '\u00A0'}
+                      </span>
+                    )}
+                    {item.label}
+                  </span>
+                  {item.shortcut && <span className="hot-bar__dropdown-shortcut">{item.shortcut}</span>}
+                </button>
+              )
             )
           )}
         </div>,

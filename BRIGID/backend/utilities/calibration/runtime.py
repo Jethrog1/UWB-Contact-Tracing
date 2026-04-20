@@ -172,6 +172,10 @@ class CalibrationRuntime:
         self._ble_thread: threading.Optional[Thread] = None
         self._ble_stop = threading.Event()
 
+        # True while the runtime is consuming the global BLE Idle feed instead
+        # of driving its own bleak stack.
+        self._bridged_to_idle: bool = False
+
         self._reset_session_locked()
 
     def _reset_session_locked(self) -> None:
@@ -320,7 +324,9 @@ class CalibrationRuntime:
     def disconnect(self) -> None:
         with self._lock:
             mode = self._mode
+            was_bridged = self._bridged_to_idle
             self._mode = None
+            self._bridged_to_idle = False
             self._transport_status = "idle"
             self._transport_detail = "Disconnected."
             self._selected_port = ""
@@ -342,12 +348,56 @@ class CalibrationRuntime:
             self._serial_thread = None
             self._serial_stop.clear()
 
-        if mode == "ble":
+        if mode == "ble" and not was_bridged:
             self._ble_stop.set()
             if self._ble_thread and self._ble_thread.is_alive():
                 self._ble_thread.join(timeout=1.5)
             self._ble_thread = None
             self._ble_stop.clear()
+
+    # ── Active BLE Idle bridge ────────────────────────────────────────────────
+
+    def bridge_to_ble_idle(
+        self,
+        profiles: list[dict],
+        initial_statuses: Optional[dict[str, str]] = None,
+    ) -> tuple[bool, str]:
+        """
+        Switch into bridged mode: measurements arrive via ingest_ble_data/
+        ingest_ble_status from the global idle service instead of an owned
+        bleak stack.
+        """
+        self.sync_profiles(profiles)
+        self.disconnect()
+        with self._lock:
+            tag_count = sum(1 for mac in self._profile_macs.values() if mac)
+            self._mode = "ble"
+            self._bridged_to_idle = True
+            self._transport_status = "connected"
+            self._transport_detail = f"Bridged to Active BLE Idle ({tag_count} tag(s))."
+        if initial_statuses:
+            for tag_id, status in initial_statuses.items():
+                self.ingest_ble_status(tag_id, status)
+        return True, "Bridged to Active BLE Idle."
+
+    def is_bridged_to_ble_idle(self) -> bool:
+        return self._bridged_to_idle
+
+    def ingest_ble_data(self, tag_id: str, payload: str) -> None:
+        """Feed a raw measurement line from the global idle service."""
+        if not payload:
+            return
+        self._parse_measurement_payload(payload, fallback_tag_id=tag_id)
+
+    def ingest_ble_status(self, tag_id: str, status: str) -> None:
+        """Feed a per-tag status update from the global idle service."""
+        with self._lock:
+            if tag_id not in self._tag_status:
+                return
+            self._tag_status[tag_id] = status
+            if status != "Connected":
+                self._tag_seen_at.pop(tag_id, None)
+                self._tag_values[tag_id] = _anchor_measurements()
 
     def connect(self, mode: str, profiles: list[dict], port: str = "") -> tuple[bool, str]:
         self.sync_profiles(profiles)

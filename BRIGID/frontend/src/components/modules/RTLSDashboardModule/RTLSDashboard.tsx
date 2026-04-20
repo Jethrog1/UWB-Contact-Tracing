@@ -35,6 +35,10 @@ interface ElevationState {
   value_ft: number
 }
 
+interface NoiseCancelState {
+  enabled: boolean
+}
+
 interface CSVState {
   enabled: boolean
   path: string
@@ -67,6 +71,7 @@ interface RTLSSnapshot {
   room_settings: RoomSettingsState
   filter: FilterState
   elevation: ElevationState
+  noise_cancel: NoiseCancelState
   csv: CSVState
   serial_debug: string[]
 }
@@ -104,6 +109,15 @@ interface RoomViewTab {
 
 type DashboardPanelTab = 'setup' | 'visuals' | 'analytics'
 
+export interface FloorplanSettings {
+  heatMap: boolean
+  heatGradientRate: number
+  heatRange: number
+  heatPeak: number
+  showAnchors: boolean
+  showAnchorLabels: boolean
+}
+
 const DEFAULT_VISUAL: RTLSVisualSettings = {
   heatMap: false,
   heatGradientRate: 0.3,
@@ -113,6 +127,15 @@ const DEFAULT_VISUAL: RTLSVisualSettings = {
   showInterTagLines: true,
   showAnchors: true,
   showAnchorLabels: true,
+}
+
+const DEFAULT_FLOORPLAN: FloorplanSettings = {
+  heatMap: false,
+  heatGradientRate: 0.3,
+  heatRange: 5.0,
+  heatPeak: 70,
+  showAnchors: false,
+  showAnchorLabels: false,
 }
 
 const emptySnap = (): RTLSSnapshot => ({
@@ -130,6 +153,7 @@ const emptySnap = (): RTLSSnapshot => ({
   room_settings: { ble_module_port: '', filter_mode: 'Raw', tag_height_ft: 0 },
   filter: { mode: 'Raw', ema_alpha: 0.2, roll_n: 8, kal_q: 0.1, kal_r: 2.0 },
   elevation: { override: false, value_ft: 3.0 },
+  noise_cancel: { enabled: false },
   csv: { enabled: false, path: '' },
   serial_debug: [],
 })
@@ -283,11 +307,18 @@ const RTLSDashboard: React.FC<RTLSDashboardProps> = ({ workspaceId, workspaceNam
   const [transportMode, setTransportMode] = useState<RtlsTransportMode>('serial')
   const [activePanelTab, setActivePanelTab] = useState<DashboardPanelTab>('setup')
   const [loadCollapsed, setLoadCollapsed] = useState(false)
-  const [visualSettings, setVisualSettings] = useState<RTLSVisualSettings>(DEFAULT_VISUAL)
+  const [roomVisualSettings, setRoomVisualSettings] = useState<Record<string, RTLSVisualSettings>>({})
+  const [floorplanSettings, setFloorplanSettings] = useState<FloorplanSettings>(DEFAULT_FLOORPLAN)
   const [workspacePaths, setWorkspacePaths] = useState<{
     svg?: string; rooms?: string; tags?: string; projects?: string
   }>({})
   const [profileRootPath, setProfileRootPath] = useState<string | undefined>(undefined)
+  const [quickSetup, setQuickSetup] = useState<{ active: boolean; step: string }>({
+    active: false,
+    step: '',
+  })
+  const quickSetupCancelRef = useRef<boolean>(false)
+  const quickSetupRunningRef = useRef<boolean>(false)
 
   useEffect(() => {
     let cancelled = false
@@ -339,6 +370,32 @@ const RTLSDashboard: React.FC<RTLSDashboardProps> = ({ workspaceId, workspaceNam
     [activeRoomTab?.roomName, canvasMode, rooms, selectedRoom],
   )
 
+  const currentRoomVisual: RTLSVisualSettings = useMemo(() => {
+    if (canvasMode !== 'room' || !visibleRoom) return DEFAULT_VISUAL
+    return roomVisualSettings[visibleRoom.room_name] ?? DEFAULT_VISUAL
+  }, [canvasMode, roomVisualSettings, visibleRoom])
+
+  const updateCurrentRoomVisual = useCallback(
+    (updater: (prev: RTLSVisualSettings) => RTLSVisualSettings) => {
+      const roomName = visibleRoom?.room_name
+      if (!roomName) return
+      setRoomVisualSettings(current => ({
+        ...current,
+        [roomName]: updater(current[roomName] ?? DEFAULT_VISUAL),
+      }))
+    },
+    [visibleRoom],
+  )
+
+  const updateFloorplan = useCallback(
+    (updater: (prev: FloorplanSettings) => FloorplanSettings) => {
+      setFloorplanSettings(prev => updater(prev))
+    },
+    [],
+  )
+
+  const bleConnected = snap.transport_status === 'connected'
+
   const tagStates: RTLSTagState[] = useMemo(
     () => snap.tags.map((tag, index) => ({
       tag_id: tag.tag_id,
@@ -359,6 +416,7 @@ const RTLSDashboard: React.FC<RTLSDashboardProps> = ({ workspaceId, workspaceNam
     ? 'Floor Plan'
     : `${activeRoomTab?.roomName ?? 'Room'} Room View`
   const isRoomView = canvasMode === 'room'
+  const isFloorPlanView = canvasMode === 'floor-plan'
 
   const panelSubtitle = [
     projectName || workspaceName || 'RTLS Dashboard',
@@ -370,6 +428,12 @@ const RTLSDashboard: React.FC<RTLSDashboardProps> = ({ workspaceId, workspaceNam
   useEffect(() => {
     if (snap.mode === 'ble' || snap.mode === 'serial') setTransportMode(snap.mode)
   }, [snap.mode])
+
+  useEffect(() => {
+    if (activeTab === 'floor-plan' && activePanelTab !== 'setup') {
+      setActivePanelTab('setup')
+    }
+  }, [activeTab, activePanelTab])
 
   const showMsg = useCallback((text: string, kind: 'ok' | 'warn' | 'error', ms = 4000) => {
     setStatusMsg({ text, kind })
@@ -705,6 +769,19 @@ const RTLSDashboard: React.FC<RTLSDashboardProps> = ({ workspaceId, workspaceNam
     }
   }, [snap.elevation])
 
+  const setNoiseCancel = useCallback(async (enabled: boolean) => {
+    setSnap(prev => ({ ...prev, noise_cancel: { enabled } }))
+    try {
+      await fetch(`${API}/api/rtls/noise_cancel`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ enabled }),
+      })
+    } catch {
+      /* ignore */
+    }
+  }, [])
+
   const toggleCsv = useCallback(async () => {
     const stopping = snap.csv.enabled
     const endpoint = stopping ? '/api/rtls/csv/stop' : '/api/rtls/csv/start'
@@ -749,6 +826,129 @@ const RTLSDashboard: React.FC<RTLSDashboardProps> = ({ workspaceId, workspaceNam
       return remaining
     })
   }, [])
+
+  const runQuickSetup = useCallback(async () => {
+    if (quickSetupRunningRef.current) return
+    if (!roomLoaded || rooms.length === 0) {
+      showMsg('Load a project first, then run Quick Setup.', 'warn')
+      return
+    }
+
+    quickSetupRunningRef.current = true
+    quickSetupCancelRef.current = false
+    setQuickSetup({ active: true, step: 'Preparing Quick Setup…' })
+
+    const sleep = (ms: number) => new Promise<void>(resolve => window.setTimeout(resolve, ms))
+    const isCancelled = () => quickSetupCancelRef.current
+
+    try {
+      setQuickSetup({ active: true, step: `Creating tabs for ${rooms.length} room${rooms.length === 1 ? '' : 's'}…` })
+      setRoomTabs(rooms.map(room => ({ id: `room-view-${room.room_name}`, roomName: room.room_name })))
+      await sleep(150)
+      if (isCancelled()) throw new Error('cancelled')
+
+      setQuickSetup({ active: true, step: 'Switching transport to Bluetooth…' })
+      setTransportMode('ble')
+      await sleep(100)
+      if (isCancelled()) throw new Error('cancelled')
+
+      setQuickSetup({ active: true, step: 'Starting BLE listeners…' })
+      const connectRes = await fetch(`${API}/api/rtls/transport/connect`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mode: 'ble', port: '' }),
+      })
+      const connectData = await connectRes.json().catch(() => ({}))
+      if (!connectData.success) {
+        throw new Error(connectData.error || 'Could not start BLE listeners.')
+      }
+      if (isCancelled()) throw new Error('cancelled')
+
+      setQuickSetup({ active: true, step: 'Waiting for a tag to connect…' })
+      while (true) {
+        if (isCancelled()) throw new Error('cancelled')
+        try {
+          const snapRes = await fetch(`${API}/api/rtls/snapshot`)
+          if (snapRes.ok) {
+            const snapData = await snapRes.json()
+            const tags: { status?: string }[] = Array.isArray(snapData.tags) ? snapData.tags : []
+            const anyConnected = tags.some(t => {
+              const s = (t.status || '').toLowerCase()
+              return s.includes('connected') && !s.includes('disconnect')
+            })
+            if (anyConnected) break
+          }
+        } catch {
+          /* backend blip — keep polling */
+        }
+        await sleep(500)
+      }
+      if (isCancelled()) throw new Error('cancelled')
+
+      setQuickSetup({ active: true, step: 'Applying floor plan settings…' })
+      setActiveTab('floor-plan')
+      setActivePanelTab('setup')
+      setFloorplanSettings(current => ({
+        ...current,
+        heatMap: true,
+        heatGradientRate: 0.05,
+        heatRange: 6.0,
+        heatPeak: 100,
+      }))
+      await sleep(80)
+      if (isCancelled()) throw new Error('cancelled')
+
+      setQuickSetup({ active: true, step: 'Enabling EMA smoothing filter (α = 0.15)…' })
+      const filterPayload = {
+        mode: 'EMA',
+        ema_alpha: 0.15,
+        roll_n: snap.filter.roll_n,
+        kal_q: snap.filter.kal_q,
+        kal_r: snap.filter.kal_r,
+      }
+      await fetch(`${API}/api/rtls/filter`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(filterPayload),
+      })
+      if (isCancelled()) throw new Error('cancelled')
+
+      setQuickSetup({ active: true, step: 'Starting CSV logging for all tags…' })
+      const csvSnapRes = await fetch(`${API}/api/rtls/snapshot`)
+      const csvSnapData = await csvSnapRes.json().catch(() => ({}))
+      if (!csvSnapData?.csv?.enabled) {
+        await fetch(`${API}/api/rtls/csv/start`, { method: 'POST' })
+      }
+
+      setActiveTab('floor-plan')
+      setQuickSetup({ active: false, step: '' })
+      showMsg('Quick Setup complete.', 'ok')
+    } catch (err) {
+      setQuickSetup({ active: false, step: '' })
+      if (quickSetupCancelRef.current) {
+        showMsg('Quick Setup cancelled.', 'warn')
+      } else {
+        showMsg(`Quick Setup failed: ${err instanceof Error ? err.message : String(err)}`, 'error')
+      }
+    } finally {
+      quickSetupRunningRef.current = false
+      quickSetupCancelRef.current = false
+    }
+  }, [rooms, roomLoaded, showMsg, snap.filter.kal_q, snap.filter.kal_r, snap.filter.roll_n])
+
+  const cancelQuickSetup = useCallback(() => {
+    quickSetupCancelRef.current = true
+  }, [])
+
+  useEffect(() => {
+    const handler = (event: Event) => {
+      const detail = (event as CustomEvent).detail as { workspaceId: string }
+      if (detail?.workspaceId !== workspaceId) return
+      void runQuickSetup()
+    }
+    window.addEventListener('rtls-quick-setup', handler)
+    return () => window.removeEventListener('rtls-quick-setup', handler)
+  }, [runQuickSetup, workspaceId])
 
   const handleTabClick = useCallback((tabId: string) => {
     setActiveTab(tabId)
@@ -931,6 +1131,49 @@ const RTLSDashboard: React.FC<RTLSDashboardProps> = ({ workspaceId, workspaceNam
     )
   }
 
+  const renderNoiseCancelSection = () => (
+    <div className="rtls-section">
+      <div className="rtls-section-title">Noise Cancelation</div>
+      <div className="rtls-toggle-row">
+        <span className="rtls-toggle-label">Enable Noise Cancelation</span>
+        <label className="rtls-toggle">
+          <input
+            type="checkbox"
+            checked={snap.noise_cancel.enabled}
+            onChange={e => void setNoiseCancel(e.target.checked)}
+          />
+          <span className="rtls-toggle-slider" />
+        </label>
+      </div>
+      <div className="rtls-runtime-note">
+        Suppresses ≥2 ft anchor-distance jumps within 0.25 s of the last reading. Disqualified samples print last ± 0.1 ft; if the next sample confirms the jump it is accepted and a 3 s cooldown begins.
+      </div>
+    </div>
+  )
+
+  const renderUniversalNoiseCancelSection = () => (
+    <div className="rtls-section">
+      <div className="rtls-section-title">Universal Noise Cancelation</div>
+      <div className="rtls-runtime-note">
+        Overrides noise cancelation for all rooms.
+      </div>
+      <div className="rtls-toggle-row">
+        <span className="rtls-toggle-label">Enable Noise Cancelation</span>
+        <label className="rtls-toggle">
+          <input
+            type="checkbox"
+            checked={snap.noise_cancel.enabled}
+            onChange={e => void setNoiseCancel(e.target.checked)}
+          />
+          <span className="rtls-toggle-slider" />
+        </label>
+      </div>
+      <div className="rtls-runtime-note">
+        Suppresses ≥2 ft anchor-distance jumps within 0.25 s of the last reading. Disqualified samples print last ± 0.1 ft; if the next sample confirms the jump it is accepted and a 3 s cooldown begins.
+      </div>
+    </div>
+  )
+
   const renderTagElevationSection = () => (
     <div className="rtls-section">
       <div className="rtls-section-title">Tag Elevation</div>
@@ -1052,7 +1295,7 @@ const RTLSDashboard: React.FC<RTLSDashboardProps> = ({ workspaceId, workspaceNam
     </div>
   )
 
-  const renderSetupTab = () => (
+  const renderRoomSetupTab = () => (
     <>
       {renderRoomManagerSection()}
       {isRoomView && (
@@ -1076,9 +1319,214 @@ const RTLSDashboard: React.FC<RTLSDashboardProps> = ({ workspaceId, workspaceNam
       {isRoomView && renderTransportSection()}
       {isRoomView && renderInterTagDistancesSection()}
       {renderTagElevationSection()}
+      {renderNoiseCancelSection()}
       {renderSmoothingFilterSection()}
       {renderCsvSection()}
     </>
+  )
+
+  const renderFloorplanHeatMapSection = () => (
+    <div className="rtls-section">
+      <div className="rtls-section-title">Heat Map</div>
+      <div className="rtls-toggle-row">
+        <span className="rtls-toggle-label">Enable Heat Map</span>
+        <label className="rtls-toggle">
+          <input
+            type="checkbox"
+            checked={floorplanSettings.heatMap}
+            onChange={e => updateFloorplan(current => ({ ...current, heatMap: e.target.checked }))}
+          />
+          <span className="rtls-toggle-slider" />
+        </label>
+      </div>
+      <SliderInput
+        label="Exposure Rate"
+        value={floorplanSettings.heatGradientRate}
+        min={0.05}
+        max={5.0}
+        step={0.05}
+        unit="s/step"
+        decimals={2}
+        onChange={value => updateFloorplan(current => ({ ...current, heatGradientRate: value }))}
+      />
+      <SliderInput
+        label="Range"
+        value={floorplanSettings.heatRange}
+        min={0.5}
+        max={30}
+        step={0.5}
+        unit="ft"
+        decimals={1}
+        onChange={value => updateFloorplan(current => ({ ...current, heatRange: value }))}
+      />
+      <div className="rtls-slider-row">
+        <div className="rtls-slider-header">
+          <span className="rtls-slider-label">Peak Color</span>
+          <span className="rtls-slider-value">{floorplanSettings.heatPeak}</span>
+        </div>
+        <input
+          type="range"
+          className="rtls-range"
+          min={1}
+          max={100}
+          step={1}
+          value={floorplanSettings.heatPeak}
+          onChange={e => updateFloorplan(current => ({ ...current, heatPeak: parseInt(e.target.value, 10) }))}
+        />
+      </div>
+      <div className="rtls-runtime-note">
+        Floor-plan heat map uses live tag positions across all rooms. Tag markers are hidden — only the heat layer is shown.
+      </div>
+    </div>
+  )
+
+  const renderFloorplanAnchorSection = () => (
+    <div className="rtls-section">
+      <div className="rtls-section-title">Anchor Appearance</div>
+      <div className="rtls-toggle-row">
+        <span className="rtls-toggle-label">Show Anchors</span>
+        <label className="rtls-toggle">
+          <input
+            type="checkbox"
+            checked={floorplanSettings.showAnchors}
+            onChange={e => updateFloorplan(current => ({ ...current, showAnchors: e.target.checked }))}
+          />
+          <span className="rtls-toggle-slider" />
+        </label>
+      </div>
+      <div className="rtls-toggle-row">
+        <span className="rtls-toggle-label">Show Anchor Coordinates</span>
+        <label className="rtls-toggle">
+          <input
+            type="checkbox"
+            checked={floorplanSettings.showAnchorLabels}
+            disabled={!floorplanSettings.showAnchors}
+            onChange={e => updateFloorplan(current => ({ ...current, showAnchorLabels: e.target.checked }))}
+          />
+          <span className="rtls-toggle-slider" />
+        </label>
+      </div>
+      <div className="rtls-runtime-note">
+        Shows the anchors of every room on the floor plan. Does not affect individual room views.
+      </div>
+    </div>
+  )
+
+  const renderUniversalSmoothingSection = () => (
+    <div className="rtls-section">
+      <div className="rtls-section-title">Universal Smoothing Filter</div>
+      <div className="rtls-runtime-note">
+        Overrides the smoothing filter for all rooms.
+      </div>
+      <div className="rtls-transport-tabs">
+        {(['Raw', 'EMA', 'Rolling', 'Kalman'] as const).map(mode => (
+          <button
+            key={mode}
+            className={`rtls-filter-tab${snap.filter.mode === mode ? ' active' : ''}`}
+            onClick={() => void setFilter({ mode })}
+          >
+            {mode}
+          </button>
+        ))}
+      </div>
+      <div className="rtls-slider-row">
+        <div className="rtls-slider-header">
+          <span className="rtls-slider-label">EMA α</span>
+          <span className="rtls-slider-value">{snap.filter.ema_alpha.toFixed(2)}</span>
+        </div>
+        <input
+          type="range"
+          className="rtls-range"
+          min={0.01}
+          max={0.99}
+          step={0.01}
+          value={snap.filter.ema_alpha}
+          disabled={snap.filter.mode !== 'EMA'}
+          onChange={e => void setFilter({ ema_alpha: parseFloat(e.target.value) })}
+        />
+      </div>
+      <div className="rtls-slider-row">
+        <div className="rtls-slider-header">
+          <span className="rtls-slider-label">Rolling N</span>
+          <span className="rtls-slider-value">{snap.filter.roll_n}</span>
+        </div>
+        <input
+          type="range"
+          className="rtls-range"
+          min={2}
+          max={30}
+          step={1}
+          value={snap.filter.roll_n}
+          disabled={snap.filter.mode !== 'Rolling'}
+          onChange={e => void setFilter({ roll_n: parseInt(e.target.value, 10) })}
+        />
+      </div>
+      <div className="rtls-slider-row">
+        <div className="rtls-slider-header">
+          <span className="rtls-slider-label">Kalman Q</span>
+          <span className="rtls-slider-value">{snap.filter.kal_q.toFixed(3)}</span>
+        </div>
+        <input
+          type="range"
+          className="rtls-range"
+          min={0.001}
+          max={1}
+          step={0.001}
+          value={snap.filter.kal_q}
+          disabled={snap.filter.mode !== 'Kalman'}
+          onChange={e => void setFilter({ kal_q: parseFloat(e.target.value) })}
+        />
+      </div>
+      <div className="rtls-slider-row">
+        <div className="rtls-slider-header">
+          <span className="rtls-slider-label">Kalman R</span>
+          <span className="rtls-slider-value">{snap.filter.kal_r.toFixed(1)}</span>
+        </div>
+        <input
+          type="range"
+          className="rtls-range"
+          min={0.1}
+          max={20}
+          step={0.1}
+          value={snap.filter.kal_r}
+          disabled={snap.filter.mode !== 'Kalman'}
+          onChange={e => void setFilter({ kal_r: parseFloat(e.target.value) })}
+        />
+      </div>
+    </div>
+  )
+
+  const renderLogAllTagsSection = () => (
+    <div className="rtls-section">
+      <div className="rtls-section-title">Log All Tags</div>
+      <button
+        className={`rtls-btn rtls-btn--full ${snap.csv.enabled ? 'rtls-btn--danger' : 'rtls-btn--primary'}`}
+        onClick={() => void toggleCsv()}
+      >
+        {snap.csv.enabled ? 'Stop Logging' : 'Start Logging'}
+      </button>
+      {snap.csv.enabled && snap.csv.path && (
+        <div className="rtls-csv-path">{snap.csv.path}</div>
+      )}
+      <div className="rtls-runtime-note">
+        Overrides per-room logging. Logs every active tag across all rooms. Stopping here stops logging everywhere.
+      </div>
+    </div>
+  )
+
+  const renderFloorplanSetupTab = () => (
+    <div className={`rtls-locked-wrapper${bleConnected ? '' : ' rtls-locked-wrapper--locked'}`}>
+      {renderRoomManagerSection()}
+      {renderFloorplanHeatMapSection()}
+      {renderFloorplanAnchorSection()}
+      {renderUniversalNoiseCancelSection()}
+      {renderUniversalSmoothingSection()}
+      {renderLogAllTagsSection()}
+    </div>
+  )
+
+  const renderSetupTab = () => (
+    isFloorPlanView ? renderFloorplanSetupTab() : renderRoomSetupTab()
   )
 
   const renderVisualsTab = () => (
@@ -1090,36 +1538,36 @@ const RTLSDashboard: React.FC<RTLSDashboardProps> = ({ workspaceId, workspaceNam
           <label className="rtls-toggle">
             <input
               type="checkbox"
-              checked={visualSettings.heatMap}
-              onChange={e => setVisualSettings(current => ({ ...current, heatMap: e.target.checked }))}
+              checked={currentRoomVisual.heatMap}
+              onChange={e => updateCurrentRoomVisual(current => ({ ...current, heatMap: e.target.checked }))}
             />
             <span className="rtls-toggle-slider" />
           </label>
         </div>
         <SliderInput
           label="Exposure Rate"
-          value={visualSettings.heatGradientRate}
+          value={currentRoomVisual.heatGradientRate}
           min={0.05}
           max={5.0}
           step={0.05}
           unit="s/step"
           decimals={2}
-          onChange={value => setVisualSettings(current => ({ ...current, heatGradientRate: value }))}
+          onChange={value => updateCurrentRoomVisual(current => ({ ...current, heatGradientRate: value }))}
         />
         <SliderInput
           label="Range"
-          value={visualSettings.heatRange}
+          value={currentRoomVisual.heatRange}
           min={0.5}
           max={30}
           step={0.5}
           unit="ft"
           decimals={1}
-          onChange={value => setVisualSettings(current => ({ ...current, heatRange: value }))}
+          onChange={value => updateCurrentRoomVisual(current => ({ ...current, heatRange: value }))}
         />
         <div className="rtls-slider-row">
           <div className="rtls-slider-header">
             <span className="rtls-slider-label">Peak Color</span>
-            <span className="rtls-slider-value">{visualSettings.heatPeak}</span>
+            <span className="rtls-slider-value">{currentRoomVisual.heatPeak}</span>
           </div>
           <input
             type="range"
@@ -1127,12 +1575,12 @@ const RTLSDashboard: React.FC<RTLSDashboardProps> = ({ workspaceId, workspaceNam
             min={1}
             max={100}
             step={1}
-            value={visualSettings.heatPeak}
-            onChange={e => setVisualSettings(current => ({ ...current, heatPeak: parseInt(e.target.value, 10) }))}
+            value={currentRoomVisual.heatPeak}
+            onChange={e => updateCurrentRoomVisual(current => ({ ...current, heatPeak: parseInt(e.target.value, 10) }))}
           />
         </div>
         <div className="rtls-runtime-note">
-          Heat is now driven only by live tag coordinates in room view, using the same grid size and deposit logic as your reference implementation.
+          Heat map settings are saved per room — changes here do not affect other rooms or the floor plan.
         </div>
       </div>
 
@@ -1143,14 +1591,11 @@ const RTLSDashboard: React.FC<RTLSDashboardProps> = ({ workspaceId, workspaceNam
           <label className="rtls-toggle">
             <input
               type="checkbox"
-              checked={visualSettings.showInterTagLines}
-              onChange={e => setVisualSettings(current => ({ ...current, showInterTagLines: e.target.checked }))}
+              checked={currentRoomVisual.showInterTagLines}
+              onChange={e => updateCurrentRoomVisual(current => ({ ...current, showInterTagLines: e.target.checked }))}
             />
             <span className="rtls-toggle-slider" />
           </label>
-        </div>
-        <div className="rtls-runtime-note">
-          Draws dashed lines between all active tags with live distance labels. Distances are always recorded to CSV regardless of this setting.
         </div>
       </div>
 
@@ -1164,21 +1609,13 @@ const RTLSDashboard: React.FC<RTLSDashboardProps> = ({ workspaceId, workspaceNam
           ] as [TagAppearance, string][]).map(([value, label]) => (
             <button
               key={value}
-              className={`rtls-btn rtls-transport-tab${visualSettings.tagAppearance === value ? ' rtls-transport-tab--active' : ''}`}
-              onClick={() => setVisualSettings(current => ({ ...current, tagAppearance: value }))}
+              className={`rtls-btn rtls-transport-tab${currentRoomVisual.tagAppearance === value ? ' rtls-transport-tab--active' : ''}`}
+              onClick={() => updateCurrentRoomVisual(current => ({ ...current, tagAppearance: value }))}
             >
               {label}
             </button>
           ))}
         </div>
-        <div className="rtls-runtime-note">
-          Human mode replaces the live tag dots with the walking-frame animation assets. The animation direction is inferred from real tag movement between hardware updates.
-        </div>
-        {!isRoomView && (
-          <div className="rtls-placeholder-item">
-            Visuals are shown in room view so the heat map and tag appearance stay clipped to the active room geometry.
-          </div>
-        )}
       </div>
 
       <div className="rtls-section">
@@ -1188,8 +1625,8 @@ const RTLSDashboard: React.FC<RTLSDashboardProps> = ({ workspaceId, workspaceNam
           <label className="rtls-toggle">
             <input
               type="checkbox"
-              checked={visualSettings.showAnchors}
-              onChange={e => setVisualSettings(current => ({ ...current, showAnchors: e.target.checked }))}
+              checked={currentRoomVisual.showAnchors}
+              onChange={e => updateCurrentRoomVisual(current => ({ ...current, showAnchors: e.target.checked }))}
             />
             <span className="rtls-toggle-slider" />
           </label>
@@ -1199,15 +1636,12 @@ const RTLSDashboard: React.FC<RTLSDashboardProps> = ({ workspaceId, workspaceNam
           <label className="rtls-toggle">
             <input
               type="checkbox"
-              checked={visualSettings.showAnchorLabels}
-              disabled={!visualSettings.showAnchors}
-              onChange={e => setVisualSettings(current => ({ ...current, showAnchorLabels: e.target.checked }))}
+              checked={currentRoomVisual.showAnchorLabels}
+              disabled={!currentRoomVisual.showAnchors}
+              onChange={e => updateCurrentRoomVisual(current => ({ ...current, showAnchorLabels: e.target.checked }))}
             />
             <span className="rtls-toggle-slider" />
           </label>
-        </div>
-        <div className="rtls-runtime-note">
-          Toggle anchor markers and their coordinate labels on the room view canvas.
         </div>
       </div>
     </>
@@ -1270,6 +1704,7 @@ const RTLSDashboard: React.FC<RTLSDashboardProps> = ({ workspaceId, workspaceNam
               anchors={snap.anchors}
               tags={tagStates}
               referenceAnchorId={snap.reference_anchor_id}
+              floorplanSettings={floorplanSettings}
               onRoomClick={roomName => void selectRoom(roomName)}
               onRoomDoubleClick={roomName => void openRoomTab(roomName)}
               onRoomHover={setHoverRoomName}
@@ -1281,7 +1716,7 @@ const RTLSDashboard: React.FC<RTLSDashboardProps> = ({ workspaceId, workspaceNam
               tags={tagStates}
               activeSolveRoomName={snap.room_name || null}
               referenceAnchorId={snap.reference_anchor_id}
-              visualSettings={visualSettings}
+              visualSettings={currentRoomVisual}
             />
           ) : (
             <div className="rtls-no-room">
@@ -1382,12 +1817,20 @@ const RTLSDashboard: React.FC<RTLSDashboardProps> = ({ workspaceId, workspaceNam
               </div>
             </div>
 
-            <div className="rtls-dashboard-tabs rtls-dashboard-tabs--attached">
-              {([
-                ['setup', 'Setup'],
-                ['visuals', 'Visuals'],
-                ['analytics', 'Analytics'],
-              ] as [DashboardPanelTab, string][]).map(([tabId, label]) => (
+            <div
+              className={`rtls-dashboard-tabs rtls-dashboard-tabs--attached${
+                isFloorPlanView ? ' rtls-dashboard-tabs--with-banner' : ''
+              }`}
+            >
+              {(
+                (isFloorPlanView
+                  ? [['setup', 'Setup']]
+                  : [
+                      ['setup', 'Setup'],
+                      ['visuals', 'Visuals'],
+                      ['analytics', 'Analytics'],
+                    ]) as [DashboardPanelTab, string][]
+              ).map(([tabId, label]) => (
                 <button
                   key={tabId}
                   className={`rtls-btn rtls-dashboard-tab${activePanelTab === tabId ? ' rtls-dashboard-tab--active' : ''}`}
@@ -1396,6 +1839,17 @@ const RTLSDashboard: React.FC<RTLSDashboardProps> = ({ workspaceId, workspaceNam
                   {label}
                 </button>
               ))}
+              {isFloorPlanView && (
+                <div
+                  className={`rtls-connectivity-banner ${
+                    bleConnected
+                      ? 'rtls-connectivity-banner--connected'
+                      : 'rtls-connectivity-banner--disconnected'
+                  }`}
+                >
+                  {bleConnected ? 'Connected' : 'Double click on a room to begin BLE Connectivity'}
+                </div>
+              )}
             </div>
           </div>
 
@@ -1406,6 +1860,23 @@ const RTLSDashboard: React.FC<RTLSDashboardProps> = ({ workspaceId, workspaceNam
           </div>
         </div>
       </div>
+
+      {quickSetup.active && (
+        <div className="rtls-quick-setup-overlay" role="dialog" aria-modal="true">
+          <div className="rtls-quick-setup-modal">
+            <div className="rtls-quick-setup-spinner" />
+            <div className="rtls-quick-setup-title">Quick Setup</div>
+            <div className="rtls-quick-setup-step">{quickSetup.step}</div>
+            <button
+              type="button"
+              className="rtls-btn rtls-btn--danger rtls-quick-setup-cancel"
+              onClick={cancelQuickSetup}
+            >
+              Force Quit
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
