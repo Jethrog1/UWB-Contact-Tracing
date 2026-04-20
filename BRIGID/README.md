@@ -1,33 +1,58 @@
 # BRIGID Setup Notes
 
-## Backend runtimes
+## Windows source setup
 
-- The main BRIGID backend always runs from `BRIGID/backend/.venv`.
-- The RTLS `Analytics` tab is the only feature that uses a second Python runtime:
-  `BRIGID/backend/.conda-ml-compat`.
-- That second runtime exists because the bundled RTLS model was trained with
-  `scikit-learn 1.2.2` and must be inferred under a matching stack.
+Install these first:
 
-## First-time setup
+- Node.js and `npm`
+- Python 3
+- Conda or Miniconda
 
-1. Install Conda or Miniconda on the machine.
-2. Start BRIGID normally.
+Then run:
 
-BRIGID now provisions both runtimes during startup:
-
-- `backend/.venv` for the normal FastAPI backend and the rest of the app
-- `backend/.conda-ml-compat` for RTLS analytics model inference only
-
-If you want to prepare the analytics runtime manually, run:
-
-```bash
-cd BRIGID/backend
-.venv/bin/python setup_backend.py --ensure-ml-compat
+```powershell
+git clone <repo-url>
+cd UWB-Contact-Tracing\BRIGID\frontend
+npm install
+npm run dev
 ```
 
-## Important behavior
+You can also launch from:
 
-- If the compatibility runtime cannot be created, BRIGID setup now fails loudly
-  instead of silently skipping analytics support.
-- This keeps the app setup reproducible on another machine and avoids running
-  the bundled model under an incompatible scikit-learn version.
+```powershell
+cd UWB-Contact-Tracing\BRIGID
+.\start.ps1
+```
+
+Both flows rely on Electron startup to prepare the backend runtimes automatically.
+
+## What startup does
+
+When BRIGID starts from source on Windows, it provisions two runtimes:
+
+- `BRIGID\backend\.venv`
+  This is the main backend runtime. The FastAPI server and the rest of BRIGID run from here.
+- `BRIGID\backend\.conda-ml-compat`
+  This is the RTLS Analytics compatibility runtime. It exists only because the bundled RTLS model was trained with `scikit-learn 1.2.2`.
+
+Important distinction:
+
+- BRIGID actively runs the main backend from `.venv`
+- BRIGID does not start a second always-running ML server
+- The ML-compatible runtime is only called on demand when the RTLS `Analytics` tab runs model inference
+
+## Manual ML runtime setup
+
+If you ever need to prepare the analytics runtime manually:
+
+```powershell
+cd UWB-Contact-Tracing\BRIGID\backend
+.\.venv\Scripts\python.exe setup_backend.py --ensure-ml-compat
+```
+
+## Failure behavior
+
+- If BRIGID cannot create the ML compatibility runtime, startup fails clearly.
+- BRIGID does not silently skip analytics support.
+
+This is intentional, because running the bundled model under an incompatible scikit-learn version can produce broken results.

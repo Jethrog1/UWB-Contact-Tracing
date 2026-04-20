@@ -8,8 +8,9 @@
     "build": "node scripts/run-electron-vite.cjs build",
     "preview": "node scripts/run-electron-vite.cjs preview",
     "postinstall": "electron-builder install-app-deps",
-    "package": "npm run build && electron-builder --win --config",
-    "package:dir": "npm run build && electron-builder --win --dir --config"
+    "prepare:backend-bundle": "node scripts/prepare-backend-bundle.cjs",
+    "package": "npm run prepare:backend-bundle && npm run build && electron-builder --win --config",
+    "package:dir": "npm run prepare:backend-bundle && npm run build && electron-builder --win --dir --config"
   },
   "dependencies": {
     "@blueprintjs/core": "^5.13.0",
