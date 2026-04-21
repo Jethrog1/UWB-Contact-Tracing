@@ -47,6 +47,15 @@ async function ensureCadPython(backendDir: string): Promise<{ pythonCmd: string;
   return { pythonCmd: getBackendVenvPython(backendDir), pythonArgs: [] }
 }
 
+async function ensureMlCompatRuntime(backendDir: string, pythonCmd: string): Promise<void> {
+  console.log('[main] Verifying RTLS analytics compatibility runtime...')
+  await execFileAsync(
+    pythonCmd,
+    ['setup_backend.py', '--ensure-ml-compat'],
+    { cwd: backendDir, env: { ...process.env, PYTHONUNBUFFERED: '1' } },
+  )
+}
+
 async function isCadServerReachable(): Promise<boolean> {
   const controller = new AbortController()
   const timeout = setTimeout(() => controller.abort(), 1200)
@@ -148,6 +157,7 @@ async function startCadServer(): Promise<void> {
     : join(process.resourcesPath, 'backend')
 
   const { pythonCmd, pythonArgs } = await ensureCadPython(backendDir)
+  await ensureMlCompatRuntime(backendDir, pythonCmd)
 
   console.log(`[main] Starting CAD server in ${backendDir}`)
   console.log(`[main] Using Python executable: ${pythonCmd}`)
@@ -276,6 +286,8 @@ ipcMain.handle('cad:restart', async () => {
 })
 
 function createWindow(): void {
+  const windowIcon = join(brigidRoot, 'assets', 'ico', 'Logo 2 Transparent.ico')
+
   mainWindow = new BrowserWindow({
     width: 1600,
     height: 1000,
@@ -283,6 +295,7 @@ function createWindow(): void {
     minHeight: 800,
     show: false,
     backgroundColor: '#0a0b0d',
+    icon: windowIcon,
     titleBarStyle: 'hidden',
     titleBarOverlay: {
       color: '#00000000',
@@ -367,6 +380,12 @@ app.whenReady().then(async () => {
     await startCadServer()
   } catch (error) {
     console.error('[main] Failed to start CAD server:', error)
+    dialog.showErrorBox(
+      'BRIGID Backend Setup Failed',
+      String(error),
+    )
+    app.quit()
+    return
   }
   createWindow()
 

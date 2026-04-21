@@ -6,14 +6,27 @@ directories:
 files:
   - out/**/*
   - "!node_modules/**/*"
+extraResources:
+  - from: ../backend
+    to: backend
+    filter:
+      - "**/*"
+      - "!__pycache__/**"
+      - "!.pytest_cache/**"
+      - "!.mypy_cache/**"
+      - "!*.pyc"
+  - from: ../assets
+    to: assets
+    filter:
+      - "**/*"
 asarUnpack:
   - resources/**
 forceCodeSigning: false
 win:
+  icon: resources/icon.ico
   target:
     - target: portable
       arch:
         - x64
   signingHashAlgorithms: []
   sign: null
-
