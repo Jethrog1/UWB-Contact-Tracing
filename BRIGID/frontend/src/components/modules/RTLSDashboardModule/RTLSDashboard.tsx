@@ -194,6 +194,7 @@ export interface FloorplanSettings {
   heatPeak: number
   showAnchors: boolean
   showAnchorLabels: boolean
+  showTagsOutsideRooms: boolean
 }
 
 const DEFAULT_VISUAL: RTLSVisualSettings = {
@@ -205,6 +206,7 @@ const DEFAULT_VISUAL: RTLSVisualSettings = {
   showInterTagLines: true,
   showAnchors: true,
   showAnchorLabels: true,
+  showTagsOutsideRoom: false,
 }
 
 const DEFAULT_FLOORPLAN: FloorplanSettings = {
@@ -214,6 +216,7 @@ const DEFAULT_FLOORPLAN: FloorplanSettings = {
   heatPeak: 70,
   showAnchors: false,
   showAnchorLabels: false,
+  showTagsOutsideRooms: false,
 }
 
 const emptySnap = (): RTLSSnapshot => ({
@@ -471,8 +474,12 @@ const RTLSDashboard: React.FC<RTLSDashboardProps> = ({ workspaceId, workspaceNam
 
   const currentRoomVisual: RTLSVisualSettings = useMemo(() => {
     if (canvasMode !== 'room' || !visibleRoom) return DEFAULT_VISUAL
-    return roomVisualSettings[visibleRoom.room_name] ?? DEFAULT_VISUAL
-  }, [canvasMode, roomVisualSettings, visibleRoom])
+    const perRoom = roomVisualSettings[visibleRoom.room_name] ?? DEFAULT_VISUAL
+    return {
+      ...perRoom,
+      showTagsOutsideRoom: perRoom.showTagsOutsideRoom || floorplanSettings.showTagsOutsideRooms,
+    }
+  }, [canvasMode, floorplanSettings.showTagsOutsideRooms, roomVisualSettings, visibleRoom])
 
   const updateCurrentRoomVisual = useCallback(
     (updater: (prev: RTLSVisualSettings) => RTLSVisualSettings) => {
@@ -1548,6 +1555,26 @@ const RTLSDashboard: React.FC<RTLSDashboardProps> = ({ workspaceId, workspaceNam
     </div>
   )
 
+  const renderUniversalTagVisibilitySection = () => (
+    <div className="rtls-section">
+      <div className="rtls-section-title">Universal Tag Visibility</div>
+      <div className="rtls-runtime-note">
+        Overrides the per-room &ldquo;Show Tags Outside Room&rdquo; toggle for every room.
+      </div>
+      <div className="rtls-toggle-row">
+        <span className="rtls-toggle-label">Show Tags Outside Rooms</span>
+        <label className="rtls-toggle">
+          <input
+            type="checkbox"
+            checked={floorplanSettings.showTagsOutsideRooms}
+            onChange={e => updateFloorplan(current => ({ ...current, showTagsOutsideRooms: e.target.checked }))}
+          />
+          <span className="rtls-toggle-slider" />
+        </label>
+      </div>
+    </div>
+  )
+
   const renderUniversalSmoothingSection = () => (
     <div className="rtls-section">
       <div className="rtls-section-title">Universal Smoothing Filter</div>
@@ -1655,6 +1682,7 @@ const RTLSDashboard: React.FC<RTLSDashboardProps> = ({ workspaceId, workspaceNam
       {renderRoomManagerSection()}
       {renderFloorplanHeatMapSection()}
       {renderFloorplanAnchorSection()}
+      {renderUniversalTagVisibilitySection()}
       {renderUniversalNoiseCancelSection()}
       {renderUniversalSmoothingSection()}
       {renderLogAllTagsSection()}
@@ -1778,6 +1806,27 @@ const RTLSDashboard: React.FC<RTLSDashboardProps> = ({ workspaceId, workspaceNam
             />
             <span className="rtls-toggle-slider" />
           </label>
+        </div>
+      </div>
+
+      <div className="rtls-section">
+        <div className="rtls-section-title">Tag Visibility</div>
+        <div className="rtls-toggle-row">
+          <span className="rtls-toggle-label">Show Tags Outside Room</span>
+          <label className="rtls-toggle">
+            <input
+              type="checkbox"
+              checked={currentRoomVisual.showTagsOutsideRoom}
+              disabled={floorplanSettings.showTagsOutsideRooms}
+              onChange={e => updateCurrentRoomVisual(current => ({ ...current, showTagsOutsideRoom: e.target.checked }))}
+            />
+            <span className="rtls-toggle-slider" />
+          </label>
+        </div>
+        <div className="rtls-runtime-note">
+          {floorplanSettings.showTagsOutsideRooms
+            ? 'Forced on by the universal toggle in the floor-plan Setup tab.'
+            : 'When on, tag markers keep rendering after they leave this room’s boundary.'}
         </div>
       </div>
     </>

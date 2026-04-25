@@ -1,0 +1,112 @@
+{
+    "project_name": "OralPresentation",
+    "svg_file": "OralPresentation.svg",
+    "saved_at": "2026-04-22T21:09:36",
+    "units": "ft",
+    "rooms": [
+        {
+            "room_name": "Room_1",
+            "units": "ft",
+            "rtls_settings": {
+                "tag_height_ft": 0,
+                "filter_mode": "None",
+                "ble_module_port": ""
+            },
+            "reference_anchor_id": "R1A0",
+            "room_bounds_ft": {
+                "min_x": -4.883,
+                "min_y": -1.0,
+                "max_x": 5.131,
+                "max_y": 9.0,
+                "width": 10.014,
+                "height": 10.0
+            },
+            "anchors": [
+                {
+                    "id": "R1A0",
+                    "hw_id": "A0",
+                    "hardware_id": "A0",
+                    "x_ft": 0.0,
+                    "y_ft": 10.0,
+                    "z_ft": 0.0
+                },
+                {
+                    "id": "R1A1",
+                    "hw_id": "A1",
+                    "hardware_id": "A1",
+                    "x_ft": 10.014,
+                    "y_ft": 10.0,
+                    "z_ft": 0.0
+                },
+                {
+                    "id": "R1A2",
+                    "hw_id": "A2",
+                    "hardware_id": "A2",
+                    "x_ft": 0.0,
+                    "y_ft": 0.0,
+                    "z_ft": 0.0
+                },
+                {
+                    "id": "R1A3",
+                    "hw_id": "A3",
+                    "hardware_id": "A3",
+                    "x_ft": 9.813,
+                    "y_ft": 0.0,
+                    "z_ft": 0.0
+                }
+            ],
+            "edges": [],
+            "segments_ft": [
+                {
+                    "x1": 2.127,
+                    "y1": 5.819,
+                    "x2": -1.883,
+                    "y2": 5.821
+                },
+                {
+                    "x1": -1.883,
+                    "y1": 9.0,
+                    "x2": -1.883,
+                    "y2": 5.821
+                },
+                {
+                    "x1": -4.883,
+                    "y1": 9.0,
+                    "x2": -1.883,
+                    "y2": 9.0
+                },
+                {
+                    "x1": -4.883,
+                    "y1": -1.0,
+                    "x2": -4.883,
+                    "y2": 9.0
+                },
+                {
+                    "x1": -4.883,
+                    "y1": -1.0,
+                    "x2": 5.117,
+                    "y2": -1.0
+                },
+                {
+                    "x1": 5.131,
+                    "y1": 9.0,
+                    "x2": 5.117,
+                    "y2": -1.0
+                },
+                {
+                    "x1": 2.156,
+                    "y1": 9.0,
+                    "x2": 5.131,
+                    "y2": 9.0
+                },
+                {
+                    "x1": 2.127,
+                    "y1": 5.819,
+                    "x2": 2.127,
+                    "y2": 8.998
+                }
+            ],
+            "interior_segments_ft": []
+        }
+    ]
+}

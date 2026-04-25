@@ -639,6 +639,14 @@ class RTLSRuntime:
         items.sort(key=lambda item: _home_py_ble_sort_key(item[0]))
         return dict(items)
 
+    def get_profile_payloads(self) -> list[dict]:
+        """Reshape loaded tags as profile-style dicts for the idle service."""
+        with self._lock:
+            return [
+                {"tag_id": tag_id, "device": {"mac_address": info.get("mac_address", "")}}
+                for tag_id, info in self._tag_registry.items()
+            ]
+
     # ── Transport lifecycle ────────────────────────────────────────────────────
 
     def connect(self, mode: str, port: str = "") -> tuple[bool, str]:

@@ -43,6 +43,7 @@ from utilities.profilers.tag_profile_io import (
 from utilities.profilers.tag_profiler import validate_profile, serialize_profile
 from utilities.profilers.calibration_math import build_eval_func
 from utilities.calibration.runtime import CalibrationRuntime
+from utilities.ble_idle import ble_idle_service
 from utilities.rooms.room_data import Anchor, Room, segments_match
 from utilities.rooms.room_io import (
     create_empty_room,
@@ -99,6 +100,53 @@ _WALK_ANIM_DIR = pathlib.Path(__file__).parent.parent / "assets" / "Walking anim
 
 # Workspace registry: workspace_id → workspace_name (for path resolution)
 _workspace_names: dict[str, str] = {}
+
+
+def _ble_idle_dispatch(event_type: str, tag_id: str, payload: str) -> None:
+    """Fan BLE Idle events out to any runtime currently bridged to the service."""
+    try:
+        if _rtls_runtime.is_bridged_to_ble_idle():
+            if event_type == "data":
+                _rtls_runtime.ingest_ble_data(tag_id, payload)
+            elif event_type == "status":
+                _rtls_runtime.ingest_ble_status(tag_id, payload)
+    except Exception as exc:
+        logger.debug("ble_idle -> rtls dispatch failed: %s", exc)
+
+    for runtime in list(_calibration_runtimes.values()):
+        try:
+            if not runtime.is_bridged_to_ble_idle():
+                continue
+            if event_type == "data":
+                runtime.ingest_ble_data(tag_id, payload)
+            elif event_type == "status":
+                runtime.ingest_ble_status(tag_id, payload)
+        except Exception as exc:
+            logger.debug("ble_idle -> calibration dispatch failed: %s", exc)
+
+
+ble_idle_service.subscribe(_ble_idle_dispatch)
+
+
+def _ble_idle_current_statuses() -> dict[str, str]:
+    return {tag["tag_id"]: tag["status"] for tag in ble_idle_service.status().get("tags", [])}
+
+
+def _calibration_consumer_id(workspace_id: Optional[str]) -> str:
+    return f"calibration:{workspace_id or _DEFAULT_CAL_KEY}"
+
+
+def _resync_ble_idle_profiles(workspace_id: Optional[str], workspace_name: Optional[str] = None) -> None:
+    """Refresh the idle service's MAC list from the given workspace's profiles.
+
+    No-op when the service isn't running (no consumers).
+    """
+    if not ble_idle_service.is_enabled():
+        return
+    try:
+        ble_idle_service.sync_profiles(_load_all_profiles(workspace_id, workspace_name))
+    except Exception as exc:
+        logger.debug("ble_idle sync_profiles failed: %s", exc)
 
 
 def _resolve_tags_dir(workspace_id: Optional[str], workspace_name: Optional[str] = None) -> str:
@@ -162,6 +210,10 @@ async def api_workspace_paths(workspace_id: str, workspace_name: Optional[str] =
 
 @app.on_event("shutdown")
 async def shutdown_runtime() -> None:
+    try:
+        ble_idle_service.shutdown()
+    except Exception:
+        pass
     for runtime in _calibration_runtimes.values():
         try:
             runtime.shutdown()
@@ -355,6 +407,7 @@ async def api_profile_save(req: SaveProfileRequest, workspace_id: Optional[str] 
     ok, result = save_profile(req.profile, tags_dir)
     if not ok:
         return {"success": False, "error": result}
+    _resync_ble_idle_profiles(workspace_id)
     return {"success": True, "tag_id": req.profile.get("tag_id", ""), "path": result}
 
 
@@ -379,6 +432,7 @@ async def api_profile_delete(tag_id: str, workspace_id: Optional[str] = None):
     ok, error = delete_profile(tag_id, tags_dir)
     if not ok:
         return {"success": False, "error": error}
+    _resync_ble_idle_profiles(workspace_id)
     return {"success": True}
 
 
@@ -426,6 +480,18 @@ async def api_calibration_transport_connect(req: CalibrationTransportConnectRequ
         _workspace_names[workspace_id] = workspace_name
     profiles = _load_all_profiles(workspace_id, workspace_name)
     runtime = _get_calibration_runtime(workspace_id)
+    if req.mode == "ble":
+        consumer_id = _calibration_consumer_id(workspace_id)
+        ok, detail = ble_idle_service.acquire(consumer_id, profiles)
+        if not ok:
+            return {"success": False, "error": detail}
+        ok, bridge_detail = runtime.bridge_to_ble_idle(
+            profiles, initial_statuses=_ble_idle_current_statuses(),
+        )
+        if not ok:
+            ble_idle_service.release(consumer_id)
+            return {"success": False, "error": bridge_detail}
+        return {"success": True, "detail": detail, **runtime.snapshot(profiles)}
     ok, detail = runtime.connect(req.mode, profiles, req.port)
     if not ok:
         return {"success": False, "error": detail}
@@ -435,7 +501,10 @@ async def api_calibration_transport_connect(req: CalibrationTransportConnectRequ
 @app.post("/api/calibration/transport/disconnect")
 async def api_calibration_transport_disconnect(workspace_id: Optional[str] = None, workspace_name: Optional[str] = None):
     runtime = _get_calibration_runtime(workspace_id)
+    was_bridged = runtime.is_bridged_to_ble_idle()
     runtime.disconnect()
+    if was_bridged:
+        ble_idle_service.release(_calibration_consumer_id(workspace_id))
     return {"success": True, **runtime.snapshot(_load_all_profiles(workspace_id, workspace_name))}
 
 
@@ -862,6 +931,10 @@ class RtlsElevationRequest(BaseModel):
     value_ft: Optional[float] = None
 
 
+class RtlsNoiseCancelRequest(BaseModel):
+    enabled: bool
+
+
 class RtlsAnalyticsRequest(BaseModel):
     csv_path: Optional[str] = None
 
@@ -1163,13 +1236,30 @@ async def api_rtls_workspace_load(req: RtlsWorkspaceLoadRequest):
 
 @app.post("/api/rtls/transport/connect")
 async def api_rtls_transport_connect(req: RtlsConnectRequest):
-    ok, detail = _rtls_runtime.connect(req.mode or "serial", req.port)
+    mode = req.mode or "serial"
+    if mode == "ble":
+        # Pull MAC list from the tags currently loaded into the RTLS runtime.
+        profiles = _rtls_runtime.get_profile_payloads()
+        ok, detail = ble_idle_service.acquire("rtls", profiles)
+        if not ok:
+            return {"success": False, "error": detail, **_rtls_runtime.snapshot()}
+        ok, bridge_detail = _rtls_runtime.bridge_to_ble_idle(
+            initial_statuses=_ble_idle_current_statuses(),
+        )
+        if not ok:
+            ble_idle_service.release("rtls")
+            return {"success": False, "error": bridge_detail, **_rtls_runtime.snapshot()}
+        return {"success": True, "detail": detail, **_rtls_runtime.snapshot()}
+    ok, detail = _rtls_runtime.connect(mode, req.port)
     return {"success": ok, "error": None if ok else detail, **_rtls_runtime.snapshot()}
 
 
 @app.post("/api/rtls/transport/disconnect")
 async def api_rtls_transport_disconnect():
+    was_bridged = _rtls_runtime.is_bridged_to_ble_idle()
     _rtls_runtime.disconnect()
+    if was_bridged:
+        ble_idle_service.release("rtls")
     return {"success": True, **_rtls_runtime.snapshot()}
 
 
@@ -1213,6 +1303,12 @@ async def api_rtls_elevation(req: RtlsElevationRequest):
     return {"success": True, **_rtls_runtime.snapshot()}
 
 
+@app.post("/api/rtls/noise_cancel")
+async def api_rtls_noise_cancel(req: RtlsNoiseCancelRequest):
+    _rtls_runtime.set_noise_cancel(req.enabled)
+    return {"success": True, **_rtls_runtime.snapshot()}
+
+
 @app.post("/api/rtls/csv/start")
 async def api_rtls_csv_start():
     """Start CSV distance logging into workspace RTLS/ folder."""
@@ -1244,3 +1340,37 @@ async def api_rtls_analytics_run(req: RtlsAnalyticsRequest):
     except Exception:
         logger.exception("RTLS analytics run failed for %s", csv_path)
         return {"success": False, "error": "RTLS analytics failed unexpectedly."}
+
+
+# ---------------------------------------------------------------------------
+# Active BLE Idle (HotBar BLE menu)
+# ---------------------------------------------------------------------------
+
+class BleIdleEnableRequest(BaseModel):
+    workspace_id: Optional[str] = None
+    workspace_name: Optional[str] = None
+
+
+@app.get("/api/ble_idle/status")
+async def api_ble_idle_status():
+    return {"success": True, **ble_idle_service.status()}
+
+
+@app.post("/api/ble_idle/enable")
+async def api_ble_idle_enable(req: BleIdleEnableRequest):
+    if req.workspace_id and req.workspace_name and req.workspace_id not in _workspace_names:
+        _workspace_names[req.workspace_id] = req.workspace_name
+    profiles = _load_all_profiles(req.workspace_id, req.workspace_name)
+    ok, detail = ble_idle_service.enable(profiles)
+    if not ok:
+        return {"success": False, "error": detail, **ble_idle_service.status()}
+    return {"success": True, "detail": detail, **ble_idle_service.status()}
+
+
+@app.post("/api/ble_idle/disable")
+async def api_ble_idle_disable():
+    # Release HotBar's hold only. RTLS / Calibration consumers (if any)
+    # keep the service alive — the user explicitly wants connectivity to
+    # continue when other modules are still using BLE.
+    ble_idle_service.release("hotbar")
+    return {"success": True, **ble_idle_service.status()}

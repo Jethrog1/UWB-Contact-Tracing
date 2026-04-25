@@ -42,6 +42,7 @@ export interface RTLSVisualSettings {
   showInterTagLines: boolean
   showAnchors: boolean
   showAnchorLabels: boolean
+  showTagsOutsideRoom: boolean
 }
 
 export interface RTLSRoomViewHandle {
@@ -337,18 +338,20 @@ const RTLSRoomView = forwardRef<RTLSRoomViewHandle, Props>(({
     anchor.id === (room.reference_anchor_id ?? null)
     || (!!referenceAnchorId && (anchor.hw_id === referenceAnchorId || anchor.id === referenceAnchorId))
   )) ?? null
-  const localTags = tags
+  const localTagsAll = tags
     .filter(tag => tag.position)
     .map(tag => {
       const [x, y] = toLocalPoint(room, tag.position!.x, tag.position!.y)
       return { ...tag, localX: x, localY: y }
     })
-    .filter(tag => (
-      tag.localX >= -0.25
-      && tag.localX <= room.room_bounds_ft.width + 0.25
-      && tag.localY >= -0.25
-      && tag.localY <= room.room_bounds_ft.height + 0.25
-    ))
+  const localTags = visualSettings.showTagsOutsideRoom
+    ? localTagsAll
+    : localTagsAll.filter(tag => (
+        tag.localX >= -0.25
+        && tag.localX <= room.room_bounds_ft.width + 0.25
+        && tag.localY >= -0.25
+        && tag.localY <= room.room_bounds_ft.height + 0.25
+      ))
 
   propsRef.current = {
     room,
@@ -677,7 +680,8 @@ const RTLSRoomView = forwardRef<RTLSRoomViewHandle, Props>(({
       }
     }
 
-    if (polygon.length >= 3) {
+    const clipTagsToRoom = polygon.length >= 3 && !vs.showTagsOutsideRoom
+    if (clipTagsToRoom) {
       ctx.save()
       ctx.beginPath()
       const [x0, y0] = worldToScreen(viewport, polygon[0][0], polygon[0][1])
@@ -777,7 +781,7 @@ const RTLSRoomView = forwardRef<RTLSRoomViewHandle, Props>(({
       }
     }
 
-    if (polygon.length >= 3) ctx.restore()
+    if (clipTagsToRoom) ctx.restore()
 
     if (tagStatesRef.current.size === 0) {
       ctx.fillStyle = 'rgba(180, 194, 214, 0.7)'

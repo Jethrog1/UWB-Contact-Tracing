@@ -61,6 +61,11 @@ class BleIdleService:
         # tag_id -> asyncio Task running the per-tag BLE loop
         self._tasks: dict[str, Any] = {}
 
+        # Active consumers (ref-counted lifetime). The service runs while
+        # any consumer holds a slot; releasing the last one stops it.
+        # IDs: "hotbar", "rtls", "calibration:<workspace_key>".
+        self._consumers: set[str] = set()
+
         self._subscribers: list[Callable[[str, str, str], None]] = []
 
     # ── Subscription ──────────────────────────────────────────────────────
@@ -89,30 +94,81 @@ class BleIdleService:
     # ── Public API ────────────────────────────────────────────────────────
 
     def is_enabled(self) -> bool:
+        """True while the BLE service is actually running."""
         return self._enabled
 
     def is_available(self) -> bool:
         return HAS_BLEAK
 
-    def enable(self, profiles: list[dict]) -> tuple[bool, str]:
+    def has_consumer(self, consumer_id: str) -> bool:
+        with self._lock:
+            return consumer_id in self._consumers
+
+    def consumer_list(self) -> list[str]:
+        with self._lock:
+            return sorted(self._consumers)
+
+    def acquire(self, consumer_id: str, profiles: list[dict]) -> tuple[bool, str]:
+        """Register a consumer. Starts the service if it isn't already running.
+
+        Returns (ok, detail). When called for an already-active service the
+        result is immediate — the consumer just hooks into the existing
+        connections.
+        """
         if not HAS_BLEAK:
             return False, "bleak is not installed on the backend."
+        if not consumer_id:
+            return False, "Consumer id required."
         with self._lock:
-            if self._enabled:
-                # Already running — just refresh the MAC set.
-                pass
-            else:
+            was_running = self._enabled
+            self._consumers.add(consumer_id)
+            if not was_running:
                 self._enabled = True
                 self._stop.clear()
                 self._thread = threading.Thread(
                     target=self._thread_main, name="BleIdleThread", daemon=True,
                 )
                 self._thread.start()
-        # Give the loop a beat to start before syncing profiles.
+        # Refresh MAC set to whatever the latest caller knows about.
         self.sync_profiles(profiles)
-        return True, f"Active BLE Idle running for {len(self._tag_macs)} tag(s)."
+        with self._lock:
+            tag_count = len(self._tag_macs)
+        if was_running:
+            detail = f"Joined Active BLE Idle ({tag_count} tag(s))."
+        else:
+            detail = f"Active BLE Idle running for {tag_count} tag(s)."
+        return True, detail
+
+    def release(self, consumer_id: str) -> bool:
+        """Drop a consumer. Stops the service when the last one leaves.
+
+        Returns True if the service was stopped as a result of this call.
+        """
+        with self._lock:
+            if consumer_id not in self._consumers:
+                return False
+            self._consumers.discard(consumer_id)
+            still_held = bool(self._consumers)
+        if still_held:
+            return False
+        self._stop_service()
+        return True
+
+    def shutdown(self) -> None:
+        """Force-stop: drop every consumer and tear down the service."""
+        with self._lock:
+            self._consumers.clear()
+        self._stop_service()
+
+    # Backward-compat alias for HotBar-only enable/disable (singleton consumer).
+    def enable(self, profiles: list[dict]) -> tuple[bool, str]:
+        return self.acquire("hotbar", profiles)
 
     def disable(self) -> None:
+        self.release("hotbar")
+
+    def _stop_service(self) -> None:
+        """Tear down the BLE thread + loop. Idempotent; safe with no consumers."""
         thread: threading.Optional[Thread] = None
         loop: asyncio.Optional[AbstractEventLoop] = None
         with self._lock:
@@ -124,11 +180,9 @@ class BleIdleService:
             loop = self._loop
             self._thread = None
             self._loop = None
-            # Reset status immediately so snapshots reflect the disable.
             for tag_id in list(self._tag_status):
                 self._tag_status[tag_id] = "Disconnected"
 
-        # Cancel everything from inside the loop thread to keep bleak happy.
         if loop is not None:
             try:
                 loop.call_soon_threadsafe(loop.stop)
@@ -140,7 +194,6 @@ class BleIdleService:
         with self._lock:
             self._tasks.clear()
 
-        # Notify subscribers that everything dropped.
         for tag_id in list(self._tag_status.keys()):
             self._emit("status", tag_id, "Disconnected")
 
@@ -196,9 +249,16 @@ class BleIdleService:
                 }
                 for tag_id in self._tag_macs
             ]
+            consumers = sorted(self._consumers)
+            # `enabled` tracks the HotBar toggle specifically: True when the
+            # user has Active BLE Idle switched on from the HotBar BLE menu.
+            # `service_running` reports the global service state, which may
+            # be True via RTLS / Calibration even when HotBar is off.
             return {
-                "enabled": self._enabled,
+                "enabled": "hotbar" in self._consumers,
+                "service_running": self._enabled,
                 "available": HAS_BLEAK,
+                "consumers": consumers,
                 "tags": tags,
             }
 
