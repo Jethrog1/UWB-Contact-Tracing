@@ -63,11 +63,11 @@ const FeatureManager: React.FC<Props> = ({ state }) => {
       <div className="fm-header" onClick={() => setCollapsed(v => !v)}>
         <span className="fm-chevron" style={{ fontSize: 10, color: 'var(--text-muted)' }}>{collapsed ? '▸' : '▾'}</span>
         <span className="fm-title">Features</span>
-        <span className="fm-summary">{nodes.length ? `${nodes.length}` : '—'}</span>
+        {nodes.length > 0 && <span className="fm-summary">{nodes.length}</span>}
       </div>
 
       <AnimatePresence initial={false}>
-        {!collapsed && (
+        {!collapsed && nodes.length > 0 && (
           <motion.div
             className="fm-body"
             initial={{ height: 0, opacity: 0 }}
@@ -75,13 +75,9 @@ const FeatureManager: React.FC<Props> = ({ state }) => {
             exit={{ height: 0, opacity: 0 }}
             transition={{ duration: 0.18 }}
           >
-            {nodes.length === 0 ? (
-              <div className="fm-empty">No geometry yet</div>
-            ) : (
-              nodes.map(node => (
-                <FeatureNodeRow key={node.id} node={node} depth={0} activeDimKeys={activeDimKeys} />
-              ))
-            )}
+            {nodes.map(node => (
+              <FeatureNodeRow key={node.id} node={node} depth={0} activeDimKeys={activeDimKeys} />
+            ))}
           </motion.div>
         )}
       </AnimatePresence>

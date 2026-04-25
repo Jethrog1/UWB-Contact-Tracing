@@ -790,7 +790,7 @@ const RTLSRoomView = forwardRef<RTLSRoomViewHandle, Props>(({
       ctx.textBaseline = 'middle'
       ctx.fillText(
         solveRoomName === room.room_name
-          ? 'Waiting for live RTLS positions...'
+          ? 'no readings buddy'
           : `Room tab open. Active solve room is ${solveRoomName || 'not selected'}.`,
         canvas.width / 2,
         24,

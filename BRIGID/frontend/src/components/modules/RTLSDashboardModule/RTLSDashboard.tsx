@@ -1175,11 +1175,7 @@ const RTLSDashboard: React.FC<RTLSDashboardProps> = ({ workspaceId, workspaceNam
             <option key={port} value={port}>{port}</option>
           ))}
         </select>
-      ) : (
-        <div className="rtls-runtime-note">
-          BLE uses the MAC addresses saved in each tag profile for the active RTLS room.
-        </div>
-      )}
+      ) : null}
       <div className="rtls-runtime-note">{snap.transport_detail}</div>
       {snap.tags.length > 0 ? (
         <div className="rtls-ble-rows">
@@ -1297,9 +1293,6 @@ const RTLSDashboard: React.FC<RTLSDashboardProps> = ({ workspaceId, workspaceNam
   const renderUniversalNoiseCancelSection = () => (
     <div className="rtls-section">
       <div className="rtls-section-title">Universal Noise Cancelation</div>
-      <div className="rtls-runtime-note">
-        Overrides noise cancelation for all rooms.
-      </div>
       <div className="rtls-toggle-row">
         <span className="rtls-toggle-label">Enable Noise Cancelation</span>
         <label className="rtls-toggle">
@@ -1517,9 +1510,6 @@ const RTLSDashboard: React.FC<RTLSDashboardProps> = ({ workspaceId, workspaceNam
           onChange={e => updateFloorplan(current => ({ ...current, heatPeak: parseInt(e.target.value, 10) }))}
         />
       </div>
-      <div className="rtls-runtime-note">
-        Floor-plan heat map uses live tag positions across all rooms. Tag markers are hidden — only the heat layer is shown.
-      </div>
     </div>
   )
 
@@ -1549,18 +1539,12 @@ const RTLSDashboard: React.FC<RTLSDashboardProps> = ({ workspaceId, workspaceNam
           <span className="rtls-toggle-slider" />
         </label>
       </div>
-      <div className="rtls-runtime-note">
-        Shows the anchors of every room on the floor plan. Does not affect individual room views.
-      </div>
     </div>
   )
 
   const renderUniversalTagVisibilitySection = () => (
     <div className="rtls-section">
       <div className="rtls-section-title">Universal Tag Visibility</div>
-      <div className="rtls-runtime-note">
-        Overrides the per-room &ldquo;Show Tags Outside Room&rdquo; toggle for every room.
-      </div>
       <div className="rtls-toggle-row">
         <span className="rtls-toggle-label">Show Tags Outside Rooms</span>
         <label className="rtls-toggle">
@@ -1578,9 +1562,6 @@ const RTLSDashboard: React.FC<RTLSDashboardProps> = ({ workspaceId, workspaceNam
   const renderUniversalSmoothingSection = () => (
     <div className="rtls-section">
       <div className="rtls-section-title">Universal Smoothing Filter</div>
-      <div className="rtls-runtime-note">
-        Overrides the smoothing filter for all rooms.
-      </div>
       <div className="rtls-transport-tabs">
         {(['Raw', 'EMA', 'Rolling', 'Kalman'] as const).map(mode => (
           <button
@@ -1743,9 +1724,6 @@ const RTLSDashboard: React.FC<RTLSDashboardProps> = ({ workspaceId, workspaceNam
             onChange={e => updateCurrentRoomVisual(current => ({ ...current, heatPeak: parseInt(e.target.value, 10) }))}
           />
         </div>
-        <div className="rtls-runtime-note">
-          Heat map settings are saved per room — changes here do not affect other rooms or the floor plan.
-        </div>
       </div>
 
       <div className="rtls-section">
@@ -1823,11 +1801,11 @@ const RTLSDashboard: React.FC<RTLSDashboardProps> = ({ workspaceId, workspaceNam
             <span className="rtls-toggle-slider" />
           </label>
         </div>
-        <div className="rtls-runtime-note">
-          {floorplanSettings.showTagsOutsideRooms
-            ? 'Forced on by the universal toggle in the floor-plan Setup tab.'
-            : 'When on, tag markers keep rendering after they leave this room’s boundary.'}
-        </div>
+        {floorplanSettings.showTagsOutsideRooms && (
+          <div className="rtls-runtime-note">
+            Forced on by the universal toggle in the floor-plan Setup tab.
+          </div>
+        )}
       </div>
     </>
   )
@@ -2059,6 +2037,7 @@ const RTLSDashboard: React.FC<RTLSDashboardProps> = ({ workspaceId, workspaceNam
   return (
     <div className="rtls-root">
       <div className="rtls-stage">
+        <div className="rtls-module-title">RTLS Dashboard</div>
         <div className="rtls-main-panel">
           {!roomLoaded ? (
             <div className="rtls-no-room">
@@ -2178,17 +2157,14 @@ const RTLSDashboard: React.FC<RTLSDashboardProps> = ({ workspaceId, workspaceNam
               <div className={`rtls-load-body${loadCollapsed ? ' rtls-load-body--collapsed' : ''}`}>
                 <div className="rtls-load-body-inner">
                   <button className="rtls-btn rtls-btn--primary rtls-btn--full" onClick={() => void loadProject()}>
-                    Load Project…
+                    Load Project
                   </button>
                   <div className="rtls-section-title" style={{ marginTop: 8 }}>Load Individually</div>
                   <div className="rtls-load-row">
-                    <button className="rtls-btn" style={{ flex: 1 }} onClick={() => void loadFolder()}>Workspace…</button>
-                    <button className="rtls-btn" style={{ flex: 1 }} onClick={() => void loadRoomsFolder()}>Rooms…</button>
-                    <button className="rtls-btn" style={{ flex: 1 }} onClick={() => void loadTagsFolder()}>Tags…</button>
-                    <button className="rtls-btn" style={{ flex: 1 }} onClick={() => void loadSvgFolder()}>SVG…</button>
-                  </div>
-                  <div className="rtls-runtime-note">
-                    RTLS reuses the finished Anchor Manager project: full floor plan as the environment, room tabs as focused subsets.
+                    <button className="rtls-btn" style={{ flex: 1 }} onClick={() => void loadFolder()}>Workspace</button>
+                    <button className="rtls-btn" style={{ flex: 1 }} onClick={() => void loadRoomsFolder()}>Rooms</button>
+                    <button className="rtls-btn" style={{ flex: 1 }} onClick={() => void loadTagsFolder()}>Tags</button>
+                    <button className="rtls-btn" style={{ flex: 1 }} onClick={() => void loadSvgFolder()}>SVG</button>
                   </div>
                 </div>
               </div>

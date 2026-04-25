@@ -13,6 +13,20 @@
   background: var(--bg-primary);
 }
 
+/* ── Module title (floating, no banner) ───────────────────────────── */
+.cad-module-title {
+  position: absolute;
+  top: 8px;
+  left: 62px;
+  z-index: 21;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+  letter-spacing: 0.02em;
+  pointer-events: none;
+  user-select: none;
+}
+
 /* ── Offline overlay ─────────────────────────────────────────────── */
 .cad-offline-overlay {
   position: absolute;

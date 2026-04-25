@@ -32,15 +32,29 @@
 .ct-canvas-hint,
 .ct-right-panel,
 .ct-graph-panel,
-.ct-inline-editor {
+.ct-inline-editor,
+.ct-module-title {
   position: absolute;
   z-index: 10;
+}
+
+/* ── Module title (floating, no banner) ───────────────────────────── */
+
+.ct-module-title {
+  top: 8px;
+  left: 62px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+  letter-spacing: 0.02em;
+  pointer-events: none;
+  user-select: none;
 }
 
 /* ── Status toast ─────────────────────────────────────────────────── */
 
 .ct-status {
-  top: 12px;
+  top: 36px;
   left: 58px;
   z-index: 13;
   max-width: 300px;

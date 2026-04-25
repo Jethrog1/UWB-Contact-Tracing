@@ -18,6 +18,14 @@
   flex-shrink: 0;
 }
 
+.am-module-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+  letter-spacing: 0.02em;
+  margin-right: 16px;
+}
+
 .am-project-name {
   font-size: var(--text-md);
   font-weight: 600;

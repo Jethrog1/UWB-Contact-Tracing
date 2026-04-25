@@ -257,6 +257,7 @@ const CADModule: React.FC<CADModuleProps> = ({ workspaceId, workspaceName }) => 
   return (
     <>
       <div ref={canvasAreaRef} className="cad-canvas-area">
+        <div className="cad-module-title">2D CAD Modeling</div>
         {/* Offline overlay */}
         {status !== 'connected' && !state && (
           <div className="cad-offline-overlay">

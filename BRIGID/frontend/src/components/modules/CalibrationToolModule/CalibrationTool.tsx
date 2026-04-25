@@ -589,6 +589,7 @@ const CalibrationTool: React.FC<CalibrationToolProps> = ({ workspaceId, workspac
   return (
     <div className="ct-root">
       <div className="ct-stage">
+        <div className="ct-module-title">Calibration Tool</div>
         <div className="ct-main-panel">
           <CalibrationMapCanvas
             ref={mapCanvasRef}
@@ -923,7 +924,7 @@ const CalibrationTool: React.FC<CalibrationToolProps> = ({ workspaceId, workspac
                     </div>
                   ))}
                   <div className="ct-field-inline">
-                    <label className="ct-field-inline-label" style={{ minWidth: 50, whiteSpace: 'nowrap' }}>Height</label>
+                    <label className="ct-field-inline-label" style={{ fontSize: 9.5, whiteSpace: 'nowrap', minWidth: 60 }}>z Height (FT)</label>
                     <input
                       className="ct-input"
                       value={referenceHeight}

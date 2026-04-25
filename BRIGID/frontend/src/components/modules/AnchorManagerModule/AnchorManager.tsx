@@ -847,6 +847,7 @@ const AnchorManager: React.FC<AnchorManagerProps> = ({ workspaceId, workspaceNam
   return (
     <div className="am-root" ref={rootRef}>
       <div className="am-toolbar">
+        <span className="am-module-title">Anchor Manager</span>
         <span className="am-project-name">{workspaceState.projectName}</span>
         <div className="am-toolbar-actions">
           <button className="am-btn am-btn--ghost" onClick={handleLoadSVG}>Load SVG</button>

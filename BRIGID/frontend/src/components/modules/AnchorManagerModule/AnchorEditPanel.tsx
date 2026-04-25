@@ -201,13 +201,13 @@ const AnchorEditPanelImpl: React.FC<Props> = ({
                 </div>
                 <div className="am-panel-meta">Segments: {selectedRoom.segments_ft.length}</div>
                 <div className="am-panel-meta">Anchors: {selectedRoom.anchors.length}</div>
-                <div className="am-panel-meta">COM Port: {selectedRoom.rtls_settings?.ble_module_port || '—'}</div>
+                <div className="am-panel-meta">COM Port: {selectedRoom.rtls_settings?.ble_module_port || 'N/A'}</div>
                 <button
                   className="am-btn am-btn--secondary"
                   style={{ marginTop: 8, width: '100%' }}
                   onClick={() => onPageChange('room-detail')}
                 >
-                  Open Room Detail →
+                  Open Room Detail
                 </button>
               </div>
 
@@ -339,7 +339,7 @@ const AnchorEditPanelImpl: React.FC<Props> = ({
               &nbsp;·&nbsp;Ref: {selectedRoom.reference_anchor_id ?? '—'}
             </div>
             <div className="am-panel-hint" style={{ marginTop: 6 }}>
-              Hold Ctrl and click to place an anchor · Click an anchor to select · Drag to move · Scroll to zoom
+              Hold Ctrl, drag and left click to place an anchor. Use Main panel incase you're troubled.
             </div>
             <div className="am-panel-room-canvas">
               <RoomViewCanvas
@@ -388,11 +388,11 @@ const AnchorEditPanelImpl: React.FC<Props> = ({
                 {serialPortsLoading ? '…' : 'Refresh'}
               </button>
             </div>
-            <div className="am-panel-hint" style={{ marginTop: 6 }}>
-              {autoDetectPort
-                ? `Auto-detect available: ${autoDetectPort}`
-                : 'No auto-detected serial module found right now.'}
-            </div>
+            {autoDetectPort && (
+              <div className="am-panel-hint" style={{ marginTop: 6 }}>
+                Auto-detect available: {autoDetectPort}
+              </div>
+            )}
           </div>
 
           <div className="am-panel-section">

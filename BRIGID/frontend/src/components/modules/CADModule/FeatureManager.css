@@ -1,12 +1,12 @@
 /* ── Feature Manager — floating text, no panel chrome ─────────── */
 .feature-manager {
   position: absolute;
-  top: 14px;
+  top: 36px;
   left: 60px;
   z-index: 20;
   width: auto;
   max-width: 260px;
-  max-height: calc(100% - 28px);
+  max-height: calc(100% - 50px);
   overflow-y: auto;
   overflow-x: hidden;
   /* No background, no border, no box-shadow — just floating text */
