@@ -55,7 +55,7 @@ This repository also includes the embedded code used with the DW3000 UWB hardwar
 
 ## Supplementary Files 
 
-- The `SolidworksDrawings/` folder contains the SolidWorks CAD files for the tag housing assembly and anchor housing assembly, as well as subparts used in each model
+- The `SolidworksDrawings/` folder contains the SolidWorks CAD files for the wearable tag housing assembly and stationary anchor housing assembly, as well as subparts used in each model
 - The file `BME-Demo-Day-Poster Team 6.pdf` contains the final presentation poster for this award winning project
 
 ## Repository Structure
@@ -63,10 +63,12 @@ This repository also includes the embedded code used with the DW3000 UWB hardwar
 ```text
 UWB-Contact-Tracing/
 ├── BRIGID/
-│   ├── frontend/    # Electron + React UI
-│   ├── backend/     # FastAPI backend and CAD/RTLS services
-│   ├── assets/      # App assets and bundled resources
-│   ├── start.sh     # macOS/Linux launcher
-│   └── start.ps1    # Windows launcher
-├── HardwareCode/    # Arduino / embedded firmware for UWB tags and anchors
+│   ├── frontend/           # Electron + React UI
+│   ├── backend/            # FastAPI backend and CAD/RTLS services
+│   ├── assets/             # App assets and bundled resources
+│   ├── start.sh            # macOS/Linux launcher
+│   └── start.ps1           # Windows launcher
+├── HardwareCode/           # Arduino / embedded firmware for UWB tags and anchors
+├── SoldiworkDrawings/      # SolidWorks assemblies, parts, and enclosure design files
+├── BME-Demo-Day-Poster Team 6.pdf   # Project poster / presentation artifact
 └── README.md
