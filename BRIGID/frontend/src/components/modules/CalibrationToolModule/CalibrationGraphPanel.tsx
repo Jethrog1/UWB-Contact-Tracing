@@ -35,7 +35,6 @@ const CalibrationGraphPanel: React.FC<Props> = ({ tag, collapsed, onToggle }) =>
   const [zoom, setZoom] = useState(1.0)
   const svgRef = useRef<SVGSVGElement>(null)
 
-  // ── Raw data bounds (always minX=0, minY=0) ──────────────────────
   const rawBounds = useMemo(() => {
     const xs: number[] = []
     const ys: number[] = []
@@ -55,7 +54,6 @@ const CalibrationGraphPanel: React.FC<Props> = ({ tag, collapsed, onToggle }) =>
     }
   }, [tag])
 
-  // Apply zoom: zooming in reduces the visible range from origin
   const visibleMaxX = rawBounds.maxX / zoom
   const visibleMaxY = rawBounds.maxY / zoom
 
@@ -104,23 +102,17 @@ const CalibrationGraphPanel: React.FC<Props> = ({ tag, collapsed, onToggle }) =>
             aria-label="Calibration graph"
             onWheel={handleWheel}
           >
-            {/* Background — transparent so panel blur shows through */}
             <rect x="0" y="0" width={WIDTH} height={HEIGHT} fill="transparent" />
 
-            {/* Plot area clip */}
             <defs>
               <clipPath id="ct-plot-clip">
                 <rect x={plotAreaLeft} y={plotAreaTop} width={plotWidth} height={plotHeight} />
               </clipPath>
             </defs>
 
-            {/* Grid lines removed for clean look */}
-
-            {/* Axes — same gray as graph bg border */}
             <line x1={plotAreaLeft} y1={plotAreaBottom} x2={plotAreaRight} y2={plotAreaBottom} stroke="rgba(255,255,255,0.08)" />
             <line x1={plotAreaLeft} y1={plotAreaTop} x2={plotAreaLeft} y2={plotAreaBottom} stroke="rgba(255,255,255,0.08)" />
 
-            {/* X axis ticks + labels */}
             {xTicks.map(v => {
               const x = toSvgX(v)
               if (x < plotAreaLeft - 0.5 || x > plotAreaRight + 0.5) return null
@@ -134,7 +126,6 @@ const CalibrationGraphPanel: React.FC<Props> = ({ tag, collapsed, onToggle }) =>
               )
             })}
 
-            {/* Y axis ticks + labels */}
             {yTicks.map(v => {
               const y = toSvgY(v)
               if (y < plotAreaTop - 0.5 || y > plotAreaBottom + 0.5) return null
@@ -148,7 +139,6 @@ const CalibrationGraphPanel: React.FC<Props> = ({ tag, collapsed, onToggle }) =>
               )
             })}
 
-            {/* Axis labels */}
             <text x={(plotAreaLeft + plotAreaRight) / 2} y={HEIGHT - 4} fill="#5b6574" fontSize="9" textAnchor="middle" fontFamily="var(--font-primary)">
               Raw UWB (ft)
             </text>
@@ -164,7 +154,6 @@ const CalibrationGraphPanel: React.FC<Props> = ({ tag, collapsed, onToggle }) =>
               Reference (ft)
             </text>
 
-            {/* Data series (clipped to plot area) */}
             <g clipPath="url(#ct-plot-clip)">
               {tag && ANCHOR_IDS.map(anchorId => {
                 const series = tag.graph[anchorId]
@@ -203,7 +192,6 @@ const CalibrationGraphPanel: React.FC<Props> = ({ tag, collapsed, onToggle }) =>
               })}
             </g>
 
-            {/* Legend — anchored to very top-right of plot area */}
             <g transform={`translate(${plotAreaRight - 8}, ${plotAreaTop + 4})`}>
               {ANCHOR_IDS.map((anchorId, i) => (
                 <g key={anchorId} transform={`translate(0, ${i * 14})`}>

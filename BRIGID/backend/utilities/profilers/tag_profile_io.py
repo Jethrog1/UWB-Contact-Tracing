@@ -1,6 +1,3 @@
-"""
-tag_profile_io.py — Tag profile JSON persistence (BRIGID).
-"""
 
 from __future__ import annotations
 
@@ -11,16 +8,13 @@ from typing import Tuple
 
 from .constants import DEVICE_TYPES, ANCHOR_IDS
 
-
 def _slugify(value: str) -> str:
     slug = re.sub(r"[^A-Za-z0-9._-]+", "_", (value or "").strip())
     return slug.strip("._-") or "tag"
 
-
 def _primary_profile_dir(profile_dir: str) -> Path:
     base = Path(profile_dir)
     return base if base.name.lower() == "tags" else base / "Tags"
-
 
 def _candidate_profile_dirs(profile_dir: str) -> list[Path]:
     primary = _primary_profile_dir(profile_dir)
@@ -29,7 +23,6 @@ def _candidate_profile_dirs(profile_dir: str) -> list[Path]:
     if legacy not in candidates:
         candidates.append(legacy)
     return candidates
-
 
 def create_empty_profile() -> dict:
     return {
@@ -56,10 +49,8 @@ def create_empty_profile() -> dict:
         "notes": "",
     }
 
-
 def _profile_path(tag_id: str, profile_dir: str) -> Path:
     return _primary_profile_dir(profile_dir) / f"{_slugify(tag_id)}.json"
-
 
 def save_profile(profile: dict, profile_dir: str) -> Tuple[bool, str]:
     tag_id = str(profile.get("tag_id", "")).strip()
@@ -75,7 +66,6 @@ def save_profile(profile: dict, profile_dir: str) -> Tuple[bool, str]:
     except OSError as e:
         return False, str(e)
 
-
 def load_profile(tag_id: str, profile_dir: str) -> Optional[Tuple[dict], str]:
     for directory in _candidate_profile_dirs(profile_dir):
         path = directory / f"{_slugify(tag_id)}.json"
@@ -89,7 +79,6 @@ def load_profile(tag_id: str, profile_dir: str) -> Optional[Tuple[dict], str]:
             return None, f"Could not read profile: {e}"
     return None, f"Profile not found: {tag_id}"
 
-
 def load_profile_by_path(filepath: str) -> Optional[Tuple[dict], str]:
     try:
         with Path(filepath).open("r", encoding="utf-8") as f:
@@ -97,7 +86,6 @@ def load_profile_by_path(filepath: str) -> Optional[Tuple[dict], str]:
         return data, ""
     except Exception as e:
         return None, f"Could not read profile: {e}"
-
 
 def list_profiles(profile_dir: str) -> list[str]:
     result: set[str] = set()
@@ -108,7 +96,6 @@ def list_profiles(profile_dir: str) -> list[str]:
             if entry.is_file() and entry.suffix.lower() == ".json" and not entry.name.endswith(".rooms.json"):
                 result.add(entry.stem)
     return sorted(result)
-
 
 def delete_profile(tag_id: str, profile_dir: str) -> Tuple[bool, str]:
     for directory in _candidate_profile_dirs(profile_dir):

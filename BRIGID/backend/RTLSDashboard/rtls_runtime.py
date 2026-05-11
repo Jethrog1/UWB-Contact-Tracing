@@ -1,24 +1,3 @@
-"""
-rtls_runtime.py — Headless BRIGID RTLS Runtime
-================================================
-Preserves all real logic from rtls_main_official.py / home_rtls.py:
-  - parse_and_store / parse_dongle_status
-  - serial_reader_thread / start_serial / stop_serial
-  - calc_pos_multi  (bi/tri/multi-lateration, height projection)
-  - apply_ema / apply_rolling / apply_kalman / smooth / reset_filter_state
-  - loop() logic (position solve → smooth → snapshot)
-  - CSV distance logging (ported from home_rtls.py)
-
-Changes from original:
-  - Tkinter / terminal UI removed
-  - Tags are profile-driven (no hardcoded T0/T1/T2)
-  - Anchors come from workspace room data (not global ANCHORS constant)
-  - Anchor IDs mapped: room IDs (R1A0) → serial IDs (A0) via hw_id
-  - Anchor coords converted from local (room-relative) to world (CAD-absolute)
-  - Tag height is per-tag (|anchor_z - tag_z|) or global override
-  - CSV output directed to workspace RTLS/ folder
-  - State exposed via snapshot() dict for frontend polling
-"""
 
 from __future__ import annotations
 
@@ -48,7 +27,6 @@ except ImportError:
     BleakClient = None
     HAS_BLEAK = False
 
-# ── ESP32-C6 auto-detect identifiers (same as original) ───────────────────────
 ESP32_C6_IDENTIFIERS = [
     ("303a", "1001"),
     ("303a", "4001"),
@@ -66,17 +44,14 @@ DEVICE_HEIGHT_FIELD_MAP = {
     "Breast Pocket": "breast_to_floor_ft",
 }
 
-
 def _normalize_ble_mac(value: str) -> str:
     return str(value or "").strip().replace("-", ":").upper()
-
 
 def _home_py_ble_sort_key(tag_id: str) -> tuple[int, str]:
     text = str(tag_id or "").strip().upper()
     if text in HOME_PY_BLE_ORDER:
         return (0, f"{HOME_PY_BLE_ORDER.index(text):02d}")
     return (1, text)
-
 
 def _anchor_key_candidates(anchor_id: str) -> list[str]:
     raw = str(anchor_id or "").strip()
@@ -99,7 +74,6 @@ def _anchor_key_candidates(anchor_id: str) -> list[str]:
         _add(upper[upper.rfind("A"):])
     return candidates
 
-
 def _resolve_anchor_equation(equations: dict[str, Any], anchor_id: str) -> tuple[str, str]:
     if not isinstance(equations, dict):
         return "", ""
@@ -118,9 +92,7 @@ def _resolve_anchor_equation(equations: dict[str, Any], anchor_id: str) -> tuple
                 return key_text, expr_text
     return "", ""
 
-
 def auto_detect_esp32_port() -> Optional[str]:
-    """Scan COM ports for ESP32-C6. Returns device path or None."""
     ports = serial.tools.list_ports.comports()
     for p in ports:
         vid = f"{p.vid:04x}" if p.vid else ""
@@ -133,28 +105,12 @@ def auto_detect_esp32_port() -> Optional[str]:
             return p.device
     return None
 
-
-# ── Multi-lateration (preserved verbatim from rtls_main_official.py) ──────────
 def calc_pos_multi(
     distances_dict: dict[str, float],
     anchors: dict[str, tuple[float, float]],
     anchor_z: dict[str, Optional[float]] = None,
     tag_z: float = 0.0,
 ) -> Optional[tuple[float], Optional[float]]:
-    """
-    Calculate 2-D position from anchor distances using bi/tri/multi-lateration.
-
-    distances_dict : {anchor_id: measured_distance_ft}
-    anchors        : {anchor_id: (x_ft, y_ft)}
-    anchor_z       : {anchor_id: z_ft}  — per-anchor elevation (ceiling/wall mount height)
-    tag_z          : tag height from floor (ft) from device profile
-
-    For each anchor the 3-D slant distance is projected to the 2-D floor plane via:
-        h = abs(anchor_z[a_id] - tag_z)          ← per-anchor, NOT a global mean
-        r_2d = sqrt(r^2 - h^2)
-
-    Returns (x, y) in feet, or (None, None) when insufficient data.
-    """
     valid: list[tuple[float, float, float]] = []
     for a_id, r in distances_dict.items():
         if r > 0.0 and a_id in anchors:
@@ -169,7 +125,7 @@ def calc_pos_multi(
         return None, None
 
     if len(valid) == 2:
-        # Bi-lateration — two circle intersections, pick closer to room centre
+
         x1, y1, r1 = valid[0]
         x2, y2, r2 = valid[1]
         d = math.hypot(x2 - x1, y2 - y1)
@@ -188,7 +144,6 @@ def calc_pos_multi(
         ix2 = x3 - h * (y2 - y1) / d
         iy2 = y3 + h * (x2 - x1) / d
 
-        # Pick the point closer to the centroid of known anchors
         all_x = [v[0] for v in valid]
         all_y = [v[1] for v in valid]
         cx = sum(all_x) / len(all_x)
@@ -201,7 +156,6 @@ def calc_pos_multi(
             return round(ix1, 3), round(iy1, 3)
         return round(ix2, 3), round(iy2, 3)
 
-    # Tri/multi-lateration — linear least squares (preserved from original)
     x0, y0, r0 = valid[0]
     A: list[list[float]] = []
     B: list[float] = []
@@ -224,40 +178,24 @@ def calc_pos_multi(
     py = (-a21 * b1 + a11 * b2) / det
     return round(px, 3), round(py, 3)
 
-
-# ── RTLSRuntime ────────────────────────────────────────────────────────────────
 class RTLSRuntime:
-    """
-    Headless RTLS session manager.
 
-    Call update_from_workspace() whenever workspace room/tag data changes.
-    Call snapshot() to get current state for the frontend.
-    """
-
-    # ── Lifecycle ──────────────────────────────────────────────────────────────
     def __init__(self) -> None:
         self._lock = threading.Lock()
 
-        # ── Profile-driven tag registry ───────────────────────────────────────
-        # tag_id → { mac_address, height_ft, color }
         self._tag_registry: dict[str, dict[str, Any]] = {}
 
-        # Runtime distance & status stores (keyed by canonical tag_id e.g. "T0")
-        self._tag_data: dict[str, dict[str, float]] = {}   # tag_id → anchor_id → dist
-        self._tag_status: dict[str, str] = {}              # tag_id → Connected/Disconnected/…
+        self._tag_data: dict[str, dict[str, float]] = {}                              
+        self._tag_status: dict[str, str] = {}                                                 
         self._tag_positions: dict[str, tuple[float, Optional[float]]] = {}
         self._tag_seen_at: dict[str, float] = {}
 
-        # MAC → canonical tag_id (for dongle status parsing)
         self._mac_to_tag: dict[str, str] = {}
 
-        # ── Anchor geometry (from workspace room) ─────────────────────────────
-        # Keyed by serial-data IDs (A0, A1, ...) not room IDs (R1A0)
-        self._anchors: dict[str, tuple[float, float]] = {}  # serial_aid → (world_x, world_y)
-        self._anchor_z: dict[str, float] = {}               # serial_aid → z_ft
-        self._reference_anchor_id: str = ""                  # e.g. "A0"
+        self._anchors: dict[str, tuple[float, float]] = {}                                   
+        self._anchor_z: dict[str, float] = {}                                  
+        self._reference_anchor_id: str = ""                             
 
-        # Floor-plan rendering data (segments in world coords, bounds)
         self._segments: list[dict] = []
         self._room_bounds: dict[str, float] = {}
         self._room_name: str = ""
@@ -267,8 +205,7 @@ class RTLSRuntime:
             "ble_module_port": "",
         }
 
-        # ── Smoothing filter state ─────────────────────────────────────────────
-        self._filter_mode: str = "Raw"       # Raw | EMA | Rolling | Kalman
+        self._filter_mode: str = "Raw"                                     
         self._ema_alpha: float = 0.20
         self._roll_n: int = 8
         self._kal_q: float = 0.10
@@ -279,17 +216,12 @@ class RTLSRuntime:
         self._kal_state: dict[str, Optional[list]] = {}
         self._kal_P: dict[str, Optional[list]] = {}
 
-        # ── Tag elevation ──────────────────────────────────────────────────────
         self._global_elevation_override: bool = False
-        self._global_elevation_ft: float = 3.0   # used only when override=True
+        self._global_elevation_ft: float = 3.0                                 
 
-        # ── Noise cancellation (per-anchor distance jump filter) ──────────────
-        # Suppresses >=2 ft jumps occurring within 0.25 s of the previous reading.
-        # State per (tag_id, anchor_id): mode ∈ {normal, disqualified, cooldown}.
         self._noise_cancel_enabled: bool = False
         self._noise_state: dict[tuple[str, str], dict[str, Any]] = {}
 
-        # ── Serial / BLE transport ─────────────────────────────────────────────
         self._serial_port_obj: serial.Optional[Serial] = None
         self._serial_running: bool = False
         self._serial_thread: threading.Optional[Thread] = None
@@ -297,33 +229,23 @@ class RTLSRuntime:
         self._ble_stop = threading.Event()
         self._mode: Optional[str] = None
         self._selected_port: str = ""
-        self._transport_status: str = "idle"   # idle | connecting | connected | error
+        self._transport_status: str = "idle"                                          
         self._transport_detail: str = "Disconnected."
         self._serial_debug: deque[str] = deque(maxlen=80)
 
-        # When bridged to the global BLE Idle service, the runtime consumes its
-        # feed instead of managing its own bleak stack.
         self._bridged_to_idle: bool = False
 
-        # ── CSV distance logging (ported from home_rtls.py) ───────────────────
         self._csv_enabled: bool = False
         self._csv_path: Optional[str] = None
-        self._csv_rtls_dir: str = ""           # workspace RTLS/ folder
+        self._csv_rtls_dir: str = ""                                   
         self._csv_last_ts: float = 0.0
 
-        # ── Loop ──────────────────────────────────────────────────────────────
         self._loop_thread: threading.Optional[Thread] = None
         self._loop_running: bool = False
         self._start_loop()
 
-    # ── Workspace integration ──────────────────────────────────────────────────
-
     @staticmethod
     def _serial_aid_from_room_id(room_aid: str, hw_id: str) -> str:
-        """
-        Map a room anchor ID (R1A0) to the serial-data anchor ID (A0).
-        Priority: hw_id if set, otherwise extract A-number from room ID.
-        """
         if hw_id:
             return hw_id
         m = re.match(r"R\d+A(\d+)", room_aid)
@@ -336,23 +258,12 @@ class RTLSRuntime:
         room_data: Optional[dict],
         tag_profiles: Optional[list[dict]],
     ) -> None:
-        """
-        Called by the API whenever the RTLS session loads or refreshes workspace data.
-
-        room_data    : the room dict from the floorplan manifest
-        tag_profiles : list of profile dicts from Tags/ directory
-
-        Anchor coords are converted from LOCAL (room-relative) to WORLD (CAD-absolute)
-        using room_bounds min_x/min_y so they align with segment coordinates.
-        Anchor IDs are mapped from room IDs (R1A0) to serial IDs (A0) via hw_id.
-        """
         with self._lock:
             if room_data:
                 self._anchors = {}
                 self._anchor_z = {}
                 self._reference_anchor_id = ""
 
-                # Room bounds for local→world coordinate conversion
                 bounds = room_data.get("room_bounds_ft", {})
                 min_x = float(bounds.get("min_x", 0))
                 min_y = float(bounds.get("min_y", 0))
@@ -364,7 +275,6 @@ class RTLSRuntime:
                     **dict(room_data.get("rtls_settings", {})),
                 }
 
-                # Reference anchor (default anchor = coordinate origin)
                 ref_room_id = room_data.get("reference_anchor_id", "")
 
                 for a in room_data.get("anchors", []):
@@ -372,7 +282,6 @@ class RTLSRuntime:
                     hw_id = a.get("hw_id", "").strip()
                     serial_aid = self._serial_aid_from_room_id(room_aid, hw_id)
 
-                    # Convert local coords to world coords (same system as segments)
                     local_x = float(a.get("x_ft", 0))
                     local_y = float(a.get("y_ft", 0))
                     world_x = local_x + min_x
@@ -381,7 +290,6 @@ class RTLSRuntime:
                     self._anchors[serial_aid] = (round(world_x, 3), round(world_y, 3))
                     self._anchor_z[serial_aid] = float(a.get("z_ft", 0))
 
-                    # Track reference anchor in serial-ID space
                     if room_aid == ref_room_id:
                         self._reference_anchor_id = serial_aid
 
@@ -412,7 +320,7 @@ class RTLSRuntime:
                     if not tag_id:
                         continue
                     mac = _normalize_ble_mac(p.get("device", {}).get("mac_address", ""))
-                    # Derive height for this tag based on device type
+
                     device = p.get("device", {})
                     dev_type = device.get("device_type", "")
                     height_key = DEVICE_HEIGHT_FIELD_MAP.get(dev_type, "")
@@ -432,7 +340,6 @@ class RTLSRuntime:
                     if mac:
                         new_mac_map[mac.lower()] = tag_id
 
-                # Preserve any tags already in registry that aren't being replaced
                 for tid in list(self._tag_data.keys()):
                     if tid not in new_registry:
                         del self._tag_data[tid]
@@ -442,7 +349,6 @@ class RTLSRuntime:
                         for key in [k for k in self._noise_state if k[0] == tid]:
                             self._noise_state.pop(key, None)
 
-                # Register new tags
                 for tag_id in new_registry:
                     if tag_id not in self._tag_data:
                         self._tag_data[tag_id] = {aid: -1.0 for aid in self._anchors}
@@ -453,7 +359,7 @@ class RTLSRuntime:
                         self._kal_state[tag_id] = None
                         self._kal_P[tag_id] = None
                     else:
-                        # Update anchor keys if they changed
+
                         existing = self._tag_data[tag_id]
                         for aid in self._anchors:
                             if aid not in existing:
@@ -462,34 +368,18 @@ class RTLSRuntime:
                 self._tag_registry = new_registry
                 self._mac_to_tag = new_mac_map
 
-    # ── Data parsing (preserved from rtls_main_official.py) ───────────────────
-
     def _resolve_tag_id(self, raw_id: str) -> Optional[str]:
-        """
-        Map incoming data tag prefix (T0, t0, T1, t1…) to profile tag_id.
-        Case-insensitive match: 't0' → 'T0', 'T1' → 'T1', etc.
-        """
         upper = raw_id.strip().upper()
-        # Direct match
+
         if upper in self._tag_registry:
             return upper
-        # Try case-insensitive search
+
         for tid in self._tag_registry:
             if tid.upper() == upper:
                 return tid
         return None
 
     def _apply_noise_cancel(self, tag_id: str, anchor_id: str, value: float, now: float) -> float:
-        """
-        Per-(tag, anchor) jump filter. When the gap from the previous reading is
-        <= 0.25 s and the new value is >= 2 ft away from the last accepted value,
-        the reading is disqualified and replaced with last_accepted ± 0.1 ft.
-        The reference (last_accepted) is NOT overwritten by the placeholder — the
-        next reading resolves the disqualification against the pre-jump reference:
-        if it is still >= 2 ft away, the jump is confirmed (accepted, 3 s cooldown
-        begins); otherwise the reading is accepted normally without a cooldown.
-        During cooldown no disqualification occurs.
-        """
         if not self._noise_cancel_enabled or value <= 0.0:
             return value
 
@@ -536,11 +426,6 @@ class RTLSRuntime:
         return value
 
     def parse_and_store(self, data_str: str, fallback_tag_id: Optional[str] = None) -> None:
-        """
-        Parse distance line: T2 | A0:11.37 | A1:10.90 | A2:--- | A3:16.55
-        Profile-driven: resolves incoming tag prefix against registry and mirrors
-        the calibration runtime by treating live measurements as proof of connection.
-        """
         try:
             parts = [p.strip() for p in data_str.split("|") if p.strip()]
             if len(parts) < 2:
@@ -579,10 +464,6 @@ class RTLSRuntime:
     _last_attempting: Optional[str] = None
 
     def parse_dongle_status(self, line: str) -> None:
-        """
-        Parse ESP32-C6 dongle status lines (preserved from original).
-        Uses MAC→tag_id mapping built from profiles.
-        """
         if " -> " in line:
             line = line.split(" -> ", 1)[1]
         line = line.strip()
@@ -640,14 +521,11 @@ class RTLSRuntime:
         return dict(items)
 
     def get_profile_payloads(self) -> list[dict]:
-        """Reshape loaded tags as profile-style dicts for the idle service."""
         with self._lock:
             return [
                 {"tag_id": tag_id, "device": {"mac_address": info.get("mac_address", "")}}
                 for tag_id, info in self._tag_registry.items()
             ]
-
-    # ── Transport lifecycle ────────────────────────────────────────────────────
 
     def connect(self, mode: str, port: str = "") -> tuple[bool, str]:
         self.disconnect()
@@ -732,13 +610,7 @@ class RTLSRuntime:
 
         self._append_serial_debug("Transport stopped.")
 
-    # ── Active BLE Idle bridge ────────────────────────────────────────────────
-
     def bridge_to_ble_idle(self, initial_statuses: Optional[dict[str, str]] = None) -> tuple[bool, str]:
-        """
-        Switch the runtime into "bridged" mode: no owned bleak stack; measurements
-        arrive via ingest_ble_data/ingest_ble_status from the global idle service.
-        """
         self.disconnect()
         self._mode = "ble"
         self._bridged_to_idle = True
@@ -755,13 +627,11 @@ class RTLSRuntime:
         return self._bridged_to_idle
 
     def ingest_ble_data(self, tag_id: str, payload: str) -> None:
-        """Feed a raw measurement line from the global idle service."""
         if not payload:
             return
         self.parse_and_store(payload, fallback_tag_id=tag_id)
 
     def ingest_ble_status(self, tag_id: str, status: str) -> None:
-        """Feed a per-tag status update from the global idle service."""
         resolved = self._resolve_tag_id(tag_id) or tag_id
         with self._lock:
             if resolved not in self._tag_status and resolved not in self._tag_registry:
@@ -772,8 +642,6 @@ class RTLSRuntime:
                 if resolved in self._tag_data:
                     for aid in list(self._tag_data[resolved].keys()):
                         self._tag_data[resolved][aid] = -1.0
-
-    # ── Serial transport (preserved from rtls_main_official.py) ───────────────
 
     def _serial_reader(self, port: str, baud: int = 115200) -> None:
         try:
@@ -888,8 +756,6 @@ class RTLSRuntime:
         while not self._ble_stop.is_set() and time.time() < deadline:
             await asyncio.sleep(0.25)
 
-    # ── Smoothing filters (preserved verbatim from rtls_main_official.py) ─────
-
     def _apply_ema(self, t_id: str, rx: float, ry: float) -> tuple[float, float]:
         alpha = self._ema_alpha
         prev = self._ema_pos.get(t_id)
@@ -900,7 +766,7 @@ class RTLSRuntime:
                 alpha * rx + (1 - alpha) * prev[0],
                 alpha * ry + (1 - alpha) * prev[1],
             )
-        return self._ema_pos[t_id]  # type: ignore[return-value]
+        return self._ema_pos[t_id]                              
 
     def _apply_rolling(self, t_id: str, rx: float, ry: float) -> tuple[float, float]:
         n = self._roll_n
@@ -915,7 +781,6 @@ class RTLSRuntime:
         return (sum(xs) / len(xs), sum(ys) / len(ys))
 
     def _apply_kalman(self, t_id: str, rx: float, ry: float) -> tuple[float, float]:
-        """4-state Kalman filter (x, y, vx, vy) — preserved from original."""
         q = self._kal_q
         r = self._kal_r
         dt = 0.05
@@ -1017,10 +882,7 @@ class RTLSRuntime:
         self._kal_state[t_id] = None
         self._kal_P[t_id] = None
 
-    # ── Position loop (preserved logic from rtls_main_official.py) ────────────
-
     def _loop_body(self) -> None:
-        """Core loop iteration — preserves rtls_main_official.py loop() logic."""
         now = time.time()
         with self._lock:
             tag_ids = list(self._tag_registry.keys())
@@ -1037,8 +899,6 @@ class RTLSRuntime:
                 self._tag_positions[t_id] = None
                 continue
 
-            # Per-anchor height correction: h = abs(anchor_z[a_id] - tag_z)
-            # Global override collapses all anchors to the same fixed offset.
             tag_info = self._tag_registry.get(t_id, {})
             if self._global_elevation_override:
                 eff_anchor_z = {aid: self._global_elevation_ft for aid in anchor_z}
@@ -1062,7 +922,6 @@ class RTLSRuntime:
             else:
                 self._tag_positions[t_id] = None
 
-        # CSV logging — write inter-tag distances each cycle
         self._write_csv_distances()
 
     def _start_loop(self) -> None:
@@ -1074,19 +933,15 @@ class RTLSRuntime:
                     self._loop_body()
                 except Exception as exc:
                     self._append_serial_debug(f"[loop error] {exc}")
-                time.sleep(0.05)   # 20 Hz — same cadence as original root.after(50)
+                time.sleep(0.05)                                                    
 
         self._loop_thread = threading.Thread(target=_run, daemon=True)
         self._loop_thread.start()
 
-    # ── CSV distance logging (ported from home_rtls.py) ───────────────────────
-
     def set_rtls_dir(self, rtls_dir: str) -> None:
-        """Set the workspace RTLS/ folder for CSV output."""
         self._csv_rtls_dir = rtls_dir
 
     def start_csv_logging(self) -> tuple[bool, str]:
-        """Initialize CSV log file in workspace RTLS/ folder."""
         if not self._csv_rtls_dir:
             return False, "No workspace RTLS folder set."
         os.makedirs(self._csv_rtls_dir, exist_ok=True)
@@ -1116,7 +971,6 @@ class RTLSRuntime:
         self._csv_enabled = False
 
     def _write_csv_distances(self) -> None:
-        """Write inter-tag distances to CSV (preserved from home_rtls.py)."""
         if not self._csv_enabled or not self._csv_path:
             return
         now = time.time()
@@ -1151,8 +1005,6 @@ class RTLSRuntime:
         self.stop_serial()
         self.stop_csv_logging()
 
-    # ── Public control API ─────────────────────────────────────────────────────
-
     def set_filter(
         self,
         mode: Optional[str] = None,
@@ -1183,13 +1035,7 @@ class RTLSRuntime:
             if not self._noise_cancel_enabled:
                 self._noise_state.clear()
 
-    # ── State snapshot ─────────────────────────────────────────────────────────
-
     def snapshot(self) -> dict:
-        """
-        Returns the current RTLS state for frontend polling.
-        Called by GET /api/rtls/snapshot.
-        """
         with self._lock:
             tags_out: list[dict] = []
             for t_id in self._tag_registry:

@@ -340,7 +340,6 @@ const RTLSDashboardCanvas = forwardRef<RTLSDashboardCanvasHandle, RTLSDashboardC
     floorplanSettings,
   }
 
-  // Floor-plan heat grid
   const heatRef = useRef<Float32Array>(new Float32Array(0))
   const heatMaskRef = useRef<Uint8Array>(new Uint8Array(0))
   const heatCanvasRef = useRef<HTMLCanvasElement | null>(null)

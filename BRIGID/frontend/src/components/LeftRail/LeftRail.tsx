@@ -39,7 +39,6 @@ const LeftRail: React.FC<LeftRailProps> = ({ activeModule, onModuleChange, onHom
       animate={{ opacity: 1, x: 0 }}
       transition={{ duration: 0.4, delay: 0.1, ease: [0.4, 0, 0.2, 1] }}
     >
-      {/* ── App icon / home ── */}
       <Tooltip
         content={<span style={{ fontSize: 10, letterSpacing: '0.05em' }}>Home</span>}
         placement="right"
@@ -53,7 +52,6 @@ const LeftRail: React.FC<LeftRailProps> = ({ activeModule, onModuleChange, onHom
 
       <div className="left-rail__divider" />
 
-      {/* ── 5 Module Buttons ── */}
       <nav className="left-rail__nav">
         {MODULE_ITEMS.map((item) => {
           const isActive = activeModule === item.id

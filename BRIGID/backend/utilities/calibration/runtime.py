@@ -1,9 +1,3 @@
-"""
-runtime.py - BRIGID calibration workspace runtime.
-
-This ports the non-UI behavior from the legacy `home.py` calibration tool
-into a backend session that the TypeScript frontend can drive.
-"""
 
 from __future__ import annotations
 
@@ -26,7 +20,7 @@ try:
     import serial.tools.list_ports
 
     HAS_SERIAL = True
-except ImportError:  # pragma: no cover - optional dependency
+except ImportError:                                          
     serial = None
     HAS_SERIAL = False
 
@@ -34,10 +28,9 @@ try:
     from bleak import BleakClient
 
     HAS_BLEAK = True
-except ImportError:  # pragma: no cover - optional dependency
+except ImportError:                                          
     BleakClient = None
     HAS_BLEAK = False
-
 
 CHAR_UUID = "deadbeef-0000-0000-0000-000000000001"
 ESP32_C6_IDENTIFIERS = [
@@ -61,18 +54,14 @@ DEFAULT_LINES: list[tuple[str, str]] = [
     ("A3", "A0"),
 ]
 
-
 def _identity(x: float) -> float:
     return float(x)
-
 
 def _anchor_measurements(default: float = -1.0) -> dict[str, float]:
     return {anchor_id: float(default) for anchor_id in ANCHOR_IDS}
 
-
 def _anchor_optional_map() -> dict[str, Optional[float]]:
     return {anchor_id: None for anchor_id in ANCHOR_IDS}
-
 
 def _fit_config() -> dict[str, Any]:
     return {
@@ -82,7 +71,6 @@ def _fit_config() -> dict[str, Any]:
         "ma_period": 4,
         "ma_type": "Trailing",
     }
-
 
 def calc_pos(anchor_positions: dict[str, list[float]], distances_dict: dict[str, float]) -> Optional[tuple[float], Optional[float]]:
     valid = [
@@ -107,8 +95,7 @@ def calc_pos(anchor_positions: dict[str, list[float]], distances_dict: dict[str,
         iy1 = y3 - h * (x2 - x1) / d
         ix2 = x3 - h * (y2 - y1) / d
         iy2 = y3 + h * (x2 - x1) / d
-        # With only 2 anchors active, trilateration is mirror-ambiguous; force the
-        # solution into the positive quadrant so tags never appear behind the wall.
+
         pos1 = ix1 >= 0 and iy1 >= 0
         pos2 = ix2 >= 0 and iy2 >= 0
         if pos1 and not pos2:
@@ -142,13 +129,11 @@ def calc_pos(anchor_positions: dict[str, list[float]], distances_dict: dict[str,
         round((-a12 * b1 + a11 * b2) / det, 3),
     )
 
-
 def correct_slant_distance(slant_distance: float, height_offset: float) -> float:
     if height_offset <= 0 or slant_distance <= 0:
         return float(slant_distance)
     squared = slant_distance * slant_distance - height_offset * height_offset
     return math.sqrt(max(squared, 0.0001))
-
 
 class CalibrationRuntime:
     def __init__(self) -> None:
@@ -172,8 +157,6 @@ class CalibrationRuntime:
         self._ble_thread: threading.Optional[Thread] = None
         self._ble_stop = threading.Event()
 
-        # True while the runtime is consuming the global BLE Idle feed instead
-        # of driving its own bleak stack.
         self._bridged_to_idle: bool = False
 
         self._reset_session_locked()
@@ -355,18 +338,11 @@ class CalibrationRuntime:
             self._ble_thread = None
             self._ble_stop.clear()
 
-    # ── Active BLE Idle bridge ────────────────────────────────────────────────
-
     def bridge_to_ble_idle(
         self,
         profiles: list[dict],
         initial_statuses: Optional[dict[str, str]] = None,
     ) -> tuple[bool, str]:
-        """
-        Switch into bridged mode: measurements arrive via ingest_ble_data/
-        ingest_ble_status from the global idle service instead of an owned
-        bleak stack.
-        """
         self.sync_profiles(profiles)
         self.disconnect()
         with self._lock:
@@ -384,13 +360,11 @@ class CalibrationRuntime:
         return self._bridged_to_idle
 
     def ingest_ble_data(self, tag_id: str, payload: str) -> None:
-        """Feed a raw measurement line from the global idle service."""
         if not payload:
             return
         self._parse_measurement_payload(payload, fallback_tag_id=tag_id)
 
     def ingest_ble_status(self, tag_id: str, status: str) -> None:
-        """Feed a per-tag status update from the global idle service."""
         with self._lock:
             if tag_id not in self._tag_status:
                 return
@@ -728,12 +702,6 @@ class CalibrationRuntime:
             }
 
     def _capture_stall_remaining_locked(self, now: float) -> dict[str, float]:
-        """Seconds remaining before each anchor's 10s stall window expires.
-
-        Returned only for anchors that are still collecting samples and have
-        gone >=0.5s without a fresh reading. Frontend renders this as a
-        countdown next to the anchor's capture count.
-        """
         if not self._capture_active or self._capture_phase != "collect":
             return {}
         out: dict[str, float] = {}
@@ -829,8 +797,7 @@ class CalibrationRuntime:
                 if len(values) >= self._capture_target:
                     continue
                 last_at = self._capture_last_sample_at.get(anchor_id, 0.0)
-                # No new sample for this anchor in 10s — accept what we have (possibly
-                # nothing) and stop waiting on it.
+
                 baseline = max(last_at, self._capture_phase_started_at)
                 if (now - baseline) >= 10.0:
                     continue

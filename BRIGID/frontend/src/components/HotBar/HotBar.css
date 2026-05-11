@@ -1,4 +1,3 @@
-/* ── HotBar — Application Menu Bar ──────────────────────────────────── */
 .hot-bar {
   grid-area: hotbar;
   display: flex;
@@ -12,7 +11,6 @@
   position: relative;
 }
 
-/* ── Brand ─────────────────────────────────────────────────────────── */
 .hot-bar__brand {
   display: flex;
   align-items: center;
@@ -31,7 +29,6 @@
   font-family: var(--font-primary);
 }
 
-/* ── Menus ─────────────────────────────────────────────────────────── */
 .hot-bar__menus {
   display: flex;
   align-items: center;
@@ -65,7 +62,6 @@
   background: var(--bg-hover);
 }
 
-/* ── Dropdown (rendered via portal to document.body) ───────────────── */
 .hot-bar__dropdown {
   min-width: 220px;
   background: var(--bg-elevated);
@@ -133,7 +129,6 @@
   white-space: nowrap;
 }
 
-/* ── BLE panel (custom dropdown content) ───────────────────────────── */
 .hot-bar__dropdown--ble {
   min-width: 260px;
   padding: 0;
@@ -259,11 +254,7 @@
   font-style: italic;
 }
 
-/* ── Spacer ─────────────────────────────────────────────────────────── */
 .hot-bar__spacer {
   flex: 1;
-  /* Native window controls (minimize/maximize/close) sit on the right
-     at the same height — this region stays clear for Electron's overlay */
-  /* On Windows, titleBarOverlay handles the right ~138px */
   min-width: 138px;
 }

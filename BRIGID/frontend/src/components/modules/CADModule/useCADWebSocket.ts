@@ -1,4 +1,3 @@
-// ── CAD WebSocket Hook ────────────────────────────────────────────
 import { useEffect, useRef, useState, useCallback } from 'react'
 import { CADState, CADCommand } from './types'
 
@@ -77,7 +76,6 @@ export function useCADWebSocket(workspaceId: string): UseCADWebSocketReturn {
     }
   }, [workspaceId])
 
-  // Manual reconnect — resets attempt counter
   const reconnect = useCallback(() => {
     clearReconnectTimer()
     reconnectCount.current = 0

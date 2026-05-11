@@ -1,7 +1,7 @@
 from .runtime import simpledialog, tk, ttk
 import math
 
-from .dimension_tool import DimensionTool  # NEW
+from .dimension_tool import DimensionTool       
 from .copy_paste import CopyPasteManager
 from .dimension_rules import DimensionRules
 
@@ -12,7 +12,6 @@ from . import features
 from . import snap
 
 EPS = 1e-9
-
 
 class Viewport:
     def __init__(self):
@@ -29,7 +28,6 @@ class Viewport:
     def zoom_at(self, factor, anchor_sx, anchor_sy):
         from .features import ZoomController
         return ZoomController.zoom_at_vp(self, factor, anchor_sx, anchor_sy)
-
 
 class Line:
     __slots__ = ("x1", "y1", "x2", "y2", "color")
@@ -66,15 +64,7 @@ class Line:
         proj_y = self.y1 + t * dy
         return proj_x, proj_y, t
 
-
-# -------------------------------------------------------------------------
-# RIGHT-CLICK DROPDOWN MENU
-# -------------------------------------------------------------------------
 class DropdownMenu:
-    """
-    Right-click context menu that appears at cursor position.
-    Provides quick access to zoom controls and other common actions.
-    """
 
     def __init__(self, app):
         self.app = app
@@ -83,7 +73,6 @@ class DropdownMenu:
         self.anchor_x = 0
         self.anchor_y = 0
 
-        # Menu dimensions / style
         self.menu_width = 130
         self.menu_bg = "#2E2E2E"
         self.menu_fg = "white"
@@ -109,33 +98,24 @@ class DropdownMenu:
             highlightthickness=0
         )
 
-        # Zoom section
         self._add_section_header("Zoom Settings")
         self._add_zoom_controls()
 
-        # Divider
         self._add_divider()
 
-        # Copy / Paste
         self._add_copy_paste_controls()
 
-        # Divider
         self._add_divider()
 
-        # Line Settings section
         self._add_section_header("Line Settings")
         self._add_toggle_controls()
 
-        # Divider
         self._add_divider()
 
-        # Config Settings
         self._add_section_header("Config Settings")
 
-        # Rotate button (NEW POSITION)
         self._add_rotate_control()
 
-        # Trim button
         self._add_trim_control()
 
         self.menu_frame.place(x=screen_x, y=screen_y, width=self.menu_width)
@@ -304,7 +284,6 @@ class DropdownMenu:
         self._style_check(chk3)
         chk3.pack(fill="x")
 
-        # Visuals
         chk4 = tk.Checkbutton(
             box,
             text="Disable V.Point",
@@ -348,7 +327,6 @@ class DropdownMenu:
             )
 
     def _add_rotate_control(self):
-        """Add rotate button below line settings."""
         row = tk.Frame(self.menu_frame, bg=self.menu_bg)
         row.pack(fill="x", padx=6, pady=(1, 6))
 
@@ -363,11 +341,9 @@ class DropdownMenu:
         rotate_btn.pack(side="left", padx=(1, 6))
 
     def _add_trim_control(self):
-        """Add trim button below line settings."""
         row = tk.Frame(self.menu_frame, bg=self.menu_bg)
         row.pack(fill="x", padx=6, pady=(0, 6))
 
-        # NEW: Trim button
         trim_btn = tk.Button(
             row,
             text="Trim",
@@ -390,68 +366,53 @@ class DropdownMenu:
         finally:
             self.close_menu()
 
-
-
 class FloorPlanCAD:
     def __init__(self, root):
         self.root = root
         self.root.title("Floor Plan CAD (v2)")
 
-        # Window setup
         self._setup_window()
         self._setup_style()
 
-        # Model
         self.vp = Viewport()
         self.lines = []
 
-        # Constraints / dimensions (NEW)
-        self.fixed_lengths = {}  # { Line: {"len":float, "label":(x,y)} }
-        self.angle_constraints = []  # list of dicts:...":Line,"b":Line,"vx":float,"vy":float,"deg":float,"label":(x,y)}
-        self.distance_constraints = []  # list of dicts:...:Line,"b":Line,"dist":float,"Pa":(x,y),"Pb":(x,y),"label":(x,y)}
+        self.fixed_lengths = {}                                          
+        self.angle_constraints = []                                                                                     
+        self.distance_constraints = []                                                                                     
 
-        # Tool state
         self.tool_mode = "cursor"
 
-        # Drawing state (line tool)
         self.drawing_line = False
         self.temp_line_start = None
 
-        # Selection
         self.selected_line = None
         self.multi_selected = set()
 
-        # Dragging state
         self.dragging_line = None
-        self.dragging_point = None  # "start" / "end" / "body"
+        self.dragging_point = None                            
         self.drag_offset = (0.0, 0.0)
 
-        # Solver context (which lines are currently being dragged)
         self._solver_drag_lines = set()
 
-        # Panning
         self._pan_active = False
         self._pan_last = (0, 0)
 
-        # Snapping
         self.snap_dist_endpoint = 0.20
         self.snap_dist_line = 0.15
         self.cursor_world = (0.0, 0.0)
         self.cursor_world_valid = False
         self.cursor_world_snapped = (0.0, 0.0)
-        self.snap_hint = None  # ("endpoint", x,y) or ("line", x,y)
+        self.snap_hint = None                                      
 
-        # Group drag
         self._group_drag_active = False
         self._group_drag_start = (0.0, 0.0)
         self._group_drag_snapshot = []
 
-        # Box (marquee) selection state
         self._box_active = False
         self._box_start = None
         self._box_end = None
 
-        # Vertex manipulation
         self._vertex_temp = False
         self._vertex_drag_active = False
         self._vertex_hover = None
@@ -459,30 +420,24 @@ class FloorPlanCAD:
         self._vertex_drag_start_mouse = (0.0, 0.0)
         self._vertex_drag_start_pos = (0.0, 0.0)
 
-        # Connection behavior
-        self.manipulate_line_var = tk.BooleanVar(value=False)  # when True, shared vertices can be broken by dragging
-        self._weld_body_refs = None  # {'start':[(ln,'start'/'end'),...], 'end':[...]} captured on body-drag start
+        self.manipulate_line_var = tk.BooleanVar(value=False)                                                        
+        self._weld_body_refs = None                                                                               
 
-        # Line Match feature
-        self.alignment_guides = []  # list of (x1, y1, x2, y2, 'type') where type is 'x' or 'y'
-        self.parallel_guides = []  # list of (x1, y1, x2, y2, 'source_line') for parallel snapping
-        self.equal_length_guides = []  # list of guide data for equal length visualization
-        self.line_match_var = tk.BooleanVar(value=False)  # Line Match feature toggle
+        self.alignment_guides = []                                                             
+        self.parallel_guides = []                                                                 
+        self.equal_length_guides = []                                                     
+        self.line_match_var = tk.BooleanVar(value=False)                             
 
-        # Smooth scheduling
         self._redraw_pending = False
         self._tree_pending = False
 
-        # Angle snap UI
         self.angle_snap_tol_deg = 6.0
         self.snap_angle_vars = [tk.StringVar(value=""), tk.StringVar(value=""), tk.StringVar(value="")]
 
-        # Visual Settings (moved up)
         from .features import VisualSettings, ZoomController
         self.visuals = VisualSettings(self)
         self.zoom = ZoomController(self)
-        
-        # UI building
+
         self._build_ui()
         self._bind_events()
 
@@ -492,46 +447,28 @@ class FloorPlanCAD:
         self._undo_stack = []
         self._redo_stack = []
 
-        # Dimension tool (NEW)
         self.dimension_tool = DimensionTool(self)
 
-        # Start in cursor mode
         self.set_cursor_mode()
 
-        # Copy/paste manager (NEW)
         self.copy_paste = CopyPasteManager(self)
 
-        # Zoom controls (initialized above)
-        # self.zoom = features.ZoomController(self)
-        
-        # Visual Settings (initialized above)
-        # self.visuals = features.VisualSettings(self)
-
-        # Snap controls
         self.snap = snap.SnapController(self)
 
-        # Snap controls
         self.snap = snap.SnapController(self)
 
-        # RIGHT-CLICK DROPDOWN MENU (NEW)
         self.dropdown = DropdownMenu(self)
 
-        # Constraints / dimensions (NEW)
         self.fixed_lengths = {}
         self.angle_constraints = []
         self.distance_constraints = []
 
         self.dimension_rules = DimensionRules(self)
 
-        # Rotate manager (NEW)
         self.rotate = RotateManager(self)
 
-        # Trim manager (NEW)
         self.trim = TrimManager(self)
 
-    # -------------------------
-    # Window setup
-    # -------------------------
     def _setup_window(self):
         sw = self.root.winfo_screenwidth()
         sh = self.root.winfo_screenheight()
@@ -562,9 +499,6 @@ class FloorPlanCAD:
         style.configure("Treeview.Heading", background="#2A2A2A", foreground="white")
         style.map("Treeview", background=[("selected", "#404040")], foreground=[("selected", "white")])
 
-    # -------------------------
-    # UI building
-    # -------------------------
     def _build_ui(self):
         self.topbar = tk.Frame(self.root, bg="#2A2A2A")
         self.topbar.grid(row=0, column=0, sticky="nsew")
@@ -613,7 +547,6 @@ class FloorPlanCAD:
         )
         self.dim_btn.pack(side="left", padx=(0, 10))
 
-        # Rotate button
         self.rotate_btn = tk.Button(
             right, text="Rotate", command=self.activate_rotate,
             bg="#404040", fg="white", relief="flat",
@@ -621,7 +554,6 @@ class FloorPlanCAD:
         )
         self.rotate_btn.pack(side="left", padx=(0, 10))
 
-        # NEW: Trim button
         self.trim_btn = tk.Button(
             right, text="Trim", command=self.activate_trim,
             bg="#404040", fg="white", relief="flat",
@@ -680,7 +612,6 @@ class FloorPlanCAD:
         )
         self.line_match_chk.pack(side="left", padx=(0, 15))
 
-        # NEW: Disable V.Point checkbox
         self.disable_v_point_chk = tk.Checkbutton(
             right,
             text="Disable V.Point",
@@ -783,9 +714,6 @@ class FloorPlanCAD:
         )
         self.status_label.pack(side="right", padx=10, pady=6)
 
-    # -------------------------
-    # Events
-    # -------------------------
     def _bind_events(self):
         self.canvas.bind("<Configure>", lambda e: self._request_redraw())
         self.canvas.bind("<ButtonPress-1>", self.on_mouse_down)
@@ -796,16 +724,12 @@ class FloorPlanCAD:
         self.canvas.bind("<Button-4>", self.on_mousewheel_linux)
         self.canvas.bind("<Button-5>", self.on_mousewheel_linux)
 
-        # NEW: when the cursor leaves the canvas, kill any snap/trace visuals
         self.canvas.bind("<Leave>", self.on_canvas_leave)
 
-        # NEW: Double-click event
         self.canvas.bind("<Double-Button-1>", self.on_double_click)
 
-        # RIGHT-CLICK: Open dropdown menu (NEW)
         self.canvas.bind("<ButtonPress-3>", self.on_right_click_menu)
 
-        # ORIGINAL right-drag handlers moved to Shift+Right for box select
         self.canvas.bind("<Shift-ButtonPress-3>", self.on_right_down)
         self.canvas.bind("<Shift-B3-Motion>", self.on_right_drag)
         self.canvas.bind("<Shift-ButtonRelease-3>", self.on_right_up)
@@ -814,20 +738,17 @@ class FloorPlanCAD:
         self.root.bind("<BackSpace>", self.on_delete_key)
         self.root.bind("<Escape>", self.on_escape)
 
-        # Global undo/redo
         self.root.bind_all("<Control-z>", self.on_undo, add="+")
         self.root.bind_all("<Control-Z>", self.on_undo, add="+")
         self.root.bind_all("<Control-y>", self.on_redo, add="+")
         self.root.bind_all("<Control-Y>", self.on_redo, add="+")
         self.root.bind_all("<Control-Shift-Z>", self.on_redo, add="+")
 
-        # NEW: Copy/Paste bindings
         self.root.bind_all("<Control-c>", self.on_copy, add="+")
         self.root.bind_all("<Control-C>", self.on_copy, add="+")
         self.root.bind_all("<Control-v>", self.on_paste, add="+")
         self.root.bind_all("<Control-V>", self.on_paste, add="+")
 
-        # For Trim Stuff
         self.root.bind("<KeyPress>", self.on_key_press, add="+")
 
         self.tree.bind("<<TreeviewSelect>>", self.on_tree_select)
@@ -841,9 +762,6 @@ class FloorPlanCAD:
         self._request_tree_update()
         self._request_redraw()
 
-    # -------------------------
-    # Smooth scheduling
-    # -------------------------
     def _request_redraw(self):
         if self._redraw_pending:
             return
@@ -864,16 +782,12 @@ class FloorPlanCAD:
         self._tree_pending = False
         self._update_feature_tree()
 
-    # -------------------------
-    # Tool modes
-    # -------------------------
     def _set_mode(self, mode):
         self.tool_mode = mode
         self.drawing_line = False
         self.temp_line_start = None
         self.snap_hint = None
 
-        # NEW: when switching modes, kill any snap/trace visuals
         self.cursor_world_valid = False
         self.alignment_guides = []
         self.parallel_guides = []
@@ -902,8 +816,8 @@ class FloorPlanCAD:
             self.root.config(cursor="cross")
         elif mode == "vertex":
             self.root.config(cursor="hand2")
-        else:  # dim
-            self.root.config(cursor="crosshair")  # NEW: distinct crosshair
+        else:       
+            self.root.config(cursor="crosshair")                           
             self.dimension_tool.activate()
 
         if mode != "dim":
@@ -923,21 +837,16 @@ class FloorPlanCAD:
     def set_dim_mode(self):
         self._set_mode("dim")
 
-    # -------------------------
-    # ESC behavior
-    # -------------------------
     def on_escape(self, e=None):
-        # Cancel trim if active
+
         if self.trim.active:
             self.trim.cancel()
             return
 
-        # Cancel rotate if active
         if self.rotate.active:
             self.rotate.cancel()
             return
 
-        # Cancel paste if active
         if self.copy_paste.paste_active:
             self.copy_paste.cancel_paste()
             return
@@ -966,7 +875,6 @@ class FloorPlanCAD:
         self.dimension_tool._selected_id = None
         self.dimension_tool._multi_selected_dims.clear()
 
-        # NEW: clear ALL snap/trace visuals on ESC
         self.cursor_world_valid = False
         self.alignment_guides = []
         self.parallel_guides = []
@@ -976,16 +884,12 @@ class FloorPlanCAD:
         self.set_cursor_mode()
 
     def on_key_press(self, e):
-        """Global key press handler for special modes."""
-        # Trim mode intercept
+
         if self.trim.active:
             if self.trim.on_key_press(e):
                 return "break"
         return None
 
-    # -------------------------
-    # Selection / deletion
-    # -------------------------
     def _set_selected_line(self, ln):
         if self.tool_mode == "vertex":
             return
@@ -996,7 +900,7 @@ class FloorPlanCAD:
         if self.selected_line is None:
             return
         try:
-            # also purge constraints involving this line
+
             self.fixed_lengths.pop(self.selected_line, None)
             self.angle_constraints = [c for c in self.angle_constraints if c["a"] is not self.selected_line and c["b"] is not self.selected_line]
             self.distance_constraints = [c for c in self.distance_constraints if c["a"] is not self.selected_line and c["b"] is not self.selected_line]
@@ -1009,7 +913,7 @@ class FloorPlanCAD:
         self._request_redraw()
 
     def _delete_selected_dimension_from_tree(self):
-        # if the selected Tree item is a dimension, remove it
+
         sel = self.tree.selection()
         if not sel:
             return False
@@ -1017,11 +921,10 @@ class FloorPlanCAD:
         if iid not in self._tree_dim_iids:
             return False
 
-        # We stored the removal lambda on the iid's "values"
         payload = self.tree.item(iid, "values")
         if payload and len(payload) == 1:
             key = payload[0]
-            # key looks like "len:<id>", "ang:<index>", "dist:<index>"
+
             kind, ident = key.split(":", 1)
             if kind == "len":
                 target = None
@@ -1052,7 +955,7 @@ class FloorPlanCAD:
         if self.multi_selected:
             self._push_undo()
             dead = set(self.multi_selected)
-            # purge constraints that touch any deleted line
+
             self.angle_constraints = [c for c in self.angle_constraints if c["a"] not in dead and c["b"] not in dead]
             self.distance_constraints = [c for c in self.distance_constraints if c["a"] not in dead and c["b"] not in dead]
             for ln in list(dead):
@@ -1085,9 +988,6 @@ class FloorPlanCAD:
         if ln is not None:
             self._set_selected_line(ln)
 
-    # -------------------------
-    # Geometry helpers
-    # -------------------------
     def _vkey(self, x, y):
         return (round(x, 6), round(y, 6))
 
@@ -1112,18 +1012,12 @@ class FloorPlanCAD:
         if self.selected_line is not None and self.selected_line not in self.lines:
             self.selected_line = None
 
-    # -------------------------
-    # Snapping helpers
-    # -------------------------
     def _find_snap(self, wx, wy, ignore_line=None, ignore_points=None):
         return self.snap._find_snap(wx, wy, ignore_line=ignore_line, ignore_points=ignore_points)
 
     def _apply_snap_for_cursor(self, wx, wy, ignore_line=None, ignore_points=None):
         return self.snap._apply_snap_for_cursor(wx, wy, ignore_line=ignore_line, ignore_points=ignore_points)
 
-    # -------------------------
-    # Vertex helpers
-    # -------------------------
     def _find_vertex_near(self, wx, wy):
         return self.snap._find_vertex_near(wx, wy)
 
@@ -1136,31 +1030,24 @@ class FloorPlanCAD:
     def _vertex_candidate_positions(self, raw_x, raw_y):
         return self.snap._vertex_candidate_positions(raw_x, raw_y)
 
-    # -------------------------
-    # Mouse handling
-    # -------------------------
     def _line_is_locked(self, ln):
-        # We no longer "lock" lines to prevent dragging.
-        # Constraints are enforced by solving after motion.
+
         return False
 
     def on_mouse_down(self, e):
-        # Trim intercept (highest priority)
+
         if self.trim.active:
             self.trim.on_mouse_down(e)
             return
 
-        # Rotate intercept
         if self.rotate.active:
             self.rotate.on_mouse_down(e)
             return
 
-        # Close dropdown menu if open (left-click anywhere closes it)
         if self.dropdown.active:
             self.dropdown.close_menu()
             return
 
-        # Copy/paste intercept
         if self.copy_paste.paste_active:
             self.copy_paste.on_mouse_down(e)
             return
@@ -1168,7 +1055,6 @@ class FloorPlanCAD:
         wx, wy = self.vp.screen_to_world(e.x, e.y)
         ctrl = bool(e.state & 0x0004)
 
-        # DIM pre-capture: allow grabbing persisted dimensions in both Cursor & Dim modes
         if self.tool_mode in ("cursor", "dim"):
             if self.dimension_tool.pre_handle_mouse_down(e):
                 return
@@ -1177,7 +1063,6 @@ class FloorPlanCAD:
             self.dimension_tool.on_mouse_down(e)
             return
 
-        # SHIFT + LMB temp vertex manipulate (unchanged)
         if self.tool_mode == "cursor" and (e.state & 0x0001):
             hit = self._find_vertex_near(wx, wy)
             if hit is not None:
@@ -1235,11 +1120,9 @@ class FloorPlanCAD:
                 self._request_redraw()
             return
 
-        # Cursor mode selection/drag logic
         if self.tool_mode == "cursor":
             hit_threshold = getattr(self, "hit_threshold", 0.15)
 
-            # If Ctrl is held, don't start group drag
             if (not ctrl) and self.multi_selected:
                 for ln in list(self.multi_selected):
                     if ln.distance_to_point(wx, wy) < hit_threshold:
@@ -1267,7 +1150,6 @@ class FloorPlanCAD:
                         hit_kind = "body"
                         break
 
-            # Ctrl+click toggles line multi-select (and does NOT pan)
             if ctrl:
                 if hit_line is None:
                     return
@@ -1280,7 +1162,6 @@ class FloorPlanCAD:
                 self._request_redraw()
                 return
 
-            # Normal click on a line: select + drag
             if hit_line is not None:
                 if hit_kind in ("start", "end"):
                     vx, vy = (hit_line.x1, hit_line.y1) if hit_kind == "start" else (hit_line.x2, hit_line.y2)
@@ -1308,11 +1189,9 @@ class FloorPlanCAD:
                     self.drag_offset = (wx - hit_line.x1, wy - hit_line.y1)
                 return
 
-            # Empty click (normal): clear selection + START PAN
             self.selected_line = None
             self.multi_selected.clear()
 
-            # also clear dim highlights on normal empty click
             self.dimension_tool._selected_kind = None
             self.dimension_tool._selected_id = None
             self.dimension_tool._multi_selected_dims.clear()
@@ -1323,23 +1202,21 @@ class FloorPlanCAD:
             return
 
     def on_mouse_drag(self, e):
-        # Copy/paste intercept
+
         if self.copy_paste.paste_active:
             self.copy_paste.on_mouse_drag(e)
             return
 
-        # Dimension dragging has priority
         if self.tool_mode in ("cursor", "dim"):
             if self.dimension_tool.pre_handle_mouse_drag(e):
                 return
 
         if self.tool_mode == "dim":
-            return  # dim tool itself doesn't drag geometry here
+            return                                              
 
         wx, wy = self.vp.screen_to_world(e.x, e.y)
         self.cursor_world = (wx, wy)
 
-        # Group move
         if self.tool_mode == "cursor" and self._group_drag_active and self._group_drag_snapshot:
             dx = wx - self._group_drag_start[0]
             dy = wy - self._group_drag_start[1]
@@ -1360,7 +1237,6 @@ class FloorPlanCAD:
             self._request_redraw()
             return
 
-        # Vertex drag
         if self.tool_mode == "vertex" and self._vertex_drag_active and self._vertex_drag_refs:
             rawx, rawy = wx, wy
             cx, cy = self._vertex_candidate_positions(rawx, rawy)
@@ -1375,7 +1251,6 @@ class FloorPlanCAD:
             self._request_redraw()
             return
 
-        # Pan
         if self._pan_active:
             dx = e.x - self._pan_last[0]
             dy = e.y - self._pan_last[1]
@@ -1385,7 +1260,6 @@ class FloorPlanCAD:
             self._request_redraw()
             return
 
-        # Line drag in cursor mode
         if self.tool_mode == "cursor" and self.dragging_line is not None and self.dragging_point is not None:
             ln = self.dragging_line
             ox1, oy1, ox2, oy2 = ln.x1, ln.y1, ln.x2, ln.y2
@@ -1401,7 +1275,7 @@ class FloorPlanCAD:
                 if (not self.manipulate_line_var.get()) or self._is_protected_vertex(ox2, oy2):
                     self._weld_propagate_vertex_move(ox2, oy2, ln.x2, ln.y2, ignore_line=ln)
             elif self.dragging_point in ("start", "end"):
-                # (existing endpoint drag logic unchanged)
+
                 if self.dragging_point == "start":
                     vx_old, vy_old = ox1, oy1;
                     otherx, othery = ox2, oy2;
@@ -1443,12 +1317,11 @@ class FloorPlanCAD:
             return
 
     def on_mouse_up(self, e):
-        # Copy/paste intercept
+
         if self.copy_paste.paste_active:
             self.copy_paste.on_mouse_up(e)
             return
 
-        # Finish dimension drag first
         if self.tool_mode in ("cursor", "dim"):
             if self.dimension_tool.pre_handle_mouse_up(e):
                 return
@@ -1480,12 +1353,11 @@ class FloorPlanCAD:
         self._request_redraw()
 
     def on_mouse_move(self, e):
-        # Trim intercept
+
         if self.trim.active:
             self.trim.on_mouse_move(e)
             return
 
-        # Rotate intercept
         if self.rotate.active:
             self.rotate.on_mouse_move(e)
             return
@@ -1494,7 +1366,6 @@ class FloorPlanCAD:
         self.cursor_world = (wx, wy)
         self.cursor_world_valid = True
 
-        # DIM hover in both Cursor + Dim tools
         if self.tool_mode in ("cursor", "dim"):
             consumed = self.dimension_tool.pre_handle_mouse_move(e)
 
@@ -1526,9 +1397,6 @@ class FloorPlanCAD:
                 self.snap_hint = None
                 self._request_redraw()
 
-    # -------------------------
-    # FeatureManager
-    # -------------------------
     def _update_feature_tree(self):
         self.tree.delete(*self.tree.get_children())
         self._tree_iid_to_line = {}
@@ -1545,7 +1413,6 @@ class FloorPlanCAD:
             vert_to_lines.setdefault(k1, []).append(ln)
             vert_to_lines.setdefault(k2, []).append(ln)
 
-        # Build tree
         for i, ln in enumerate(self.lines, start=1):
             parent = self.tree.insert("", "end", text=f"Line{i}", open=True)
             self._tree_iid_to_line[parent] = ln
@@ -1554,12 +1421,10 @@ class FloorPlanCAD:
             self.tree.insert(parent, "end", text=f"Start Vertex: ({ln.x1:.3f}, {ln.y1:.3f})")
             self.tree.insert(parent, "end", text=f"End Vertex:   ({ln.x2:.3f}, {ln.y2:.3f})")
 
-            # Length constraint (if any)
             if ln in self.fixed_lengths:
                 p = self.tree.insert(parent, "end", text=f"Length = {self.fixed_lengths[ln]['len']:.3f}", open=False, values=(f"len:{id(ln)}",))
                 self._tree_dim_iids.add(p)
 
-            # Angles connected to this line
             angles_parent = None
             for idx, ent in enumerate(self.angle_constraints):
                 if ent["a"] is ln or ent["b"] is ln:
@@ -1570,7 +1435,6 @@ class FloorPlanCAD:
                     q = self.tree.insert(angles_parent, "end", text=f"With Line{j}: {ent['deg']:.1f}°", values=(f"ang:{idx}",))
                     self._tree_dim_iids.add(q)
 
-            # Distances involving this line
             dparent = None
             for idx, ent in enumerate(self.distance_constraints):
                 if ent["a"] is ln or ent["b"] is ln:
@@ -1581,9 +1445,6 @@ class FloorPlanCAD:
                     q = self.tree.insert(dparent, "end", text=f"To Line{j}: {ent['dist']:.3f}", values=(f"dist:{idx}",))
                     self._tree_dim_iids.add(q)
 
-    # -------------------------
-    # Zoom controls
-    # -------------------------
     def zoom_in(self):
         return self.zoom.zoom_in()
 
@@ -1602,9 +1463,6 @@ class FloorPlanCAD:
     def on_mousewheel_linux(self, e):
         return self.zoom.on_mousewheel_linux(e)
 
-    # -------------------------
-    # Drawing
-    # -------------------------
     def redraw(self):
         self.canvas.delete("all")
         self.draw_axes()
@@ -1616,7 +1474,6 @@ class FloorPlanCAD:
 
         self.draw_alignment_guides()
 
-        # Snap / vertex highlight circle
         if self.tool_mode == "vertex":
             if self._vertex_hover is not None:
                 self.draw_snap_circle(self._vertex_hover[0], self._vertex_hover[1])
@@ -1628,16 +1485,12 @@ class FloorPlanCAD:
                 _, x, y = self.snap_hint
                 self.draw_snap_circle(x, y)
 
-        # Dimension overlays (preview + persisted)
         self.dimension_tool.draw_overlay(self.canvas)
 
-        # Rotate overlay
         self.rotate.draw_overlay(self.canvas)
 
-        # Trim overlay (NEW)
         self.trim.draw_overlay(self.canvas)
 
-        # Copy/paste preview
         self.copy_paste.draw_preview(self.canvas)
 
         if self.tool_mode == "cursor" and self._box_active:
@@ -1703,7 +1556,7 @@ class FloorPlanCAD:
             elif self.tool_mode != "vertex" and ln is self.selected_line:
                 color = "#FF5C5C"
             elif self.tool_mode == "dim" and ln == self.hovered_line:
-                color = "#FF5C5C"  # NEW: hover highlight in dimension tool
+                color = "#FF5C5C"                                          
             elif self.tool_mode == "cursor" and ln == self.hovered_line:
                 color = "#FF5C5C"
             else:
@@ -1712,47 +1565,45 @@ class FloorPlanCAD:
             self.canvas.create_line(sx1, sy1, sx2, sy2, fill=color, width=2)
 
             r = 4
-            
-            # Start Vertex
+
             show_start = True
             if self.visuals.disable_v_point_var.get():
                 is_dragging_start = False
                 if self._vertex_drag_active:
-                     # check if (ln, 'start') is in refs
+
                      for dln, dside in self._vertex_drag_refs:
                          if dln is ln and dside == "start":
                              is_dragging_start = True
                              break
-                # Also check simple drag (Cursor tool single line drag)
+
                 if self.dragging_line is ln and self.dragging_point == "start":
                     is_dragging_start = True
-                
+
                 if not is_dragging_start:
-                    # Check distance to cursor
+
                     cwx, cwy = self.cursor_world
                     dist = math.hypot(ln.x1 - cwx, ln.y1 - cwy)
                     if dist > self.hit_threshold:
                         show_start = False
-            
+
             if show_start:
                 self.canvas.create_oval(sx1 - r, sy1 - r, sx1 + r, sy1 + r, fill=color, outline="white")
 
-            # End Vertex
             show_end = True
             if self.visuals.disable_v_point_var.get():
                 is_dragging_end = False
                 if self._vertex_drag_active:
-                     # check if (ln, 'end') is in refs
+
                      for dln, dside in self._vertex_drag_refs:
                          if dln is ln and dside == "end":
                              is_dragging_end = True
                              break
-                # Also check simple drag (Cursor tool single line drag)
+
                 if self.dragging_line is ln and self.dragging_point == "end":
                     is_dragging_end = True
 
                 if not is_dragging_end:
-                    # Check distance to cursor
+
                     cwx, cwy = self.cursor_world
                     dist = math.hypot(ln.x2 - cwx, ln.y2 - cwy)
                     if dist > self.hit_threshold:
@@ -1792,9 +1643,6 @@ class FloorPlanCAD:
             return f"{v:.1f}".rstrip("0").rstrip(".")
         return f"{v:.0f}"
 
-    # -------------------------
-    # Box select
-    # -------------------------
     def _point_in_rect(self, x, y, x0, y0, x1, y1):
         xmin, xmax = (x0, x1) if x0 <= x1 else (x1, x0)
         ymin, ymax = (y0, y1) if y0 <= y1 else (y1, y0)
@@ -1828,11 +1676,9 @@ class FloorPlanCAD:
         return True
 
     def _select_lines_in_world_rect(self, x0, y0, x1, y1):
-        """Select lines and dimensions in world rectangle."""
         self.multi_selected.clear()
         self.dimension_tool._multi_selected_dims.clear()
 
-        # Select lines
         for ln in self.lines:
             if self._seg_intersects_rect(ln.x1, ln.y1, ln.x2, ln.y2, x0, y0, x1, y1):
                 self.multi_selected.add(ln)
@@ -1840,26 +1686,22 @@ class FloorPlanCAD:
         if self.multi_selected:
             self.selected_line = None
 
-        # Also select dimensions that are inside the box
         xmin, xmax = (x0, x1) if x0 <= x1 else (x1, x0)
         ymin, ymax = (y0, y1) if y0 <= y1 else (y1, y0)
 
         def point_in_box(px, py):
             return xmin <= px <= xmax and ymin <= py <= ymax
 
-        # Check length dimensions
         for ln, meta in self.fixed_lengths.items():
             label = meta.get('label', ((ln.x1 + ln.x2) / 2, (ln.y1 + ln.y2) / 2))
             if point_in_box(label[0], label[1]):
                 self.dimension_tool._multi_selected_dims.add(('len', ln))
 
-        # Check angle dimensions
         for idx, ent in enumerate(self.angle_constraints):
             lx, ly = self.dimension_tool._angle_label_world(ent)
             if point_in_box(lx, ly):
                 self.dimension_tool._multi_selected_dims.add(('ang', idx))
 
-        # Check distance dimensions
         for idx, ent in enumerate(self.distance_constraints):
             label = ent.get('label', None)
             if label and point_in_box(label[0], label[1]):
@@ -1896,9 +1738,6 @@ class FloorPlanCAD:
         self._box_active = False
         self._request_redraw()
 
-    # -------------------------
-    # Angle snap
-    # -------------------------
     def _get_angle_snap_list(self):
         return self.snap._get_angle_snap_list()
 
@@ -1911,11 +1750,8 @@ class FloorPlanCAD:
     def _apply_angle_snap_for_line(self, x_fixed, y_fixed, x_free, y_free):
         return self.snap._apply_angle_snap_for_line(x_fixed, y_fixed, x_free, y_free)
 
-    # -------------------------
-    # Constraint writers (called by DimensionTool)
-    # -------------------------
     def _add_or_update_angle(self, a, b, vx, vy, deg, meta):
-        # meta is dict: {"side": +/-1, "off": float}
+
         def same(ent):
             return ((ent["a"] is a and ent["b"] is b) or (ent["a"] is b and ent["b"] is a)) and abs(
                 ent["vx"] - vx) < 1e-6 and abs(ent["vy"] - vy) < 1e-6
@@ -1949,12 +1785,8 @@ class FloorPlanCAD:
                 return
         self.distance_constraints.append({"a": a, "b": b, "dist": dist, "Pa": Pa, "Pb": Pb, "label": label_pos})
 
-    # -------------------------
-    # Undo / Redo
-    # -------------------------
     def _snapshot_state(self):
-        # Snapshot lines + constraints in a way that survives Line object recreation.
-        # We store constraints by line INDEX (not object identity).
+
         line_data = [(ln.x1, ln.y1, ln.x2, ln.y2, ln.color) for ln in self.lines]
 
         idx = {ln: i for i, ln in enumerate(self.lines)}
@@ -2005,14 +1837,13 @@ class FloorPlanCAD:
         }
 
     def _restore_state(self, snap):
-        # Backward compatibility: if old snapshots exist (list of tuples), treat as lines-only.
+
         if isinstance(snap, list):
             snap = {"lines": snap, "fixed_lengths": [], "angle_constraints": [], "distance_constraints": []}
 
         line_data = snap.get("lines", [])
         self.lines = [Line(x1, y1, x2, y2, color) for (x1, y1, x2, y2, color) in line_data]
 
-        # Rebuild constraints using the new Line objects by index.
         self.fixed_lengths = {}
         for ent in snap.get("fixed_lengths", []):
             i = ent.get("i", None)
@@ -2052,7 +1883,6 @@ class FloorPlanCAD:
                     "label": ent.get("label", None),
                 })
 
-        # Clear UI/drag transient state (same as before)
         self.selected_line = None
         self.hovered_line = None
         self.multi_selected.clear()
@@ -2068,7 +1898,6 @@ class FloorPlanCAD:
         self._box_active = False
         self.snap_hint = None
 
-        # If DimensionTool is mid-state, cancel it (prevents stale refs after undo/redo)
         try:
             if hasattr(self, "dimension_tool") and self.dimension_tool is not None:
                 self.dimension_tool.cancel()
@@ -2112,13 +1941,11 @@ class FloorPlanCAD:
         return "break"
 
     def on_copy(self, e=None):
-        """Handle Ctrl+C copy."""
         if self.copy_paste.copy_selection():
             print("Copied selection to clipboard")
         return "break"
 
     def on_paste(self, e=None):
-        """Handle Ctrl+V paste."""
         if self.copy_paste.paste():
             print("Paste mode active - click to place or drag to reposition")
         return "break"
@@ -2143,12 +1970,10 @@ class FloorPlanCAD:
 
         ln.x1, ln.y1, ln.x2, ln.y2 = nx1, ny1, nx2, ny2
 
-        # NEW: propagate welded endpoints so connected shapes (triangle/rectangle) do not break
         self._weld_propagate_vertex_move(ox1, oy1, nx1, ny1, ignore_line=ln)
         self._weld_propagate_vertex_move(ox2, oy2, nx2, ny2, ignore_line=ln)
 
     def _apply_angle_constraint(self, lnA, lnB, vx, vy, target_deg):
-        # Rotate lnB about shared vertex to make angle(A,B) = target_deg, preserving lnB length.
 
         def out_vec(ln):
             if math.hypot(ln.x1 - vx, ln.y1 - vy) < 1e-6:
@@ -2180,24 +2005,22 @@ class FloorPlanCAD:
         nbx = bx * c - by * s
         nby = bx * s + by * c
 
-        # capture old endpoints so we can weld-propagate after
         ox1, oy1, ox2, oy2 = lnB.x1, lnB.y1, lnB.x2, lnB.y2
 
         if whichB == "end":
-            # lnB.x1,y1 is the vertex end
+
             nvx0, nvy0 = vx, vy
-            nfx, nfy = vx + nbx * lb, vy + nby * lb  # far end
+            nfx, nfy = vx + nbx * lb, vy + nby * lb           
 
             lnB.x1, lnB.y1 = nvx0, nvy0
             lnB.x2, lnB.y2 = nfx, nfy
 
-            # propagate BOTH: vertex end + far end
             self._weld_propagate_vertex_move(ox1, oy1, nvx0, nvy0, ignore_line=lnB)
             self._weld_propagate_vertex_move(ox2, oy2, nfx, nfy, ignore_line=lnB)
         else:
-            # lnB.x2,y2 is the vertex end
+
             nvx0, nvy0 = vx, vy
-            nfx, nfy = vx + nbx * lb, vy + nby * lb  # far end
+            nfx, nfy = vx + nbx * lb, vy + nby * lb           
 
             lnB.x2, lnB.y2 = nvx0, nvy0
             lnB.x1, lnB.y1 = nfx, nfy
@@ -2206,7 +2029,7 @@ class FloorPlanCAD:
             self._weld_propagate_vertex_move(ox1, oy1, nfx, nfy, ignore_line=lnB)
 
     def _apply_distance_constraint(self, lnA, lnB, target_dist):
-        # Move lnB rigidly along the shortest-segment normal so distance(A,B)=target_dist.
+
         from .dimension_tool import _closest_points_between_segments
 
         ox1, oy1, ox2, oy2 = lnB.x1, lnB.y1, lnB.x2, lnB.y2
@@ -2234,7 +2057,6 @@ class FloorPlanCAD:
         lnB.x2 += nx * delta
         lnB.y2 += ny * delta
 
-        # NEW: propagate welded endpoints so connected shapes do not break
         self._weld_propagate_vertex_move(ox1, oy1, lnB.x1, lnB.y1, ignore_line=lnB)
         self._weld_propagate_vertex_move(ox2, oy2, lnB.x2, lnB.y2, ignore_line=lnB)
 
@@ -2248,7 +2070,6 @@ class FloorPlanCAD:
         if math.hypot(newx - oldx, newy - oldy) < tol:
             return
 
-        # If an angle constraint was anchored at this vertex, move the anchor too
         for ent in self.angle_constraints:
             if math.hypot(ent["vx"] - oldx, ent["vy"] - oldy) < tol:
                 ent["vx"] = newx
@@ -2267,35 +2088,27 @@ class FloorPlanCAD:
                 ln.y2 = newy
 
     def _is_protected_vertex(self, vx, vy, tol=1e-6):
-        # A vertex is "protected" if an angle constraint is defined at that vertex.
+
         for ent in self.angle_constraints:
             if math.hypot(ent["vx"] - vx, ent["vy"] - vy) < tol:
                 return True
         return False
 
     def _solve_constraints(self, iterations=6):
-        """
-        Iterative constraint relaxation with improved convergence.
-
-        Angle constraints now dynamically track shared vertices
-        during solving, preventing "snap back" behavior.
-        """
         for iter_num in range(max(1, int(iterations))):
-            # Fixed lengths
+
             for ln, meta in list(self.fixed_lengths.items()):
                 try:
                     self._apply_length_constraint(ln, float(meta["len"]))
                 except Exception:
                     pass
 
-            # Angles (with dynamic vertex tracking)
             for ent in list(self.angle_constraints):
                 try:
                     lnA = ent["a"]
                     lnB = ent["b"]
                     vx0, vy0 = float(ent["vx"]), float(ent["vy"])
 
-                    # Find currently shared (or nearly-shared) endpoint between lnA and lnB
                     a_pts = [(lnA.x1, lnA.y1, "a1"), (lnA.x2, lnA.y2, "a2")]
                     b_pts = [(lnB.x1, lnB.y1, "b1"), (lnB.x2, lnB.y2, "b2")]
 
@@ -2308,13 +2121,11 @@ class FloorPlanCAD:
                                 best_d = d
                                 best = (ax, ay, atag, bx, by, btag)
 
-                    # If endpoints are welded, use that as the constraint vertex
                     if best and best_d <= max(1e-6, self.snap_dist_endpoint * 1.5):
                         ax, ay, atag, bx, by, btag = best
                         vx = 0.5 * (ax + bx)
                         vy = 0.5 * (ay + by)
 
-                        # Weld the endpoints together
                         if atag == "a1":
                             lnA.x1, lnA.y1 = vx, vy
                         else:
@@ -2324,12 +2135,11 @@ class FloorPlanCAD:
                         else:
                             lnB.x2, lnB.y2 = vx, vy
 
-                        # Update stored vertex position
                         ent["vx"], ent["vy"] = vx, vy
                     else:
-                        # Fallback: use stored vertex
+
                         vx, vy = vx0, vy0
-                        # Snap any endpoints that are close to stored vertex
+
                         if math.hypot(lnA.x1 - vx, lnA.y1 - vy) < 1e-6:
                             lnA.x1, lnA.y1 = vx, vy
                         if math.hypot(lnA.x2 - vx, lnA.y2 - vy) < 1e-6:
@@ -2339,7 +2149,6 @@ class FloorPlanCAD:
                         if math.hypot(lnB.x2 - vx, lnB.y2 - vy) < 1e-6:
                             lnB.x2, lnB.y2 = vx, vy
 
-                    # Determine which line to rotate (prefer non-dragged line)
                     rotate_ln = lnB
                     keep_ln = lnA
                     try:
@@ -2354,7 +2163,6 @@ class FloorPlanCAD:
                 except Exception:
                     pass
 
-            # Distances
             for ent in list(self.distance_constraints):
                 try:
                     lnA = ent["a"]
@@ -2367,8 +2175,7 @@ class FloorPlanCAD:
                     pass
 
     def draw_alignment_guides(self):
-        """Draw dotted alignment + Line Match guides (axis guide drawn correctly to the snapped endpoint)."""
-        # Standard alignment guides
+
         for guide in self.alignment_guides:
             x1, y1, x2, y2, guide_type = guide
             sx1, sy1 = self.vp.world_to_screen(x1, y1)
@@ -2378,11 +2185,6 @@ class FloorPlanCAD:
         if not self.line_match_var.get():
             return
 
-        # --------
-        # Slope axis guide (FIXED):
-        # Draw from the closest point on the reference segment to the snapped endpoint (on the axis).
-        # This works even if only the endpoint is aligned (start point off-axis).
-        # --------
         for guide in self.parallel_guides:
             x_start, y_start, x_end, y_end, ref_line = guide
 
@@ -2399,18 +2201,14 @@ class FloorPlanCAD:
             def s_of(px, py):
                 return (px - ox) * ux + (py - oy) * uy
 
-            # Reference segment interval
             sA = s_of(ref_line.x1, ref_line.y1)
             sB = s_of(ref_line.x2, ref_line.y2)
             r0, r1 = (sA, sB) if sA <= sB else (sB, sA)
 
-            # ONLY use the snapped endpoint of the new line (this is on the axis)
             sE = s_of(x_end, y_end)
 
-            # Closest point on ref segment to that endpoint (clamp)
             sC = min(r1, max(r0, sE))
 
-            # If the endpoint is actually within the segment, line would be tiny / pointless
             if abs(sE - sC) < 1e-9:
                 continue
 
@@ -2423,9 +2221,6 @@ class FloorPlanCAD:
             sx2, sy2 = self.vp.world_to_screen(gx2, gy2)
             self.canvas.create_line(sx1, sy1, sx2, sy2, fill="#FFD700", width=1, dash=(4, 3))
 
-        # --------
-        # Equal length indicators (unchanged)
-        # --------
         for guide in self.equal_length_guides:
             x1, y1, x2, y2, ref_line = guide
 
@@ -2468,38 +2263,32 @@ class FloorPlanCAD:
             self.canvas.create_line(sw1_x1, sw1_y1, sw1_x2, sw1_y2, fill="white", width=2)
             self.canvas.create_line(sw2_x1, sw2_y1, sw2_x2, sw2_y2, fill="white", width=2)
 
-    # Line Match (parallel/equal-length) (delegates)
     def _apply_line_match_snap(self, x0, y0, wx, wy, ignore_line=None):
         return self.snap._apply_line_match_snap(x0, y0, wx, wy, ignore_line=ignore_line)
 
-    # Back-compat wrapper used by existing code paths (if any)
     def _apply_parallel_and_equal_length_snap(self, x0, y0, wx, wy):
-        """Line Match snapping for line drawing mode (wrapper for compatibility)."""
         return self.snap._apply_line_match_snap(x0, y0, wx, wy, ignore_line=None)
 
     def on_double_click(self, e):
-        """Handle double-click for editing dimensions."""
         if self.tool_mode in ("cursor", "dim"):
             if self.dimension_tool.pre_handle_double_click(e):
                 return
 
     def on_delete_key(self, e=None):
-        # First try to delete a highlighted dimension
+
         if self.tool_mode in ("cursor", "dim"):
             if self.dimension_tool.delete_selected_dimension():
                 return
 
-        # Then try to delete from tree selection
         if self._delete_selected_dimension_from_tree():
             return
 
-        # Then handle line deletion
         if self.tool_mode == "vertex":
             return
         if self.multi_selected:
             self._push_undo()
             dead = set(self.multi_selected)
-            # purge constraints that touch any deleted line
+
             self.angle_constraints = [c for c in self.angle_constraints if c["a"] not in dead and c["b"] not in dead]
             self.distance_constraints = [c for c in self.distance_constraints if
                                          c["a"] not in dead and c["b"] not in dead]
@@ -2515,8 +2304,7 @@ class FloorPlanCAD:
         self._delete_selected_line()
 
     def on_right_click_menu(self, e):
-        """Handle right-click to open context menu (NEW)."""
-        # If dropdown is already open, close it
+
         if self.dropdown.active:
             self.dropdown.close_menu()
         else:
@@ -2532,25 +2320,16 @@ class FloorPlanCAD:
         return self.dimension_rules.apply_angle_dimension(lnA, lnB, vx, vy, target_deg)
 
     def activate_rotate(self):
-        """Activate rotation mode."""
         self.rotate.activate()
 
     def activate_trim(self):
-        """Activate trim mode."""
         self.trim.activate()
 
-
-
-
-
-
-
     def on_canvas_leave(self, e=None):
-        # Cursor is no longer in the drawing plane
+
         self.cursor_world_valid = False
         self.snap_hint = None
 
-        # Clear ALL tracing visuals (Snap Axis + Line Match)
         self.alignment_guides = []
         self.parallel_guides = []
         self.equal_length_guides = []
@@ -2562,4 +2341,3 @@ if __name__ == "__main__":
     app = FloorPlanCAD(root)
     root.mainloop()
 
-#123aaaadd1122bbccdd1/1

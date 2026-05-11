@@ -1,6 +1,3 @@
-/* ============================================================
-   FloatingPanel — Observation Overlay
-   ============================================================ */
 
 .floating-panel {
   position: absolute;
@@ -19,7 +16,6 @@
   flex-direction: column;
 }
 
-/* ---- Header ---- */
 .floating-panel__header {
   padding: var(--space-4) var(--space-4) var(--space-3);
   border-bottom: 1px solid var(--border-subtle);
@@ -73,12 +69,10 @@
   color: var(--border-subtle);
 }
 
-/* ---- Description ---- */
 .floating-panel__description {
   padding: var(--space-3) var(--space-4);
 }
 
-/* ---- Model Row ---- */
 .floating-panel__model-row {
   display: flex;
   align-items: center;
@@ -158,7 +152,6 @@
   color: var(--accent-cyan);
 }
 
-/* ---- Image Comparison ---- */
 .floating-panel__images {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -180,7 +173,6 @@
   letter-spacing: 0.04em;
 }
 
-/* ---- Footer ---- */
 .floating-panel__footer {
   padding: var(--space-3) var(--space-4);
   border-top: 1px solid var(--border-subtle);

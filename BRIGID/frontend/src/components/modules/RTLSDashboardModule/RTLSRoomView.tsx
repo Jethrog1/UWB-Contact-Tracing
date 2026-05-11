@@ -156,8 +156,6 @@ function animFrameTime(speed: number): number | null {
 
 function buildLUT(): Uint8Array {
   const lut = new Uint8Array(256 * 3)
-  // Smooth gradient from deep blue → light blue → cyan → green → yellow → orange → red → dark red.
-  // More stops = smoother transitions between regions.
   const stops: [number, number, number, number][] = [
     [0.00,   0,   0, 120],  // deep blue (low)
     [0.05,   0,  30, 180],

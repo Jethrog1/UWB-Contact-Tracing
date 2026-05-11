@@ -15,7 +15,6 @@ interface TabStripProps {
   onTabRename?: (id: string, newName: string) => void
   onRefresh?: () => void
   onOpenFolder?: () => void
-  // View commands forwarded to the active CAD module via context/event
   onViewCommand?: (cmd: string) => void
 }
 
@@ -40,7 +39,6 @@ const TabStrip: React.FC<TabStripProps> = ({
   onOpenFolder,
   onViewCommand,
 }) => {
-  // Show view controls for all canvas-based modules; undo/redo only where supported
   const showViewControls = activeModule === 'cad' || activeModule === 'calibration' || activeModule === 'rtls' || activeModule === 'anchors'
   const showUndoRedo = activeModule === 'cad' || activeModule === 'anchors'
   const showWorkspaceActions = activeModule === 'rtls'
@@ -100,7 +98,6 @@ const TabStrip: React.FC<TabStripProps> = ({
 
   return (
     <div className="tab-strip electron-drag">
-      {/* Tab list */}
       <div className="tab-strip__left electron-no-drag">
         <div className="tab-strip__tabs">
           <AnimatePresence initial={false}>
@@ -183,7 +180,6 @@ const TabStrip: React.FC<TabStripProps> = ({
 
       <div className="tab-strip__spacer" />
 
-      {/* View control cluster — only shown for CAD workspaces */}
       {showViewControls && (
         <div className="tab-strip__view-controls electron-no-drag">
           {showWorkspaceActions && (
@@ -226,7 +222,6 @@ const TabStrip: React.FC<TabStripProps> = ({
         </div>
       )}
 
-      {/* Search */}
       <div className="tab-strip__search electron-no-drag">
         {searchVisible ? (
           <div className="tab-strip__search-input-wrap">

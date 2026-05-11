@@ -1,34 +1,18 @@
-"""
-pdf_importer.py
-Imports vector line geometry from a PDF file using PyMuPDF (fitz).
-
-Only straight line segments are extracted; curves are approximated.
-Coordinates are normalised so the geometry fits within target_world_size
-world units (default 50).
-"""
 
 import math
 
 try:
-    import fitz  # PyMuPDF
+    import fitz           
     FITZ_AVAILABLE = True
 except ImportError:
     FITZ_AVAILABLE = False
 
-
 def _pdf_to_world(x, y, offset_x, offset_y, scale):
-    """PDF → world coords.  PDF y increases upward; we flip so CAD Y-up matches."""
     wx = (x - offset_x) * scale
     wy = -(y - offset_y) * scale
     return wx, wy
 
-
 def extract_lines_from_pdf(filepath: str, target_world_size: float = 50.0, curve_segments: int = 8):
-    """
-    Parse a PDF and return (segments, error).
-    segments: list of (x1, y1, x2, y2) in world space.
-    error:    str or None.
-    """
     if not FITZ_AVAILABLE:
         return [], "PyMuPDF is not installed. Run: pip install pymupdf"
 
@@ -54,7 +38,6 @@ def extract_lines_from_pdf(filepath: str, target_world_size: float = 50.0, curve
             if not items:
                 continue
 
-            # Skip full-page background rectangle
             path_bbox = path.get("rect")
             if path_bbox is not None:
                 EPS_BG = 2.0
@@ -158,7 +141,6 @@ def extract_lines_from_pdf(filepath: str, target_world_size: float = 50.0, curve
         world.append((wx1, wy1, wx2, wy2))
 
     return world, None
-
 
 def _cubic_bezier_points(p0, p1, p2, p3, n):
     pts = []

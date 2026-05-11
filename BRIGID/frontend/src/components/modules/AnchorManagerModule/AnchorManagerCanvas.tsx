@@ -391,7 +391,6 @@ const AnchorManagerCanvas = forwardRef<AnchorManagerCanvasHandle, AnchorManagerC
     const [worldX, worldY] = screenToWorld(viewport, mx, my)
     const ctrlHeld = e.ctrlKey || e.metaKey
 
-    // Ctrl+click (without shift) in placement mode → place anchor in that room (with corner snap)
     if (ctrlHeld && !e.shiftKey && placementRoomName && onAnchorPlace) {
       const placementRoom = rooms.find(r => r.room_name === placementRoomName)
       if (placementRoom) {
@@ -410,7 +409,6 @@ const AnchorManagerCanvas = forwardRef<AnchorManagerCanvasHandle, AnchorManagerC
 
     const currentTool = resolveTool(activeTool, e.shiftKey, ctrlHeld)
 
-    // Smart Select fires on any click — no segment hit-test required
     if (currentTool === 'smartSelect') {
       onSmartSelectClick?.(worldX, worldY, e.shiftKey)
       return
@@ -463,7 +461,6 @@ const AnchorManagerCanvas = forwardRef<AnchorManagerCanvasHandle, AnchorManagerC
       return
     }
 
-    // Placement preview: ctrl held (not shift) in placement mode and cursor inside target room
     if (placementRoomName && ctrlHeld && !e.shiftKey) {
       const canvas = canvasRef.current
       if (canvas) {

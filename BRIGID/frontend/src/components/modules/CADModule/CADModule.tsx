@@ -7,8 +7,6 @@ import FeatureManager from './FeatureManager'
 import { CADCommand, CADContextMenuItem } from './types'
 import './CADModule.css'
 
-// ── Float dialog ──────────────────────────────────────────────────
-
 interface DialogProps {
   title: string
   label: string
@@ -62,8 +60,6 @@ const FloatDialog: React.FC<DialogProps> = ({ title, label, initial, onConfirm, 
   )
 }
 
-// ── Context menu item ─────────────────────────────────────────────
-
 const ContextMenuItemRow: React.FC<{
   item: CADContextMenuItem
   onClick: () => void
@@ -77,8 +73,6 @@ const ContextMenuItemRow: React.FC<{
     )}
   </button>
 )
-
-// ── Floating notification ─────────────────────────────────────────
 
 interface NoticeState {
   id: number
@@ -116,8 +110,6 @@ const FloatingNotice: React.FC<{
   )
 }
 
-// ── Floating tool panel (Trim / Rotate) ──────────────────────────
-
 interface CADModuleProps {
   workspaceId: string
   workspaceName?: string
@@ -130,7 +122,6 @@ const CADModule: React.FC<CADModuleProps> = ({ workspaceId, workspaceName }) => 
   const contextRef = useRef<HTMLDivElement>(null)
   const canvasAreaRef = useRef<HTMLDivElement>(null)
 
-  // Floating notifications
   const [notices, setNotices] = useState<NoticeState[]>([])
   const prevNoticeRef = useRef<string>('')
 
@@ -138,7 +129,6 @@ const CADModule: React.FC<CADModuleProps> = ({ workspaceId, workspaceName }) => 
     setNotices(prev => prev.filter(n => n.id !== id))
   }, [])
 
-  // Detect new last_notice from state
   useEffect(() => {
     if (!state?.last_notice) return
     const key = `${state.last_notice.title}::${state.last_notice.message}`
@@ -157,7 +147,6 @@ const CADModule: React.FC<CADModuleProps> = ({ workspaceId, workspaceName }) => 
     sendCommand(cmd)
   }, [sendCommand])
 
-  // Listen for view commands broadcast from TabStrip / HotBar
   useEffect(() => {
     const handler = (e: Event) => {
       const detail = (e as CustomEvent).detail as { cmd: string; workspaceId: string; tool?: string }
@@ -197,7 +186,7 @@ const CADModule: React.FC<CADModuleProps> = ({ workspaceId, workspaceName }) => 
           const data = await res.json() as { success: boolean; svg?: string }
           if (data.success && data.svg) defaultPath = `${data.svg}\\floor-plan.svg`
         }
-      } catch { /* use fallback */ }
+      } catch {  }
       const result = await window.api.saveFile(
         [{ name: 'SVG Files', extensions: ['svg'] }],
         defaultPath,
@@ -214,7 +203,6 @@ const CADModule: React.FC<CADModuleProps> = ({ workspaceId, workspaceName }) => 
     }
   }, [workspaceId, workspaceName, sendCommand])
 
-  // Close context menu on outside click
   useEffect(() => {
     if (!contextMenu) return
     const onPointerDown = (event: MouseEvent) => {
@@ -225,7 +213,6 @@ const CADModule: React.FC<CADModuleProps> = ({ workspaceId, workspaceName }) => 
     return () => window.removeEventListener('mousedown', onPointerDown)
   }, [contextMenu, sendCommand])
 
-  // Context menu: clamp position using actual measured size after render
   const [menuPos, setMenuPos] = useState<{ left: number; top: number }>({ left: 0, top: 0 })
 
   useLayoutEffect(() => {
@@ -258,7 +245,6 @@ const CADModule: React.FC<CADModuleProps> = ({ workspaceId, workspaceName }) => 
     <>
       <div ref={canvasAreaRef} className="cad-canvas-area">
         <div className="cad-module-title">2D CAD Modeling</div>
-        {/* Offline overlay */}
         {status !== 'connected' && !state && (
           <div className="cad-offline-overlay">
             <div className="cad-offline-icon">□</div>
@@ -279,7 +265,6 @@ const CADModule: React.FC<CADModuleProps> = ({ workspaceId, workspaceName }) => 
         <CADCanvas state={state} onCommand={handleCommand} />
         <FeatureManager state={state} />
 
-        {/* Floating notification stack */}
         <div className="cad-notice-stack">
           <AnimatePresence mode="popLayout">
             {notices.map(n => (
@@ -288,7 +273,6 @@ const CADModule: React.FC<CADModuleProps> = ({ workspaceId, workspaceName }) => 
           </AnimatePresence>
         </div>
 
-        {/* Contextual floating tool panel — Trim */}
         <AnimatePresence>
           {state?.trim_state.active && (
             <motion.div
@@ -329,7 +313,6 @@ const CADModule: React.FC<CADModuleProps> = ({ workspaceId, workspaceName }) => 
           )}
         </AnimatePresence>
 
-        {/* Contextual floating tool panel — Rotate */}
         <AnimatePresence>
           {state?.rotate_state.active && (
             <motion.div
@@ -352,7 +335,6 @@ const CADModule: React.FC<CADModuleProps> = ({ workspaceId, workspaceName }) => 
           )}
         </AnimatePresence>
 
-        {/* World coordinate readout */}
         {state && (
           <div className="cad-coord-readout">
             X {state.cursor_world_snapped[0].toFixed(2)}
@@ -361,7 +343,6 @@ const CADModule: React.FC<CADModuleProps> = ({ workspaceId, workspaceName }) => 
           </div>
         )}
 
-        {/* Right-click context menu — clamped to viewport */}
         {contextMenu && (
           <div
             ref={contextRef}
@@ -383,7 +364,6 @@ const CADModule: React.FC<CADModuleProps> = ({ workspaceId, workspaceName }) => 
           </div>
         )}
 
-        {/* Right panel — absolutely positioned inside canvas area */}
         <CADRightPanel state={state} onCommand={handleCommand} status={status} workspaceId={workspaceId} workspaceName={workspaceName} />
       </div>
 

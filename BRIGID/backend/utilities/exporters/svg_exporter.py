@@ -1,26 +1,12 @@
-"""
-svg_exporter.py
-Export CAD line geometry to an SVG file.
-
-The SVG embeds CAD metadata attributes so the file can be re-imported with
-perfect coordinate roundtrip fidelity.
-"""
 
 from __future__ import annotations
 import os
 from typing import Any
 
-
 def export_lines_to_svg(lines: list[Any], filepath: str) -> tuple[bool, str]:
-    """
-    Write *lines* (list of Line objects with .x1 .y1 .x2 .y2 .color) to *filepath*.
-
-    Returns (success, error_message).
-    """
     if not lines:
         return False, "Nothing to export — the canvas is empty."
 
-    # Bounding box
     all_pts = []
     for obj in lines:
         all_pts += [(obj.x1, obj.y1), (obj.x2, obj.y2)]
@@ -43,7 +29,7 @@ def export_lines_to_svg(lines: list[Any], filepath: str) -> tuple[bool, str]:
         return (x - min_x) * scale + offset_x
 
     def ty(y: float) -> float:
-        # CAD Y-up → SVG Y-down, then centre
+
         return DOC_SIZE - (y - min_y) * scale - offset_y
 
     stroke_width = max(1.0, scale / 2.0)
@@ -57,7 +43,6 @@ def export_lines_to_svg(lines: list[Any], filepath: str) -> tuple[bool, str]:
             f'stroke="{color}" stroke-width="{stroke_width:.2f}" stroke-linecap="round"/>'
         )
 
-    # Background matches CAD dark theme so the SVG looks right when opened standalone
     svg = "\n".join([
         f'<svg xmlns="http://www.w3.org/2000/svg" '
         f'width="100%" height="100%" '

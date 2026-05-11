@@ -92,7 +92,6 @@ const TagProfiler: React.FC<TagProfilerProps> = ({ workspaceId }) => {
   const fileInputRef = useRef<HTMLInputElement>(null)
   const handleSaveRef = useRef<(() => Promise<void>) | null>(null)
 
-  // Stable toast dispatch — lives in a ref so callbacks never go stale
   const pushToastRef = useRef((message: string, kind: 'ok' | 'error') => {})
   pushToastRef.current = (message: string, kind: 'ok' | 'error') => {
     const id = toastCounter.current++
@@ -111,7 +110,6 @@ const TagProfiler: React.FC<TagProfilerProps> = ({ workspaceId }) => {
       const data = await res.json()
       if (data.success) setSavedProfiles(data.profiles)
     } catch {
-      // Keep the workspace usable while backend boots.
     }
   }, [workspaceId])
 
@@ -150,7 +148,6 @@ const TagProfiler: React.FC<TagProfilerProps> = ({ workspaceId }) => {
         return
       }
     } catch {
-      // Fall back to a local empty draft if the backend is unavailable.
     }
     setProfile(createEmptyProfile())
     setDirty(false)
@@ -219,7 +216,6 @@ const TagProfiler: React.FC<TagProfilerProps> = ({ workspaceId }) => {
       const data = await res.json()
       if (data.success) {
         pushToast('Profile deleted.', 'error')
-        // Always reset to blank form so fields are unlocked
         setProfile(createEmptyProfile())
         setDirty(false)
         loadProfileList()
@@ -229,7 +225,6 @@ const TagProfiler: React.FC<TagProfilerProps> = ({ workspaceId }) => {
     } catch {
       pushToast('Could not reach backend.', 'error')
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loadProfileList, workspaceId])
 
   const handleImportFile = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
@@ -257,7 +252,6 @@ const TagProfiler: React.FC<TagProfilerProps> = ({ workspaceId }) => {
 
   return (
     <div className="tp-root">
-      {/* Floating toast notifications */}
       <div className="tp-toast-container">
         <AnimatePresence>
           {toasts.map(toast => (

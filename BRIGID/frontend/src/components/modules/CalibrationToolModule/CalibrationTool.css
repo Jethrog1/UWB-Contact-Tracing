@@ -1,4 +1,3 @@
-/* ── Root ─────────────────────────────────────────────────────────── */
 
 .ct-root {
   height: 100%;
@@ -26,8 +25,6 @@
   outline: none;
 }
 
-/* ── Shared z-index ───────────────────────────────────────────────── */
-
 .ct-status,
 .ct-canvas-hint,
 .ct-right-panel,
@@ -37,8 +34,6 @@
   position: absolute;
   z-index: 10;
 }
-
-/* ── Module title (floating, no banner) ───────────────────────────── */
 
 .ct-module-title {
   top: 8px;
@@ -50,8 +45,6 @@
   pointer-events: none;
   user-select: none;
 }
-
-/* ── Status toast ─────────────────────────────────────────────────── */
 
 .ct-status {
   top: 36px;
@@ -77,8 +70,6 @@
   border: 1px solid rgba(220, 38, 38, 0.25);
 }
 
-/* ── Canvas hint ──────────────────────────────────────────────────── */
-
 .ct-canvas-hint {
   left: 58px;
   bottom: 16px;
@@ -90,8 +81,6 @@
   letter-spacing: 0.04em;
   pointer-events: none;
 }
-
-/* ── Inline canvas coordinate editor ──────────────────────────────── */
 
 .ct-inline-editor {
   z-index: 20;
@@ -124,8 +113,6 @@
 .ct-inline-editor-input:focus {
   border-color: var(--border-focus);
 }
-
-/* ── Right floating panel ─────────────────────────────────────────── */
 
 .ct-right-panel {
   top: 12px;
@@ -177,8 +164,6 @@
   line-height: 1.4;
 }
 
-/* ── Tag color chip ───────────────────────────────────────────────── */
-
 .ct-tag-chip {
   display: inline-flex;
   align-items: center;
@@ -201,8 +186,6 @@
   flex-shrink: 0;
 }
 
-/* ── Panel scroll ─────────────────────────────────────────────────── */
-
 .ct-panel-scroll {
   flex: 1;
   overflow-y: auto;
@@ -213,8 +196,6 @@
 .ct-panel-scroll::-webkit-scrollbar-thumb {
   background: rgba(255, 255, 255, 0.08);
 }
-
-/* ── Sections ─────────────────────────────────────────────────────── */
 
 .ct-section {
   margin-bottom: 6px;
@@ -233,8 +214,6 @@
   text-transform: uppercase;
 }
 
-/* ── Button groups ────────────────────────────────────────────────── */
-
 .ct-transport-toggle,
 .ct-tag-tabs,
 .ct-anchor-picker,
@@ -247,8 +226,6 @@
 }
 
 .ct-actions { margin-top: 4px; }
-
-/* ── Shared button base ───────────────────────────────────────────── */
 
 .ct-btn,
 .ct-toggle,
@@ -314,8 +291,6 @@
 .ct-toggle:disabled:hover,
 .ct-pill:disabled:hover { background: transparent; color: var(--text-secondary); }
 
-/* ── Inline label + input row ─────────────────────────────────────── */
-
 .ct-field-inline {
   display: flex;
   align-items: center;
@@ -335,7 +310,6 @@
   padding-right: 4px;
 }
 
-/* Legacy stacked field (keep for non-geometry uses) */
 .ct-field {
   display: flex;
   flex-direction: column;
@@ -359,8 +333,6 @@
   margin: 6px 0;
 }
 
-/* ── Inputs ───────────────────────────────────────────────────────── */
-
 .ct-input {
   width: 100%;
   min-height: 26px;
@@ -378,16 +350,12 @@
 .ct-input--small { width: 72px; }
 .ct-input:focus { outline: none; border-color: var(--border-active); }
 
-/* ── Notes & metadata ─────────────────────────────────────────────── */
-
 .ct-runtime-note {
   color: var(--text-muted);
   font-size: var(--text-xs);
   line-height: 1.4;
   margin: 4px 0;
 }
-
-/* ── Tag rows ─────────────────────────────────────────────────────── */
 
 .ct-rows {
   display: flex;
@@ -407,8 +375,6 @@
   color: var(--text-secondary);
   font-size: var(--text-base);
 }
-
-/* ── Tables ───────────────────────────────────────────────────────── */
 
 .ct-table {
   width: 100%;
@@ -460,8 +426,6 @@
   letter-spacing: 0;
 }
 
-/* ── Line list ────────────────────────────────────────────────────── */
-
 .ct-lines-list {
   display: flex;
   flex-direction: column;
@@ -507,8 +471,6 @@
 
 .ct-line-row:hover .ct-line-row-delete { color: #f87171; }
 
-/* ── Line creator ─────────────────────────────────────────────────── */
-
 .ct-line-creator {
   padding: 6px 0 3px;
 }
@@ -518,8 +480,6 @@
   font-size: var(--text-xs);
   margin-bottom: 4px;
 }
-
-/* ── Progress ─────────────────────────────────────────────────────── */
 
 .ct-progress-row {
   display: grid;
@@ -557,8 +517,6 @@
   background: var(--accent-primary);
   transition: width 160ms ease;
 }
-
-/* ── Captured points table ────────────────────────────────────────── */
 
 .ct-capture-table-wrap {
   overflow-x: auto;
@@ -602,8 +560,6 @@
 .ct-capture-table tbody tr:hover td {
   background: var(--bg-hover);
 }
-
-/* ── Equations section ────────────────────────────────────────────── */
 
 .ct-eq-detail {
   padding: 6px 8px;
@@ -664,8 +620,6 @@
 .ct-eq-input::placeholder { color: var(--text-muted); }
 
 .ct-eq-row.active .ct-eq-input { color: var(--text-primary); }
-
-/* ── Smoothing sliders ────────────────────────────────────────────── */
 
 .ct-slider-row { margin-bottom: 8px; }
 
@@ -728,8 +682,6 @@
   cursor: pointer;
 }
 
-/* ── Calibration graph panel ──────────────────────────────────────── */
-
 .ct-graph-panel {
   left: 58px;
   right: 368px;
@@ -780,8 +732,6 @@
   display: block;
   overflow: hidden;
 }
-
-/* ── Responsive ───────────────────────────────────────────────────── */
 
 @media (max-width: 1200px) {
   .ct-right-panel { width: 300px; }

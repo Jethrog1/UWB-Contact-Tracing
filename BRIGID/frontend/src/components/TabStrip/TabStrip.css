@@ -11,7 +11,6 @@
   z-index: 100;
 }
 
-/* ── Tab list ─────────────────────────────────────────────────── */
 .tab-strip__left {
   display: flex;
   align-items: center;
@@ -164,7 +163,6 @@
   min-width: 8px;
 }
 
-/* ── View controls cluster ────────────────────────────────────── */
 .tab-strip__view-controls {
   display: flex;
   align-items: center;
@@ -212,7 +210,6 @@
   margin: 0 2px;
 }
 
-/* ── Search ───────────────────────────────────────────────────── */
 .tab-strip__search {
   display: flex;
   align-items: center;

@@ -16,7 +16,6 @@ from .runtime import (
     StringVar,
 )
 
-
 class HeadlessDropdown:
     def __init__(self, app: "HeadlessCADDocument"):
         self.app = app
@@ -35,7 +34,6 @@ class HeadlessDropdown:
     def close_menu(self) -> None:
         self.active = False
         self.model = None
-
 
 class HeadlessCADDocument(main_cad.FloorPlanCAD):
     def __init__(self, canvas_w: int = 800, canvas_h: int = 600):
@@ -145,11 +143,9 @@ class HeadlessCADDocument(main_cad.FloorPlanCAD):
         self.flush()
 
     def draw_axes(self):
-        """Override: CAD canvas should render with no background grid or axis lines."""
         return
 
     def draw_origin_marker(self):
-        """Override: suppress the origin marker along with the axis lines."""
         return
 
     def _request_redraw(self):

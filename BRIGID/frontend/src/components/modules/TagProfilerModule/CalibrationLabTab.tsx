@@ -103,7 +103,6 @@ const CalibrationLabTab: React.FC<Props> = ({ profile, onChange }) => {
 
   return (
     <div className="tp-callib">
-      {/* Anchor selector */}
       <div className="tp-callib-anchors">
         {ANCHOR_IDS.map(aid => (
           <button
@@ -118,7 +117,6 @@ const CalibrationLabTab: React.FC<Props> = ({ profile, onChange }) => {
       </div>
 
       <div className="tp-callib-body">
-        {/* Left: point entry */}
         <div className="tp-callib-entry">
           <div className="tp-callib-section-title">Data Points — {selectedAnchor}</div>
           <div className="tp-callib-hint">
@@ -137,7 +135,6 @@ const CalibrationLabTab: React.FC<Props> = ({ profile, onChange }) => {
             <button className="tp-btn tp-btn--ghost" onClick={handleClearPoints}>Clear</button>
           </div>
 
-          {/* Point table */}
           {curState.points.length > 0 && (
             <div className="tp-callib-table-wrap">
               <table className="tp-callib-table">
@@ -158,7 +155,6 @@ const CalibrationLabTab: React.FC<Props> = ({ profile, onChange }) => {
           )}
         </div>
 
-        {/* Right: fit mode + generate */}
         <div className="tp-callib-generate">
           <div className="tp-callib-section-title">Fit Mode</div>
           <select className="tp-field-select" value={fitMode} onChange={e => setFitMode(e.target.value)}>
@@ -195,7 +191,6 @@ const CalibrationLabTab: React.FC<Props> = ({ profile, onChange }) => {
             </div>
           )}
 
-          {/* Current equation in profile */}
           <div className="tp-callib-current">
             <div className="tp-callib-result-label">Current equation in profile:</div>
             <div className="tp-callib-result-eq tp-callib-result-eq--current">

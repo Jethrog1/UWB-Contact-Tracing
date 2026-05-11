@@ -71,8 +71,7 @@ const AnchorPreviewCanvas = forwardRef<AnchorPreviewCanvasHandle, Props>(({
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const [viewport, setViewport] = useState<Viewport>({ offsetX: 0, offsetY: 0, scale: 20 })
   const [canvasSize, setCanvasSize] = useState({ width: 0, height: 0 })
-  
-  // Interactive States
+
   const [hoverAnchor, setHoverAnchor] = useState<string | null>(null)
   const [hoverEdge, setHoverEdge] = useState<[string, string] | null>(null)
   const [selectedEdge, setSelectedEdge] = useState<[string, string] | null>(null)
@@ -87,8 +86,7 @@ const AnchorPreviewCanvas = forwardRef<AnchorPreviewCanvasHandle, Props>(({
     if (!canvas || anchors.length === 0) return
     const xs = anchors.map(a => a.x_ft)
     const ys = anchors.map(a => a.y_ft)
-    
-    // Fallback to bounding box of [0, 0] if anchors don't span it
+
     const minX = Math.min(...xs, 0)
     const maxX = Math.max(...xs, 1)
     const minY = Math.min(...ys, 0)
@@ -99,11 +97,11 @@ const AnchorPreviewCanvas = forwardRef<AnchorPreviewCanvasHandle, Props>(({
     const paddingY = 40
     const availW = canvas.width - paddingX * 2
     const availH = canvas.height - paddingY * 2
-    
+
     const scale = Math.min(availW, availH) / span
     const centerX = (minX + maxX) / 2
     const centerY = (minY + maxY) / 2
-    
+
     setViewport({
       scale,
       offsetX: canvas.width / 2 - centerX * scale,
@@ -149,7 +147,7 @@ const AnchorPreviewCanvas = forwardRef<AnchorPreviewCanvasHandle, Props>(({
   const hitTestEdge = useCallback((mx: number, my: number) => {
     let bestDist = 6
     let bestHit: [string, string] | null = null
-    
+
     for (const edge of edges) {
       const a1 = anchors.find(a => a.id === edge[0])
       const a2 = anchors.find(a => a.id === edge[1])
@@ -165,7 +163,6 @@ const AnchorPreviewCanvas = forwardRef<AnchorPreviewCanvasHandle, Props>(({
     return bestHit
   }, [anchors, edges, viewport])
 
-  // Component Render Loop
   useEffect(() => {
     const canvas = canvasRef.current
     if (!canvas) return
@@ -175,7 +172,6 @@ const AnchorPreviewCanvas = forwardRef<AnchorPreviewCanvasHandle, Props>(({
 
     ctx.clearRect(0, 0, canvas.width, canvas.height)
 
-    // Draw grid
     const worldLeft = screenToWorld(viewport, 0, canvas.height)[0]
     const worldRight = screenToWorld(viewport, canvas.width, 0)[0]
     const worldBottom = screenToWorld(viewport, 0, canvas.height)[1]
@@ -193,29 +189,27 @@ const AnchorPreviewCanvas = forwardRef<AnchorPreviewCanvasHandle, Props>(({
       ctx.beginPath(); ctx.moveTo(0, screenY); ctx.lineTo(canvas.width, screenY); ctx.stroke()
     }
 
-    // Draw Edges
     for (const [a1Id, a2Id] of edges) {
       const a1 = anchors.find(a => a.id === a1Id)
       const a2 = anchors.find(a => a.id === a2Id)
       if (!a1 || !a2) continue
-      
+
       const isSelected = selectedEdge?.[0] === a1Id && selectedEdge?.[1] === a2Id
       const isHover = hoverEdge?.[0] === a1Id && hoverEdge?.[1] === a2Id
-      
+
       const [sx1, sy1] = worldToScreen(viewport, a1.x_ft, a1.y_ft)
       const [sx2, sy2] = worldToScreen(viewport, a2.x_ft, a2.y_ft)
-      
+
       ctx.strokeStyle = isSelected ? COLORS.lineActive : isHover ? '#ffffff' : COLORS.line
       ctx.lineWidth = isSelected ? 3 : isHover ? 2.5 : 1.5
       ctx.setLineDash(isSelected ? [] : [4, 4])
       ctx.beginPath(); ctx.moveTo(sx1, sy1); ctx.lineTo(sx2, sy2); ctx.stroke()
 
-      // Render physical distance geometric tag
       const dist = Math.hypot(a2.x_ft - a1.x_ft, a2.y_ft - a1.y_ft)
       const mx = (sx1 + sx2) / 2
       const my = (sy1 + sy2) / 2
       const angle = Math.atan2(sy2 - sy1, sx2 - sx1)
-      
+
       ctx.save()
       ctx.setLineDash([])
       ctx.translate(mx, my)
@@ -224,7 +218,7 @@ const AnchorPreviewCanvas = forwardRef<AnchorPreviewCanvasHandle, Props>(({
       ctx.rotate(flipped ? angle + Math.PI : angle)
       ctx.font = '10px var(--font-primary, sans-serif)'
       ctx.textAlign = 'center'
-      
+
       const label = `${dist.toFixed(1)} ft`
       const metrics = ctx.measureText(label)
       ctx.fillStyle = 'rgba(18, 20, 24, 0.95)'
@@ -234,7 +228,6 @@ const AnchorPreviewCanvas = forwardRef<AnchorPreviewCanvasHandle, Props>(({
       ctx.restore()
     }
 
-    // Draw Preview Dotted Edge Line
     const drawState = drawEdgeRef.current
     if (drawState) {
       const aStart = anchors.find(a => a.id === drawState.startId)
@@ -248,7 +241,6 @@ const AnchorPreviewCanvas = forwardRef<AnchorPreviewCanvasHandle, Props>(({
     }
     ctx.setLineDash([])
 
-    // Draw Anchors
     for (const anchor of anchors) {
       const [sx, sy] = worldToScreen(viewport, anchor.x_ft, anchor.y_ft)
       const isActive = anchor.id === selectedAnchorId || hoverAnchor === anchor.id
@@ -272,7 +264,6 @@ const AnchorPreviewCanvas = forwardRef<AnchorPreviewCanvasHandle, Props>(({
     hoverAnchor, hoverEdge, selectedEdge, drawEdgeRef.current?.px, drawEdgeRef.current?.py
   ])
 
-  // Mouse Handlers
   const handleMouseDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
     e.currentTarget.focus()
     const canvas = canvasRef.current
@@ -385,7 +376,6 @@ const AnchorPreviewCanvas = forwardRef<AnchorPreviewCanvasHandle, Props>(({
     }
   }
 
-  // Native wheel listener with { passive: false } to guarantee preventDefault in Chrome
   useEffect(() => {
     const el = canvasRef.current
     if (!el) return

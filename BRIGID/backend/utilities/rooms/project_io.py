@@ -1,7 +1,3 @@
-"""
-project_io.py — ZIP project packaging for Anchor Manager (BRIGID).
-Adapted from 2DLCAD/room_profiles.py save/load_project_package.
-"""
 
 from __future__ import annotations
 
@@ -16,7 +12,6 @@ from .room_io import build_floorplan_manifest, load_floorplan_manifest
 
 PROJECT_EXTENSION = ".rtls"
 
-
 def save_project_package(
     project_path: str,
     svg_path: str,
@@ -25,10 +20,6 @@ def save_project_package(
     project_name: str,
     rooms: List[Room],
 ) -> Tuple[bool, str]:
-    """
-    Bundle SVG + room manifest into a .rtls ZIP file.
-    Returns (success, path_or_error).
-    """
     try:
         parent = os.path.dirname(project_path)
         if parent:
@@ -44,15 +35,10 @@ def save_project_package(
     except Exception as exc:
         return False, str(exc)
 
-
 def load_project_package(
     project_path: str,
     extract_dir: str,
 ) -> Tuple[Optional[str], Optional[dict], List[Room], str]:
-    """
-    Extract a .rtls ZIP and return (svg_path, manifest, [Room...], error).
-    svg_path is None if not present in the archive.
-    """
     if not os.path.isfile(project_path):
         return None, None, [], f"File not found: {project_path}"
     try:

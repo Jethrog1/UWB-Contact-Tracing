@@ -55,7 +55,6 @@ const RoomView: React.FC<RoomViewProps> = ({
     setEditFields({ hw_id: selectedAnchor.hw_id, x_ft: selectedAnchor.x_ft, y_ft: selectedAnchor.y_ft, z_ft: selectedAnchor.z_ft })
   }, [selectedAnchor])
 
-  // Focus the HW ID input when an anchor is freshly selected (double-click equivalent)
   useEffect(() => {
     if (selectedAnchor) {
       const t = window.setTimeout(() => hwIdInputRef.current?.focus(), 50)

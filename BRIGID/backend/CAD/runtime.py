@@ -5,7 +5,6 @@ from dataclasses import dataclass
 from types import SimpleNamespace
 from typing import Any
 
-
 class VarBase:
     def __init__(self, value: Any = None):
         self._value = value
@@ -16,14 +15,11 @@ class VarBase:
     def set(self, value: Any) -> None:
         self._value = value
 
-
 class BooleanVar(VarBase):
     pass
 
-
 class StringVar(VarBase):
     pass
-
 
 class WidgetStub:
     def __init__(self, *args: Any, **kwargs: Any):
@@ -65,7 +61,6 @@ class WidgetStub:
     def select_range(self, start: int, end: int) -> None:
         return None
 
-
 class HeadlessEntry(WidgetStub):
     def __init__(self, *args: Any, textvariable: Optional[VarBase] = None, **kwargs: Any):
         self.textvariable = textvariable
@@ -84,14 +79,11 @@ class HeadlessEntry(WidgetStub):
         if self.textvariable is not None:
             self.textvariable.set(value)
 
-
 class HeadlessLabel(WidgetStub):
     pass
 
-
 class HeadlessButton(WidgetStub):
     pass
-
 
 class RecordingCanvas(WidgetStub):
     def __init__(self, width: int = 800, height: int = 600):
@@ -151,7 +143,6 @@ class RecordingCanvas(WidgetStub):
     def create_arc(self, *args: Any, **kwargs: Any) -> int:
         return self._append("arc", self._norm_points(args), **kwargs)
 
-
 class TreeNode:
     __slots__ = ("iid", "parent", "text", "open", "values", "children")
 
@@ -162,7 +153,6 @@ class TreeNode:
         self.open = open_
         self.values = values
         self.children: list[str] = []
-
 
 class HeadlessTree(WidgetStub):
     def __init__(self):
@@ -250,7 +240,6 @@ class HeadlessTree(WidgetStub):
 
         return [node_to_dict(root) for root in self._roots]
 
-
 class HeadlessRoot(WidgetStub):
     def __init__(self):
         super().__init__()
@@ -278,16 +267,13 @@ class HeadlessRoot(WidgetStub):
 
     config = configure
 
-
 def notify_error(app: Any, title: str, message: str) -> None:
     if hasattr(app, "post_error"):
         app.post_error(title, message)
 
-
 def notify_info(app: Any, title: str, message: str) -> None:
     if hasattr(app, "post_info"):
         app.post_info(title, message)
-
 
 class _NoopStyle:
     def theme_use(self, *args: Any, **kwargs: Any) -> None:
@@ -298,7 +284,6 @@ class _NoopStyle:
 
     def map(self, *args: Any, **kwargs: Any) -> None:
         return None
-
 
 tk = SimpleNamespace(
     Tk=HeadlessRoot,
@@ -320,7 +305,6 @@ ttk = SimpleNamespace(
 )
 simpledialog = SimpleNamespace(askfloat=lambda *args, **kwargs: None)
 
-
 @dataclass
 class MouseEvent:
     x: float
@@ -331,7 +315,6 @@ class MouseEvent:
     button: int = 0
     x_root: int = 0
     y_root: int = 0
-
 
 @dataclass
 class KeyEvent:

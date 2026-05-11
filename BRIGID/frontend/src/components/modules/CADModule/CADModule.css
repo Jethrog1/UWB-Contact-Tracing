@@ -1,4 +1,3 @@
-/* ── CAD Module Layout ───────────────────────────────────────────── */
 
 .cad-canvas-area {
   grid-area: canvas;
@@ -13,7 +12,6 @@
   background: var(--bg-primary);
 }
 
-/* ── Module title (floating, no banner) ───────────────────────────── */
 .cad-module-title {
   position: absolute;
   top: 8px;
@@ -27,7 +25,6 @@
   user-select: none;
 }
 
-/* ── Offline overlay ─────────────────────────────────────────────── */
 .cad-offline-overlay {
   position: absolute;
   inset: 0;
@@ -77,7 +74,6 @@
 }
 .cad-offline-retry:hover { background: rgba(100, 120, 150, 0.18); }
 
-/* ── World coordinate readout ────────────────────────────────────── */
 .cad-coord-readout {
   position: absolute;
   bottom: 8px;
@@ -94,7 +90,6 @@
   letter-spacing: 0.04em;
 }
 
-/* ── Dialog overlay ──────────────────────────────────────────────── */
 .cad-dialog-overlay {
   position: fixed;
   inset: 0;
@@ -175,7 +170,6 @@
 }
 .cad-dialog-btn--ok:hover { background: rgba(80, 120, 170, 0.25); }
 
-/* ── Context menu ────────────────────────────────────────────────── */
 .cad-context-menu {
   position: absolute;
   z-index: 24;
@@ -237,7 +231,6 @@
   color: #5a9fd4;
 }
 
-/* ── Floating notification stack ─────────────────────────────────── */
 .cad-notice-stack {
   position: absolute;
   top: 12px;
@@ -317,7 +310,6 @@
   color: #8a9ab8;
 }
 
-/* ── Floating contextual tool panels ─────────────────────────────── */
 .cad-tool-panel {
   position: absolute;
   bottom: 40px;

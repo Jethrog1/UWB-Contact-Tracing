@@ -1,4 +1,3 @@
-// ── Application-wide Types ────────────────────────────────────────
 
 export type AppModule = 'profile' | 'calibration' | 'cad' | 'anchors' | 'rtls'
 
@@ -8,8 +7,6 @@ export interface WorkspaceTab {
   module: AppModule
   modified: boolean
 }
-
-// ── Tag Profiler ─────────────────────────────────────────────────
 
 export interface TagProfileIdentity {
   profile_id: string
@@ -45,8 +42,6 @@ export interface CalibrationPoint {
   measured: number   // raw UWB distance
   true_dist: number  // ground truth distance
 }
-
-// ── Room / Anchor Manager ────────────────────────────────────────
 
 export interface AnchorData {
   id: string

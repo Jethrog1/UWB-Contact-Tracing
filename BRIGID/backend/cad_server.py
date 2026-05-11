@@ -1,15 +1,3 @@
-"""
-cad_server.py — FastAPI WebSocket + REST server for BRIGID
-============================================================
-Run with:
-    uvicorn cad_server:app --host 127.0.0.1 --port 8765 --reload
-
-The Electron main process spawns this as a subprocess on startup.
-
-Workspace sessions: each tab connects with its own workspace_id.
-The engine for that workspace_id is kept alive between reconnects so
-switching tabs never resets CAD state.
-"""
 
 import json
 import logging
@@ -64,10 +52,6 @@ logger = logging.getLogger("cad_server")
 
 ensure_profile_dirs()
 
-# ---------------------------------------------------------------------------
-# FastAPI app
-# ---------------------------------------------------------------------------
-
 app = FastAPI(title="BRIGID CAD Server", version="0.3.0")
 
 app.add_middleware(
@@ -78,12 +62,10 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Per-workspace engine registry — survives between frontend reconnects
 _workspace_engines: dict[str, CADEngine] = {}
-# Per-workspace calibration runtimes so each tab has independent transport/state.
+
 _calibration_runtimes: dict[str, CalibrationRuntime] = {}
 _DEFAULT_CAL_KEY = "__default__"
-
 
 def _get_calibration_runtime(workspace_id: Optional[str]) -> CalibrationRuntime:
     key = workspace_id or _DEFAULT_CAL_KEY
@@ -94,16 +76,12 @@ def _get_calibration_runtime(workspace_id: Optional[str]) -> CalibrationRuntime:
         logger.info("Created new calibration runtime for workspace %r", key)
     return runtime
 
-
 _rtls_runtime = RTLSRuntime()
 _WALK_ANIM_DIR = pathlib.Path(__file__).parent.parent / "assets" / "Walking animation"
 
-# Workspace registry: workspace_id → workspace_name (for path resolution)
 _workspace_names: dict[str, str] = {}
 
-
 def _ble_idle_dispatch(event_type: str, tag_id: str, payload: str) -> None:
-    """Fan BLE Idle events out to any runtime currently bridged to the service."""
     try:
         if _rtls_runtime.is_bridged_to_ble_idle():
             if event_type == "data":
@@ -124,23 +102,15 @@ def _ble_idle_dispatch(event_type: str, tag_id: str, payload: str) -> None:
         except Exception as exc:
             logger.debug("ble_idle -> calibration dispatch failed: %s", exc)
 
-
 ble_idle_service.subscribe(_ble_idle_dispatch)
-
 
 def _ble_idle_current_statuses() -> dict[str, str]:
     return {tag["tag_id"]: tag["status"] for tag in ble_idle_service.status().get("tags", [])}
 
-
 def _calibration_consumer_id(workspace_id: Optional[str]) -> str:
     return f"calibration:{workspace_id or _DEFAULT_CAL_KEY}"
 
-
 def _resync_ble_idle_profiles(workspace_id: Optional[str], workspace_name: Optional[str] = None) -> None:
-    """Refresh the idle service's MAC list from the given workspace's profiles.
-
-    No-op when the service isn't running (no consumers).
-    """
     if not ble_idle_service.is_enabled():
         return
     try:
@@ -148,9 +118,7 @@ def _resync_ble_idle_profiles(workspace_id: Optional[str], workspace_name: Optio
     except Exception as exc:
         logger.debug("ble_idle sync_profiles failed: %s", exc)
 
-
 def _resolve_tags_dir(workspace_id: Optional[str], workspace_name: Optional[str] = None) -> str:
-    """Resolve the tags directory. workspace_name takes priority over the registry lookup."""
     name = workspace_name or (workspace_id and _workspace_names.get(workspace_id))
     if name:
         d = workspace_tags_dir(name)
@@ -158,9 +126,7 @@ def _resolve_tags_dir(workspace_id: Optional[str], workspace_name: Optional[str]
         return str(d)
     return str(TAGS_DIR)
 
-
 def _resolve_rooms_dir(workspace_id: Optional[str], workspace_name: Optional[str] = None) -> str:
-    """Resolve the rooms directory. workspace_name takes priority over the registry lookup."""
     name = workspace_name or (workspace_id and _workspace_names.get(workspace_id))
     if name:
         d = workspace_rooms_dir(name)
@@ -168,9 +134,7 @@ def _resolve_rooms_dir(workspace_id: Optional[str], workspace_name: Optional[str
         return str(d)
     return str(ROOMS_DIR)
 
-
 def _resolve_projects_dir(workspace_id: Optional[str], workspace_name: Optional[str] = None) -> str:
-    """Resolve the workspace-local projects directory for packaged .rtls saves."""
     name = workspace_name or (workspace_id and _workspace_names.get(workspace_id))
     if name:
         d = workspace_projects_dir(name)
@@ -180,20 +144,17 @@ def _resolve_projects_dir(workspace_id: Optional[str], workspace_name: Optional[
     os.makedirs(d, exist_ok=True)
     return d
 
-
 def _slugify_filename(name: str, fallback: str = "project") -> str:
     slug = re.sub(r"[^A-Za-z0-9._-]+", "_", (name or "").strip())
     return slug.strip("._-") or fallback
 
-
 @app.get("/api/workspace/paths/{workspace_id}")
 async def api_workspace_paths(workspace_id: str, workspace_name: Optional[str] = None):
-    """Return workspace-specific file paths for a given workspace_id."""
     from config import workspace_svg_dir, workspace_pdf_dir
     name = workspace_name or _workspace_names.get(workspace_id)
     if not name:
         return {"success": False, "error": "Workspace not registered"}
-    # Auto-register if workspace_name provided
+
     if workspace_name and workspace_id not in _workspace_names:
         _workspace_names[workspace_id] = workspace_name
     ensure_workspace_dirs(name)
@@ -206,7 +167,6 @@ async def api_workspace_paths(workspace_id: str, workspace_name: Optional[str] =
         "projects": str(workspace_projects_dir(name)),
         "rtls": str(workspace_rtls_dir(name)),
     }
-
 
 @app.on_event("shutdown")
 async def shutdown_runtime() -> None:
@@ -223,13 +183,11 @@ async def shutdown_runtime() -> None:
     _rtls_runtime.shutdown()
     _workspace_engines.clear()
 
-
 def _get_engine(workspace_id: str) -> CADEngine:
     if workspace_id not in _workspace_engines:
         _workspace_engines[workspace_id] = CADEngine()
         logger.info("Created new engine for workspace %r", workspace_id)
     return _workspace_engines[workspace_id]
-
 
 def _load_all_profiles(workspace_id: Optional[str] = None, workspace_name: Optional[str] = None) -> list[dict]:
     tags_dir = _resolve_tags_dir(workspace_id, workspace_name)
@@ -242,15 +200,9 @@ def _load_all_profiles(workspace_id: Optional[str] = None, workspace_name: Optio
         profiles.append(serialize_profile(profile))
     return profiles
 
-
-# ---------------------------------------------------------------------------
-# Health
-# ---------------------------------------------------------------------------
-
 @app.get("/health")
 async def health():
     return {"status": "ok", "service": "cad-server", "workspaces": len(_workspace_engines)}
-
 
 @app.get("/assets/walk/{filename}")
 async def get_walk_asset(filename: str):
@@ -259,11 +211,6 @@ async def get_walk_asset(filename: str):
     if not file_path.exists():
         raise HTTPException(status_code=404, detail=f"Asset not found: {safe_name}")
     return FileResponse(str(file_path))
-
-
-# ---------------------------------------------------------------------------
-# CAD WebSocket
-# ---------------------------------------------------------------------------
 
 async def _run_session(websocket: WebSocket, engine: CADEngine, label: str) -> None:
     await websocket.send_text(json.dumps(engine.to_state_dict()))
@@ -285,13 +232,11 @@ async def _run_session(websocket: WebSocket, engine: CADEngine, label: str) -> N
     except Exception as exc:
         logger.exception("[%s] Unexpected error: %s", label, exc)
 
-
 @app.websocket("/cad/ws/{workspace_id}")
 async def cad_ws_workspace(websocket: WebSocket, workspace_id: str):
     await websocket.accept()
     engine = _get_engine(workspace_id)
     await _run_session(websocket, engine, workspace_id)
-
 
 @app.websocket("/cad/ws")
 async def cad_ws(websocket: WebSocket):
@@ -299,54 +244,41 @@ async def cad_ws(websocket: WebSocket):
     engine = _get_engine("__default__")
     await _run_session(websocket, engine, "default")
 
-
-# ===========================================================================
-# Tag Profiler REST endpoints
-# ===========================================================================
-
 class SaveProfileRequest(BaseModel):
     profile: dict
-
 
 class ExportProfileRequest(BaseModel):
     profile: dict
     filepath: str
 
-
 class CalibrationGenerateRequest(BaseModel):
-    points: List[List[float]]   # [[measured, true], ...]
+    points: List[List[float]]                            
     fit_mode: str = "Linear"
     poly_deg: int = 4
     ma_period: int = 4
     ma_type: str = "Trailing"
 
-
 class CalibrationTransportConnectRequest(BaseModel):
     mode: str
     port: str = ""
-
 
 class CalibrationMapUpdateRequest(BaseModel):
     anchors: dict[str, list[float]]
     lines: list[list[str]]
     height_offset: float = 0.0
 
-
 class CalibrationReferenceUpdateRequest(BaseModel):
     tag_id: str
     distances: dict[str, Optional[float]]
     height: float = 0.0
-
 
 class CalibrationReferencePlaceRequest(BaseModel):
     tag_id: str
     x: float
     y: float
 
-
 class CalibrationReferenceCalculateRequest(BaseModel):
     tag_id: str
-
 
 class CalibrationFitSettingsRequest(BaseModel):
     tag_id: str
@@ -357,17 +289,14 @@ class CalibrationFitSettingsRequest(BaseModel):
     ma_period: Optional[int] = None
     ma_type: Optional[str] = None
 
-
 class CalibrationEquationUpdateRequest(BaseModel):
     tag_id: str
     anchor_id: str
     equation: str
 
-
 class CalibrationCaptureRequest(BaseModel):
     tag_id: str
     sample_count: int = 20
-
 
 class CalibrationFilterRequest(BaseModel):
     mode: str
@@ -376,18 +305,15 @@ class CalibrationFilterRequest(BaseModel):
     kal_q: Optional[float] = None
     kal_r: Optional[float] = None
 
-
 @app.post("/api/profile/new")
 async def api_profile_new():
     return {"success": True, "profile": create_empty_profile()}
-
 
 @app.get("/api/profile/list")
 async def api_profile_list(workspace_id: Optional[str] = None):
     tags_dir = _resolve_tags_dir(workspace_id)
     profiles = list_profiles(tags_dir)
     return {"success": True, "profiles": profiles}
-
 
 @app.get("/api/profile/{tag_id}")
 async def api_profile_load(tag_id: str, workspace_id: Optional[str] = None):
@@ -396,7 +322,6 @@ async def api_profile_load(tag_id: str, workspace_id: Optional[str] = None):
     if error:
         return {"success": False, "error": error}
     return {"success": True, "profile": serialize_profile(profile)}
-
 
 @app.post("/api/profile/save")
 async def api_profile_save(req: SaveProfileRequest, workspace_id: Optional[str] = None):
@@ -409,7 +334,6 @@ async def api_profile_save(req: SaveProfileRequest, workspace_id: Optional[str] 
         return {"success": False, "error": result}
     _resync_ble_idle_profiles(workspace_id)
     return {"success": True, "tag_id": req.profile.get("tag_id", ""), "path": result}
-
 
 @app.post("/api/profile/export")
 async def api_profile_export(req: ExportProfileRequest):
@@ -425,7 +349,6 @@ async def api_profile_export(req: ExportProfileRequest):
     except OSError as exc:
         return {"success": False, "error": str(exc)}
 
-
 @app.delete("/api/profile/{tag_id}")
 async def api_profile_delete(tag_id: str, workspace_id: Optional[str] = None):
     tags_dir = _resolve_tags_dir(workspace_id)
@@ -434,7 +357,6 @@ async def api_profile_delete(tag_id: str, workspace_id: Optional[str] = None):
         return {"success": False, "error": error}
     _resync_ble_idle_profiles(workspace_id)
     return {"success": True}
-
 
 @app.post("/api/profile/calibration/generate")
 async def api_calibration_generate(req: CalibrationGenerateRequest):
@@ -454,15 +376,13 @@ async def api_calibration_generate(req: CalibrationGenerateRequest):
     except Exception as exc:
         return {"success": False, "error": str(exc)}
 
-
 @app.get("/api/calibration/runtime")
 async def api_calibration_runtime(workspace_id: Optional[str] = None, workspace_name: Optional[str] = None):
-    # Auto-register workspace name if provided (survives server restarts without needing /register)
+
     if workspace_id and workspace_name and workspace_id not in _workspace_names:
         _workspace_names[workspace_id] = workspace_name
     runtime = _get_calibration_runtime(workspace_id)
     return {"success": True, **runtime.snapshot(_load_all_profiles(workspace_id, workspace_name))}
-
 
 @app.get("/api/calibration/serial/ports")
 async def api_calibration_serial_ports(workspace_id: Optional[str] = None):
@@ -472,7 +392,6 @@ async def api_calibration_serial_ports(workspace_id: Optional[str] = None):
         "ports": runtime.get_serial_ports(),
         "auto_detect_port": runtime.auto_detect_serial_port(),
     }
-
 
 @app.post("/api/calibration/transport/connect")
 async def api_calibration_transport_connect(req: CalibrationTransportConnectRequest, workspace_id: Optional[str] = None, workspace_name: Optional[str] = None):
@@ -497,7 +416,6 @@ async def api_calibration_transport_connect(req: CalibrationTransportConnectRequ
         return {"success": False, "error": detail}
     return {"success": True, "detail": detail, **runtime.snapshot(profiles)}
 
-
 @app.post("/api/calibration/transport/disconnect")
 async def api_calibration_transport_disconnect(workspace_id: Optional[str] = None, workspace_name: Optional[str] = None):
     runtime = _get_calibration_runtime(workspace_id)
@@ -507,7 +425,6 @@ async def api_calibration_transport_disconnect(workspace_id: Optional[str] = Non
         ble_idle_service.release(_calibration_consumer_id(workspace_id))
     return {"success": True, **runtime.snapshot(_load_all_profiles(workspace_id, workspace_name))}
 
-
 @app.post("/api/calibration/map")
 async def api_calibration_map(req: CalibrationMapUpdateRequest, workspace_id: Optional[str] = None):
     runtime = _get_calibration_runtime(workspace_id)
@@ -515,7 +432,6 @@ async def api_calibration_map(req: CalibrationMapUpdateRequest, workspace_id: Op
     if not ok:
         return {"success": False, "error": detail}
     return {"success": True, "detail": detail, **runtime.snapshot(_load_all_profiles(workspace_id))}
-
 
 @app.post("/api/calibration/reference")
 async def api_calibration_reference(req: CalibrationReferenceUpdateRequest, workspace_id: Optional[str] = None):
@@ -525,13 +441,11 @@ async def api_calibration_reference(req: CalibrationReferenceUpdateRequest, work
         return {"success": False, "error": detail}
     return {"success": True, "detail": detail, **runtime.snapshot(_load_all_profiles(workspace_id))}
 
-
 @app.post("/api/calibration/reference/place")
 async def api_calibration_reference_place(req: CalibrationReferencePlaceRequest, workspace_id: Optional[str] = None):
     runtime = _get_calibration_runtime(workspace_id)
     distances = runtime.place_reference_dot(req.tag_id, req.x, req.y)
     return {"success": True, "distances": distances, **runtime.snapshot(_load_all_profiles(workspace_id))}
-
 
 @app.post("/api/calibration/reference/calculate")
 async def api_calibration_reference_calculate(req: CalibrationReferenceCalculateRequest, workspace_id: Optional[str] = None):
@@ -540,7 +454,6 @@ async def api_calibration_reference_calculate(req: CalibrationReferenceCalculate
     if not ok:
         return {"success": False, "error": detail}
     return {"success": True, "detail": detail, "locked": locked, **runtime.snapshot(_load_all_profiles(workspace_id))}
-
 
 @app.post("/api/calibration/fit")
 async def api_calibration_fit(req: CalibrationFitSettingsRequest, workspace_id: Optional[str] = None):
@@ -558,7 +471,6 @@ async def api_calibration_fit(req: CalibrationFitSettingsRequest, workspace_id: 
         return {"success": False, "error": detail}
     return {"success": True, "detail": detail, **runtime.snapshot(_load_all_profiles(workspace_id))}
 
-
 @app.post("/api/calibration/equation")
 async def api_calibration_equation(req: CalibrationEquationUpdateRequest, workspace_id: Optional[str] = None):
     runtime = _get_calibration_runtime(workspace_id)
@@ -566,7 +478,6 @@ async def api_calibration_equation(req: CalibrationEquationUpdateRequest, worksp
     if not ok:
         return {"success": False, "error": detail}
     return {"success": True, "detail": detail, **runtime.snapshot(_load_all_profiles(workspace_id))}
-
 
 @app.post("/api/calibration/capture/start")
 async def api_calibration_capture_start(req: CalibrationCaptureRequest, workspace_id: Optional[str] = None):
@@ -576,20 +487,17 @@ async def api_calibration_capture_start(req: CalibrationCaptureRequest, workspac
         return {"success": False, "error": detail}
     return {"success": True, "detail": detail, **runtime.snapshot(_load_all_profiles(workspace_id))}
 
-
 @app.post("/api/calibration/capture/cancel")
 async def api_calibration_capture_cancel(workspace_id: Optional[str] = None):
     runtime = _get_calibration_runtime(workspace_id)
     runtime.cancel_capture()
     return {"success": True, **runtime.snapshot(_load_all_profiles(workspace_id))}
 
-
 @app.post("/api/calibration/points/clear/{tag_id}")
 async def api_calibration_points_clear(tag_id: str, workspace_id: Optional[str] = None):
     runtime = _get_calibration_runtime(workspace_id)
     runtime.clear_points(tag_id)
     return {"success": True, **runtime.snapshot(_load_all_profiles(workspace_id))}
-
 
 @app.post("/api/calibration/filter")
 async def api_calibration_filter(req: CalibrationFilterRequest, workspace_id: Optional[str] = None):
@@ -604,7 +512,6 @@ async def api_calibration_filter(req: CalibrationFilterRequest, workspace_id: Op
     if not ok:
         return {"success": False, "error": detail}
     return {"success": True, "detail": detail, **runtime.snapshot(_load_all_profiles(workspace_id))}
-
 
 @app.post("/api/calibration/tag/save/{tag_id}")
 async def api_calibration_tag_save(tag_id: str, workspace_id: Optional[str] = None):
@@ -626,27 +533,19 @@ async def api_calibration_tag_save(tag_id: str, workspace_id: Optional[str] = No
         **runtime.snapshot(_load_all_profiles(workspace_id)),
     }
 
-
-# ===========================================================================
-# Room / Anchor Manager REST endpoints
-# ===========================================================================
-
 class CreateRoomRequest(BaseModel):
     name: str
-    segments: List[List[float]]    # [[x1,y1,x2,y2], ...]
+    segments: List[List[float]]                          
     interior_segments: List[List[float]] = []
     existing_rooms: List[dict] = []
-
 
 class SaveManifestRequest(BaseModel):
     project_name: str
     svg_path: str = ""
     rooms: List[dict]
 
-
 class LoadManifestRequest(BaseModel):
     filepath: str
-
 
 class SaveProjectRequest(BaseModel):
     project_path: str = ""
@@ -658,10 +557,8 @@ class SaveProjectRequest(BaseModel):
     workspace_id: Optional[str] = None
     workspace_name: Optional[str] = None
 
-
 class LoadProjectRequest(BaseModel):
     project_path: str
-
 
 class AddAnchorRequest(BaseModel):
     room_name: str
@@ -671,7 +568,6 @@ class AddAnchorRequest(BaseModel):
     hw_id: str = ""
     room_index: int = 1
 
-
 class UpdateAnchorRequest(BaseModel):
     anchor_id: str
     hw_id: Optional[str] = None
@@ -679,35 +575,29 @@ class UpdateAnchorRequest(BaseModel):
     y: Optional[float] = None
     z: Optional[float] = None
 
-
 class FindSegmentsRequest(BaseModel):
-    all_segments: List[List[float]]   # [[x1,y1,x2,y2], ...]
+    all_segments: List[List[float]]                         
     start_idx: int
 
-
 class DetectBoundaryRequest(BaseModel):
-    segments: List[List[float]]   # [[x1,y1,x2,y2], ...]
+    segments: List[List[float]]                         
     click_x: float
     click_y: float
 
-
 class ComputeSubsegmentRequest(BaseModel):
-    all_segments: List[List[float]]   # [[x1,y1,x2,y2], ...]
+    all_segments: List[List[float]]                         
     seg_idx: int
     click_x: float
     click_y: float
 
-
 def _segs_from_list(raw: List[List[float]]):
     return [(float(s[0]), float(s[1]), float(s[2]), float(s[3])) for s in raw]
-
 
 @app.get("/api/rooms/list")
 async def api_rooms_list(workspace_id: Optional[str] = None):
     rooms_dir = _resolve_rooms_dir(workspace_id)
     manifests = list_room_profiles(rooms_dir)
     return {"success": True, "manifests": manifests}
-
 
 @app.post("/api/rooms/create")
 async def api_rooms_create(req: CreateRoomRequest):
@@ -726,7 +616,6 @@ async def api_rooms_create(req: CreateRoomRequest):
     room = Room(name=req.name, segments=segs, interior_segments=interior,
                 rtls_settings={"tag_height_ft": 0.0, "filter_mode": "None", "ble_module_port": ""})
     return {"success": True, "room": room.to_dict()}
-
 
 @app.post("/api/rooms/manifest/save")
 async def api_rooms_manifest_save(
@@ -748,7 +637,6 @@ async def api_rooms_manifest_save(
         return {"success": False, "error": result}
     return {"success": True, "path": result}
 
-
 @app.post("/api/rooms/manifest/load")
 async def api_rooms_manifest_load(req: LoadManifestRequest):
     manifest, rooms, error = load_floorplan_manifest(req.filepath)
@@ -759,7 +647,6 @@ async def api_rooms_manifest_load(req: LoadManifestRequest):
         "manifest": manifest,
         "rooms": [r.to_dict() for r in rooms],
     }
-
 
 @app.post("/api/rooms/project/save")
 async def api_rooms_project_save(req: SaveProjectRequest):
@@ -788,7 +675,6 @@ async def api_rooms_project_save(req: SaveProjectRequest):
         return {"success": False, "error": result}
     return {"success": True, "path": result}
 
-
 @app.post("/api/rooms/project/load")
 async def api_rooms_project_load(req: LoadProjectRequest):
     svg_path, manifest, rooms, error = load_project_package(
@@ -803,12 +689,10 @@ async def api_rooms_project_load(req: LoadProjectRequest):
         "rooms": [r.to_dict() for r in rooms],
     }
 
-
 @app.post("/api/rooms/anchor/add")
 async def api_anchor_add(req: AddAnchorRequest):
-    # Find manifest for this room and update it (stateless — caller passes rooms)
-    # This endpoint validates position; state is managed on the frontend.
-    anchor_id = f"R{req.room_index}A0"  # placeholder — real ID assigned by frontend state
+
+    anchor_id = f"R{req.room_index}A0"                                                    
     anchor = Anchor(
         id=anchor_id,
         x=round(req.world_x, 3),
@@ -818,14 +702,12 @@ async def api_anchor_add(req: AddAnchorRequest):
     )
     return {"success": True, "anchor": anchor.to_dict()}
 
-
 @app.post("/api/rooms/geometry/find-segments")
 async def api_find_segments(req: FindSegmentsRequest):
     segs = _segs_from_list(req.all_segments)
     indices = _find_connected(segs, req.start_idx)
     connected = [list(segs[i]) for i in indices]
     return {"success": True, "indices": indices, "segments": connected}
-
 
 @app.post("/api/rooms/geometry/detect-boundary")
 async def api_detect_boundary(req: DetectBoundaryRequest):
@@ -835,7 +717,6 @@ async def api_detect_boundary(req: DetectBoundaryRequest):
         return {"success": False, "boundary": []}
     return {"success": True, "boundary": [list(s) for s in boundary]}
 
-
 @app.post("/api/rooms/geometry/compute-subsegment")
 async def api_compute_subsegment(req: ComputeSubsegmentRequest):
     segs = _segs_from_list(req.all_segments)
@@ -844,79 +725,57 @@ async def api_compute_subsegment(req: ComputeSubsegmentRequest):
     subseg = _compute_subsegment(segs, req.seg_idx, req.click_x, req.click_y)
     return {"success": True, "subsegment": list(subseg)}
 
-
-# ===========================================================================
-# Workspace Management endpoints
-# ===========================================================================
-
 class WorkspaceRegisterRequest(BaseModel):
     workspace_id: str
     workspace_name: str
-
 
 class WorkspaceRenameRequest(BaseModel):
     workspace_id: str
     old_name: str
     new_name: str
 
-
 class WorkspaceDeleteRequest(BaseModel):
     workspace_id: str
     workspace_name: str
 
-
 @app.post("/api/workspace/register")
 async def api_workspace_register(req: WorkspaceRegisterRequest):
-    """Called when a workspace tab is created. Creates folder on disk."""
     _workspace_names[req.workspace_id] = req.workspace_name
     root = ensure_workspace_dirs(req.workspace_name)
     return {"success": True, "path": str(root)}
 
-
 @app.post("/api/workspace/rename")
 async def api_workspace_rename(req: WorkspaceRenameRequest):
-    """Called when a workspace tab is renamed. Renames folder on disk."""
     ok = rename_workspace_folder(req.old_name, req.new_name)
     if ok:
         _workspace_names[req.workspace_id] = req.new_name
     return {"success": ok}
 
-
 @app.post("/api/workspace/delete")
 async def api_workspace_delete(req: WorkspaceDeleteRequest):
-    """Called on tab close. Deletes folder if empty."""
     deleted = delete_workspace_if_empty(req.workspace_name)
     if req.workspace_id in _workspace_names:
         del _workspace_names[req.workspace_id]
     return {"success": True, "deleted": deleted}
 
-
 @app.get("/api/workspace/list")
 async def api_workspace_list():
-    """Returns all persisted workspace folder names."""
     return {"success": True, "workspaces": list_existing_workspaces()}
-
-
-# ===========================================================================
-# RTLS Dashboard endpoints
-# ===========================================================================
 
 class RtlsConnectRequest(BaseModel):
     mode: Optional[str] = "serial"
     port: str
 
-
 class RtlsWorkspaceLoadRequest(BaseModel):
     workspace_id: Optional[str] = None
-    workspace_name: Optional[str] = None  # passed directly — survives server restarts
-    manifest_path: Optional[str] = None   # manual override
-    room_name: Optional[str] = None       # which room to use (first if omitted)
-    folder_path: Optional[str] = None     # browse-folder override (discover manifest/tags inside)
-    svg_folder: Optional[str] = None      # direct path to an svg/ folder
-    rooms_folder: Optional[str] = None    # direct path to a rooms/ folder
-    tags_folder: Optional[str] = None     # direct path to a tags/ folder
-    project_path: Optional[str] = None    # .rtls ZIP project file
-
+    workspace_name: Optional[str] = None                                              
+    manifest_path: Optional[str] = None                    
+    room_name: Optional[str] = None                                             
+    folder_path: Optional[str] = None                                                             
+    svg_folder: Optional[str] = None                                     
+    rooms_folder: Optional[str] = None                                    
+    tags_folder: Optional[str] = None                                    
+    project_path: Optional[str] = None                            
 
 class RtlsFilterRequest(BaseModel):
     mode: Optional[str] = None
@@ -925,22 +784,17 @@ class RtlsFilterRequest(BaseModel):
     kal_q: Optional[float] = None
     kal_r: Optional[float] = None
 
-
 class RtlsElevationRequest(BaseModel):
     override: bool
     value_ft: Optional[float] = None
 
-
 class RtlsNoiseCancelRequest(BaseModel):
     enabled: bool
-
 
 class RtlsAnalyticsRequest(BaseModel):
     csv_path: Optional[str] = None
 
-
 def _load_workspace_profiles(workspace_id: Optional[str], workspace_name: Optional[str] = None) -> list[dict]:
-    """Load all tag profiles from workspace-specific or global tags dir."""
     tags_dir = _resolve_tags_dir(workspace_id, workspace_name)
     profiles: list[dict] = []
     for tag_id in list_profiles(tags_dir):
@@ -949,18 +803,14 @@ def _load_workspace_profiles(workspace_id: Optional[str], workspace_name: Option
             profiles.append(profile)
     return profiles
 
-
 def _find_workspace_manifest(workspace_id: Optional[str], workspace_name: Optional[str] = None) -> Optional[str]:
-    """Find the most recently saved rooms manifest in a workspace."""
     rooms_dir = _resolve_rooms_dir(workspace_id, workspace_name)
     import glob
     pattern = str(rooms_dir) + "/*.rooms.json"
     matches = sorted(glob.glob(pattern), key=os.path.getmtime, reverse=True)
     return matches[0] if matches else None
 
-
 def _find_workspace_svg(workspace_id: Optional[str], workspace_name: Optional[str] = None) -> Optional[str]:
-    """Find the most recently saved SVG in a workspace svg/ dir."""
     from config import workspace_svg_dir
     name = workspace_name or (workspace_id and _workspace_names.get(workspace_id))
     if not name:
@@ -972,11 +822,9 @@ def _find_workspace_svg(workspace_id: Optional[str], workspace_name: Optional[st
     matches = sorted(glob.glob(str(svg_dir / "*.svg")), key=os.path.getmtime, reverse=True)
     return matches[0] if matches else None
 
-
 def _find_manifest_in_folder(folder_path: str) -> Optional[str]:
-    """Find the most recent rooms manifest in a user-selected folder."""
     import glob
-    # Check rooms/ subdir first, then the folder itself
+
     rooms_sub = os.path.join(folder_path, "rooms")
     for search_dir in [rooms_sub, folder_path]:
         if not os.path.isdir(search_dir):
@@ -990,9 +838,7 @@ def _find_manifest_in_folder(folder_path: str) -> Optional[str]:
             return matches[0]
     return None
 
-
 def _load_profiles_from_folder(folder_path: str) -> list[dict]:
-    """Load tag profiles from a user-selected folder's tags/ subdir."""
     tags_sub = os.path.join(folder_path, "tags")
     if not os.path.isdir(tags_sub):
         return []
@@ -1003,9 +849,7 @@ def _load_profiles_from_folder(folder_path: str) -> list[dict]:
             profiles.append(profile)
     return profiles
 
-
 def _find_svg_in_folder(folder_path: str) -> Optional[str]:
-    """Find the most recent SVG in a folder's svg/ subdir."""
     import glob
     svg_sub = os.path.join(folder_path, "svg")
     if not os.path.isdir(svg_sub):
@@ -1013,9 +857,7 @@ def _find_svg_in_folder(folder_path: str) -> Optional[str]:
     matches = sorted(glob.glob(os.path.join(svg_sub, "*.svg")), key=os.path.getmtime, reverse=True)
     return matches[0] if matches else None
 
-
 def _read_svg_content(svg_path: Optional[str]) -> Optional[str]:
-    """Read SVG file content for frontend rendering."""
     if not svg_path or not os.path.isfile(svg_path):
         return None
     try:
@@ -1024,9 +866,7 @@ def _read_svg_content(svg_path: Optional[str]) -> Optional[str]:
     except OSError:
         return None
 
-
 def _read_floorplan_segments(svg_path: Optional[str]) -> list[dict]:
-    """Read full floor-plan linework from the SVG in world coordinates."""
     if not svg_path or not os.path.isfile(svg_path):
         return []
     entries, error = extract_styled_segments_from_svg(svg_path)
@@ -1044,14 +884,11 @@ def _read_floorplan_segments(svg_path: Optional[str]) -> list[dict]:
         })
     return segments
 
-
 def _normalize_optional_path(path: Optional[str]) -> Optional[str]:
-    """Normalize optional request paths so blank strings behave like unset values."""
     if path is None:
         return None
     stripped = path.strip()
     return stripped or None
-
 
 def _resolve_rtls_output_dir(
     workspace_id: Optional[str],
@@ -1059,7 +896,6 @@ def _resolve_rtls_output_dir(
     folder_path: Optional[str],
     project_path: Optional[str],
 ) -> Optional[str]:
-    """Choose a stable RTLS output directory for CSV/logging state."""
     ws_name = workspace_name or (workspace_id and _workspace_names.get(workspace_id))
     if ws_name:
         rtls_dir = str(workspace_rtls_dir(ws_name))
@@ -1071,7 +907,6 @@ def _resolve_rtls_output_dir(
         return None
     os.makedirs(rtls_dir, exist_ok=True)
     return rtls_dir
-
 
 def _normalize_room_rtls_settings(room_payload: dict) -> dict:
     settings = {
@@ -1086,7 +921,6 @@ def _normalize_room_rtls_settings(room_payload: dict) -> dict:
     settings["filter_mode"] = filter_mode
     return settings
 
-
 def _build_room_summary(room: Room) -> dict:
     payload = room.to_dict()
     settings = _normalize_room_rtls_settings(payload)
@@ -1099,25 +933,13 @@ def _build_room_summary(room: Room) -> dict:
         "tag_height_ft": float(settings.get("tag_height_ft", 0.0) or 0.0),
     }
 
-
 @app.get("/api/rtls/snapshot")
 async def api_rtls_snapshot():
-    """Poll current RTLS state (20 Hz safe — cheap dict copy)."""
     return {"success": True, **_rtls_runtime.snapshot()}
-
 
 @app.post("/api/rtls/workspace/load")
 async def api_rtls_workspace_load(req: RtlsWorkspaceLoadRequest):
-    """
-    Load room + tag + SVG data into RTLS runtime from workspace.
 
-    Sources are composable so the frontend can keep a stable session:
-      - project_path provides packaged room manifest + SVG
-      - folder_path provides workspace-style defaults
-      - manifest_path / rooms_folder / svg_folder / tags_folder override individually
-      - workspace data remains the final fallback
-    """
-    # Auto-register workspace name so registry survives server restarts
     if req.workspace_id and req.workspace_name:
         _workspace_names[req.workspace_id] = req.workspace_name
 
@@ -1132,7 +954,7 @@ async def api_rtls_workspace_load(req: RtlsWorkspaceLoadRequest):
     svg_path: Optional[str] = None
 
     if project_path:
-        # A packaged project supplies room geometry and floor-plan SVG.
+
         project_svg_path, _, _, error = load_project_package(project_path, TEMP_EXTRACT_DIR)
         if error:
             return {"success": False, "error": error}
@@ -1141,8 +963,7 @@ async def api_rtls_workspace_load(req: RtlsWorkspaceLoadRequest):
         svg_path = project_svg_path
 
     if folder_path:
-        # A selected workspace folder acts as the default source for all resources
-        # unless a more specific override is supplied.
+
         if not manifest_path:
             manifest_path = _find_manifest_in_folder(folder_path)
         if not svg_path:
@@ -1198,7 +1019,6 @@ async def api_rtls_workspace_load(req: RtlsWorkspaceLoadRequest):
     if not rooms:
         return {"success": False, "error": "No rooms in manifest."}
 
-    # Pick the requested room or the first
     target_room = rooms[0]
     if req.room_name:
         for r in rooms:
@@ -1213,7 +1033,6 @@ async def api_rtls_workspace_load(req: RtlsWorkspaceLoadRequest):
 
     _rtls_runtime.update_from_workspace(target_room_payload, tag_profiles)
 
-    # Read SVG content for frontend rendering
     svg_content = _read_svg_content(svg_path)
     floorplan_segments = _read_floorplan_segments(svg_path)
 
@@ -1233,12 +1052,11 @@ async def api_rtls_workspace_load(req: RtlsWorkspaceLoadRequest):
         **_rtls_runtime.snapshot(),
     }
 
-
 @app.post("/api/rtls/transport/connect")
 async def api_rtls_transport_connect(req: RtlsConnectRequest):
     mode = req.mode or "serial"
     if mode == "ble":
-        # Pull MAC list from the tags currently loaded into the RTLS runtime.
+
         profiles = _rtls_runtime.get_profile_payloads()
         ok, detail = ble_idle_service.acquire("rtls", profiles)
         if not ok:
@@ -1253,7 +1071,6 @@ async def api_rtls_transport_connect(req: RtlsConnectRequest):
     ok, detail = _rtls_runtime.connect(mode, req.port)
     return {"success": ok, "error": None if ok else detail, **_rtls_runtime.snapshot()}
 
-
 @app.post("/api/rtls/transport/disconnect")
 async def api_rtls_transport_disconnect():
     was_bridged = _rtls_runtime.is_bridged_to_ble_idle()
@@ -1262,18 +1079,15 @@ async def api_rtls_transport_disconnect():
         ble_idle_service.release("rtls")
     return {"success": True, **_rtls_runtime.snapshot()}
 
-
 @app.post("/api/rtls/serial/connect")
 async def api_rtls_serial_connect(req: RtlsConnectRequest):
     ok, detail = _rtls_runtime.connect("serial", req.port)
     return {"success": ok, "error": None if ok else detail, **_rtls_runtime.snapshot()}
 
-
 @app.post("/api/rtls/serial/disconnect")
 async def api_rtls_serial_disconnect():
     _rtls_runtime.disconnect()
     return {"success": True, **_rtls_runtime.snapshot()}
-
 
 @app.get("/api/rtls/serial/ports")
 async def api_rtls_serial_ports():
@@ -1283,7 +1097,6 @@ async def api_rtls_serial_ports():
         "ports": _rtls_runtime.get_serial_ports(),
         "auto_detect_port": auto_detect_esp32_port() or "",
     }
-
 
 @app.post("/api/rtls/filter")
 async def api_rtls_filter(req: RtlsFilterRequest):
@@ -1296,34 +1109,27 @@ async def api_rtls_filter(req: RtlsFilterRequest):
     )
     return {"success": True, **_rtls_runtime.snapshot()}
 
-
 @app.post("/api/rtls/elevation")
 async def api_rtls_elevation(req: RtlsElevationRequest):
     _rtls_runtime.set_elevation(req.override, req.value_ft)
     return {"success": True, **_rtls_runtime.snapshot()}
-
 
 @app.post("/api/rtls/noise_cancel")
 async def api_rtls_noise_cancel(req: RtlsNoiseCancelRequest):
     _rtls_runtime.set_noise_cancel(req.enabled)
     return {"success": True, **_rtls_runtime.snapshot()}
 
-
 @app.post("/api/rtls/csv/start")
 async def api_rtls_csv_start():
-    """Start CSV distance logging into workspace RTLS/ folder."""
     ok, detail = _rtls_runtime.start_csv_logging()
     if not ok:
         return {"success": False, "error": detail}
     return {"success": True, "path": detail, **_rtls_runtime.snapshot()}
 
-
 @app.post("/api/rtls/csv/stop")
 async def api_rtls_csv_stop():
-    """Stop CSV distance logging."""
     _rtls_runtime.stop_csv_logging()
     return {"success": True, **_rtls_runtime.snapshot()}
-
 
 @app.post("/api/rtls/analytics/run")
 async def api_rtls_analytics_run(req: RtlsAnalyticsRequest):
@@ -1341,20 +1147,13 @@ async def api_rtls_analytics_run(req: RtlsAnalyticsRequest):
         logger.exception("RTLS analytics run failed for %s", csv_path)
         return {"success": False, "error": "RTLS analytics failed unexpectedly."}
 
-
-# ---------------------------------------------------------------------------
-# Active BLE Idle (HotBar BLE menu)
-# ---------------------------------------------------------------------------
-
 class BleIdleEnableRequest(BaseModel):
     workspace_id: Optional[str] = None
     workspace_name: Optional[str] = None
 
-
 @app.get("/api/ble_idle/status")
 async def api_ble_idle_status():
     return {"success": True, **ble_idle_service.status()}
-
 
 @app.post("/api/ble_idle/enable")
 async def api_ble_idle_enable(req: BleIdleEnableRequest):
@@ -1366,11 +1165,8 @@ async def api_ble_idle_enable(req: BleIdleEnableRequest):
         return {"success": False, "error": detail, **ble_idle_service.status()}
     return {"success": True, "detail": detail, **ble_idle_service.status()}
 
-
 @app.post("/api/ble_idle/disable")
 async def api_ble_idle_disable():
-    # Release HotBar's hold only. RTLS / Calibration consumers (if any)
-    # keep the service alive — the user explicitly wants connectivity to
-    # continue when other modules are still using BLE.
+
     ble_idle_service.release("hotbar")
     return {"success": True, **ble_idle_service.status()}

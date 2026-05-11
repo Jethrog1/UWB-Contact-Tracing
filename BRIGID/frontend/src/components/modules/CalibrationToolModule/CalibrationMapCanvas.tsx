@@ -69,7 +69,6 @@ const screenToWorld = (viewport: Viewport, x: number, y: number): [number, numbe
 
 const lineKey = (a: string, b: string) => `${a}-${b}`
 
-// Point-to-segment distance in screen coordinates.
 const distToSegment = (px: number, py: number, x1: number, y1: number, x2: number, y2: number) => {
   const dx = x2 - x1
   const dy = y2 - y1
@@ -110,12 +109,8 @@ const CalibrationMapCanvas = forwardRef<CalibrationMapCanvasHandle, Props>(({
   const dragRef = useRef<{ anchorId?: string; refDot?: boolean; localRef?: { x: number; y: number } } | null>(null)
   const panRef = useRef<{ active: boolean; x: number; y: number } | null>(null)
   const latestMapRef = useRef(map)
-  // Local-only reference-dot position used during drag so we don't wait on the
-  // backend round-trip between mousemove events.
   const [dragRefPos, setDragRefPos] = useState<{ x: number; y: number } | null>(null)
 
-  // Line-creation state: user holds ctrl and clicks an anchor to start, then
-  // clicks a second anchor to commit. Ctrl is not required after the first click.
   const [creatingFrom, setCreatingFrom] = useState<AnchorId | null>(null)
   const [hoverAnchor, setHoverAnchor] = useState<AnchorId | null>(null)
   const [cursorWorld, setCursorWorld] = useState<{ x: number; y: number } | null>(null)
@@ -123,7 +118,6 @@ const CalibrationMapCanvas = forwardRef<CalibrationMapCanvasHandle, Props>(({
 
   latestMapRef.current = map
 
-  // Effective reference dot: prefer in-progress drag pos so motion is instant.
   const effectiveRef = dragRefPos ?? referenceDot
 
   const anchorList = useMemo(
@@ -197,7 +191,6 @@ const CalibrationMapCanvas = forwardRef<CalibrationMapCanvasHandle, Props>(({
     return () => observer.disconnect()
   }, [resetView])
 
-  // Track Ctrl key globally so the canvas knows whether we're in line-start mode.
   useEffect(() => {
     const down = (e: KeyboardEvent) => { if (e.key === 'Control' || e.ctrlKey) setCtrlDown(true) }
     const up = (e: KeyboardEvent) => { if (e.key === 'Control' || !e.ctrlKey) setCtrlDown(false) }
@@ -240,7 +233,6 @@ const CalibrationMapCanvas = forwardRef<CalibrationMapCanvasHandle, Props>(({
       ctx.beginPath(); ctx.moveTo(0, screenY); ctx.lineTo(canvas.width, screenY); ctx.stroke()
     }
 
-    // ── Crosshair dotted lines to anchors ─────────────────────────
     if (effectiveRef) {
       const [rx, ry] = worldToScreen(viewport, effectiveRef.x, effectiveRef.y)
       ctx.save()
@@ -274,7 +266,6 @@ const CalibrationMapCanvas = forwardRef<CalibrationMapCanvasHandle, Props>(({
       ctx.restore()
     }
 
-    // ── Map lines ──────────────────────────────────────────────────
     ctx.fillStyle = '#8ea4c8'
     ctx.font = '12px var(--font-primary, sans-serif)'
     ctx.setLineDash([])
@@ -293,7 +284,6 @@ const CalibrationMapCanvas = forwardRef<CalibrationMapCanvasHandle, Props>(({
       ctx.fillText(`${distance.toFixed(1)} ft`, (x1 + x2) / 2 + 8, (y1 + y2) / 2 - 8)
     }
 
-    // ── Line-in-progress preview ───────────────────────────────────
     if (creatingFrom && cursorWorld) {
       const fromPt = map.anchors[creatingFrom]
       if (fromPt) {
@@ -313,7 +303,6 @@ const CalibrationMapCanvas = forwardRef<CalibrationMapCanvasHandle, Props>(({
       }
     }
 
-    // ── Anchor dots ────────────────────────────────────────────────
     for (const { anchorId, coords } of anchorList) {
       const [screenX, screenY] = worldToScreen(viewport, coords[0], coords[1])
       const isHighlighted =
@@ -334,7 +323,6 @@ const CalibrationMapCanvas = forwardRef<CalibrationMapCanvasHandle, Props>(({
       ctx.fillText(`(${coords[0].toFixed(1)}, ${coords[1].toFixed(1)})`, screenX + 10, screenY + 12)
     }
 
-    // ── Reference crosshair ────────────────────────────────────────
     if (effectiveRef) {
       const [screenX, screenY] = worldToScreen(viewport, effectiveRef.x, effectiveRef.y)
       const color = referenceDotSelected ? CROSSHAIR_SELECTED : CROSSHAIR_COLOR
@@ -351,7 +339,6 @@ const CalibrationMapCanvas = forwardRef<CalibrationMapCanvasHandle, Props>(({
       ctx.fillText(`(${effectiveRef.x.toFixed(1)}, ${effectiveRef.y.toFixed(1)})`, screenX + arm + 4, screenY - arm)
     }
 
-    // ── Inter-tag dotted distance lines (live)
     const positionedTags = tags
       .map((tag, index) => ({ tag, color: TAG_COLORS[index % TAG_COLORS.length], xy: tag.calibrated_xy }))
       .filter((entry): entry is { tag: CalibrationTagRuntime; color: string; xy: [number, number] } => entry.xy != null)
@@ -407,8 +394,6 @@ const CalibrationMapCanvas = forwardRef<CalibrationMapCanvasHandle, Props>(({
     })
   }, [anchorList, canvasSize, map.anchors, map.lines, effectiveRef, referenceDotSelected, selectedTagId, tags, viewport, selectedLineKey, creatingFrom, hoverAnchor, cursorWorld, ctrlDown])
 
-  // ── Hit testing ─────────────────────────────────────────────────
-
   const hitAnchor = useCallback((clientX: number, clientY: number) => {
     const canvas = canvasRef.current
     if (!canvas) return null
@@ -458,8 +443,6 @@ const CalibrationMapCanvas = forwardRef<CalibrationMapCanvasHandle, Props>(({
     return [clientX - rect.left, clientY - rect.top]
   }, [])
 
-  // ── Mouse handlers ───────────────────────────────────────────────
-
   const handleMouseDown = useCallback((event: React.MouseEvent<HTMLCanvasElement>) => {
     const canvas = canvasRef.current
     if (!canvas || event.button !== 0) return
@@ -478,7 +461,6 @@ const CalibrationMapCanvas = forwardRef<CalibrationMapCanvasHandle, Props>(({
 
     const anchorId = hitAnchor(event.clientX, event.clientY) as AnchorId | null
 
-    // Line creation handling — takes precedence over anchor drag when appropriate.
     if (creatingFrom) {
       if (anchorId && anchorId !== creatingFrom) {
         onLineCreate(creatingFrom, anchorId)
@@ -547,7 +529,6 @@ const CalibrationMapCanvas = forwardRef<CalibrationMapCanvasHandle, Props>(({
     const my = event.clientY - rect.top
     const [worldX, worldY] = screenToWorld(viewport, mx, my)
 
-    // Track hover (for ctrl+line-creation UX). Cheap hit test.
     const hovered = hitAnchor(event.clientX, event.clientY) as AnchorId | null
     setHoverAnchor(prev => (prev === hovered ? prev : hovered))
     if (creatingFrom) {

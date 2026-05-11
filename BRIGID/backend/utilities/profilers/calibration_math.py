@@ -1,7 +1,3 @@
-"""
-calibration_math.py — Calibration equation fitting and compilation.
-Adapted from 2DLCAD/calibration_utils.py (no PyQt6 dependency).
-"""
 
 from __future__ import annotations
 import math
@@ -9,9 +5,7 @@ from typing import Callable, Tuple
 
 import numpy as np
 
-
 FIT_MODES = ["Linear", "Polynomial", "Logarithmic", "Power Series", "Exponential", "Moving Average"]
-
 
 def build_eval_func(
     mode: str,
@@ -21,12 +15,6 @@ def build_eval_func(
     ma_period: int = 4,
     ma_type: str = "Trailing",
 ) -> Tuple[Callable, str]:
-    """
-    Fit a calibration curve to (X, Y) point pairs.
-
-    Returns (func, expression_string).
-    func(x) → corrected distance (float).
-    """
     Xa = np.array(X, dtype=float)
     Ya = np.array(Y, dtype=float)
     n = len(Xa)
@@ -97,23 +85,16 @@ def build_eval_func(
     except Exception:
         pass
 
-    # Fallback: linear
     if n >= 2:
         m, b = np.polyfit(Xa, Ya, 1)
         return (lambda x, m=m, b=b: m * x + b), f"({m:.5f}*Raw)+{b:.5f}"
     return lambda x: float(x), "Raw"
 
-
 def compile_manual_equation(expression: str) -> Callable:
-    """
-    Compile a user-typed or auto-generated equation string into a callable.
-    Supports: Raw, +, -, *, /, ^, ln(), log(), sin(), cos(), sqrt(), abs(), e, pi.
-    """
     expr = (expression or "").strip()
     if not expr or expr in {"Raw", "Raw (no data)"}:
         return lambda x: float(x)
 
-    # Strip [Auto:Mode] prefix written by build_eval_func
     if expr.startswith("[Auto:"):
         closing = expr.find("]")
         if closing != -1:
@@ -131,7 +112,7 @@ def compile_manual_equation(expression: str) -> Callable:
         "abs":  abs,
     }
     code = compile(safe, "<calibration>", "eval")
-    # Dry-run to catch syntax errors early
+
     eval(code, {"__builtins__": {}}, dict(math_env, Raw=1.0))
 
     def func(x: float, compiled=code, env=math_env) -> float:

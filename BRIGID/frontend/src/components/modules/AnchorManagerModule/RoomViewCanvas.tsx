@@ -89,7 +89,6 @@ const RoomViewCanvas = forwardRef<RoomViewCanvasHandle, Props>(({
 
   useImperativeHandle(ref, () => ({ fitView }), [fitView])
 
-  // Auto-fit on first mount and on room change
   useEffect(() => {
     fitDoneRef.current = false
   }, [room.room_name])
@@ -124,7 +123,6 @@ const RoomViewCanvas = forwardRef<RoomViewCanvasHandle, Props>(({
     })
   }, [])
 
-  // Render
   useEffect(() => {
     const canvas = canvasRef.current
     const ctx = canvas?.getContext('2d')
@@ -134,7 +132,6 @@ const RoomViewCanvas = forwardRef<RoomViewCanvasHandle, Props>(({
     ctx.fillStyle = COLORS.bg
     ctx.fillRect(0, 0, canvas.width, canvas.height)
 
-    // Room fill
     if (room.segments_ft.length > 2) {
       ctx.fillStyle = COLORS.roomFill
       ctx.beginPath()
@@ -145,7 +142,6 @@ const RoomViewCanvas = forwardRef<RoomViewCanvasHandle, Props>(({
       ctx.fill()
     }
 
-    // All segments (interior + boundary)
     for (const seg of allSegments) {
       const [x1, y1] = worldToScreen(viewport, seg.x1, seg.y1)
       const [x2, y2] = worldToScreen(viewport, seg.x2, seg.y2)
@@ -158,7 +154,6 @@ const RoomViewCanvas = forwardRef<RoomViewCanvasHandle, Props>(({
       ctx.stroke()
     }
 
-    // Anchors
     for (const anchor of room.anchors) {
       const [wx, wy] = getAnchorWorldPosition(room, anchor)
       const [sx, sy] = worldToScreen(viewport, wx, wy)
@@ -178,7 +173,6 @@ const RoomViewCanvas = forwardRef<RoomViewCanvasHandle, Props>(({
       ctx.fillText(anchor.id, sx + 12, sy - 4)
     }
 
-    // Placement preview
     if (hoverWorld) {
       const previewPoint = hoverSnap ?? { x: hoverWorld[0], y: hoverWorld[1] }
       const [sx, sy] = worldToScreen(viewport, previewPoint.x, previewPoint.y)
@@ -250,7 +244,6 @@ const RoomViewCanvas = forwardRef<RoomViewCanvasHandle, Props>(({
       return
     }
 
-    // Ctrl/Cmd + click in empty space places an anchor; plain click starts panning
     if (e.ctrlKey || e.metaKey) {
       const [worldX, worldY] = screenToWorld(vp, mx, my)
       const snap = findSnapTarget(worldX, worldY, allSegments)

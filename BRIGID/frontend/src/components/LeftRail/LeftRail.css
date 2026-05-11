@@ -1,10 +1,8 @@
-/* ── LeftRail: Pure floating button column, no background bar ── */
 .left-rail {
   grid-area: 3 / 1 / 4 / 2;
   display: flex;
   flex-direction: column;
   align-items: center;
-  /* Transparent background — buttons float over app-bg */
   background: transparent;
   padding: 20px 0 8px 0;
   z-index: 10;
@@ -12,7 +10,6 @@
   pointer-events: none;
 }
 
-/* Logo / Home button */
 .left-rail__logo-btn {
   width: 34px;
   height: 34px;
@@ -75,7 +72,6 @@
   color: var(--accent-primary) !important;
 }
 
-/* Animated highlight behind active button */
 .left-rail__active-bg {
   position: absolute;
   inset: 0;
@@ -95,37 +91,31 @@
   cursor: not-allowed;
 }
 
-/* Settings at bottom */
 .left-rail__bottom {
   margin-top: auto;
   margin-bottom: 4px;
 }
 
-/* Custom PNG icon images */
 .left-rail__icon-img {
   display: block;
   width: 28px;
   height: 28px;
   object-fit: contain;
-  /* Colorize to #5B6574 (muted gray-blue) from any source color */
   filter: brightness(0) saturate(100%) invert(44%) sepia(8%) saturate(513%) hue-rotate(172deg) brightness(92%) contrast(86%);
   transition: filter var(--transition-fast);
 }
 
 .left-rail__icon-img--active {
-  /* Colorize to accent-primary #4b729f */
   filter: brightness(0) saturate(100%) invert(44%) sepia(40%) saturate(600%) hue-rotate(180deg) brightness(88%) contrast(90%);
 }
 
 .left-rail__icon-img--home {
   width: 28px;
   height: 28px;
-  /* Colorize to accent blue #5a90c8 matching previous home icon color */
   filter: brightness(0) saturate(100%) invert(55%) sepia(40%) saturate(600%) hue-rotate(185deg) brightness(100%) contrast(88%);
 }
 
 .left-rail__btn:hover:not(:disabled) .left-rail__icon-img:not(.left-rail__icon-img--active) {
-  /* Brighten slightly on hover toward text-primary #c1c9d4 */
   filter: brightness(0) saturate(100%) invert(85%) sepia(5%) saturate(300%) hue-rotate(172deg) brightness(95%);
 }
 

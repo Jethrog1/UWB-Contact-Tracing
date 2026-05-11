@@ -9,14 +9,12 @@ interface RightPanelProps {
   activeModule: AppModule
 }
 
-/* ─────────────── RTLS Panel ─────────────── */
 const RTLSPanel: React.FC = () => {
   const [alertOpen, setAlertOpen] = useState(true)
   const [eventLogOpen, setEventLogOpen] = useState(true)
 
   return (
     <>
-      {/* Entity Card */}
       <div className="right-panel__entity">
         <div className="right-panel__entity-icon">
           <Icon icon="locate" size={22} />
@@ -29,7 +27,6 @@ const RTLSPanel: React.FC = () => {
 
       <PlaceholderBlock type="data" label="[POSITION MAP — LIVE TAG OVERLAY]" />
 
-      {/* Details Grid */}
       <div className="right-panel__detail-grid">
         <div className="right-panel__detail-row">
           <span className="right-panel__detail-key">Active Tags</span>
@@ -53,7 +50,6 @@ const RTLSPanel: React.FC = () => {
         </div>
       </div>
 
-      {/* Alert Banner */}
       <div className="right-panel__collapsible">
         <button className="right-panel__collapse-header" onClick={() => setAlertOpen(!alertOpen)}>
           <Icon icon={alertOpen ? 'chevron-down' : 'chevron-right'} size={14} />
@@ -69,7 +65,6 @@ const RTLSPanel: React.FC = () => {
         </Collapse>
       </div>
 
-      {/* Event Log */}
       <div className="right-panel__collapsible">
         <button className="right-panel__collapse-header" onClick={() => setEventLogOpen(!eventLogOpen)}>
           <Icon icon={eventLogOpen ? 'chevron-down' : 'chevron-right'} size={14} />
@@ -85,7 +80,6 @@ const RTLSPanel: React.FC = () => {
   )
 }
 
-/* ─────────────── CAD Panel ─────────────── */
 const CADPanel: React.FC = () => {
   const [layersOpen, setLayersOpen] = useState(true)
 
@@ -141,7 +135,6 @@ const CADPanel: React.FC = () => {
   )
 }
 
-/* ─────────────── Anchor Placement Panel ─────────────── */
 const AnchorPanel: React.FC = () => {
   const [listOpen, setListOpen] = useState(true)
   const [validityOpen, setValidityOpen] = useState(true)
@@ -213,7 +206,6 @@ const AnchorPanel: React.FC = () => {
   )
 }
 
-/* ─────────────── Profiling Panel ─────────────── */
 const ProfilingPanel: React.FC = () => {
   const [calOpen, setCalOpen] = useState(true)
   const [sessionOpen, setSessionOpen] = useState(true)
@@ -282,7 +274,6 @@ const ProfilingPanel: React.FC = () => {
   )
 }
 
-/* ─────────────── Right Panel Container ─────────────── */
 const RightPanel: React.FC<RightPanelProps> = ({ activeModule }) => {
   return (
     <motion.aside
@@ -306,7 +297,6 @@ const RightPanel: React.FC<RightPanelProps> = ({ activeModule }) => {
         </motion.div>
       </div>
 
-      {/* ---- Footer ---- */}
       <div className="right-panel__footer">
         BRIGID RTLS Platform • v1.0.0
       </div>

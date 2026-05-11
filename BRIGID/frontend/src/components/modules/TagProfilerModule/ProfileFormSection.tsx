@@ -20,7 +20,6 @@ interface Props {
 const ProfileFormSection: React.FC<Props> = ({ profile, onChange }) => {
   const set = (path: string[], val: string | number) => {
     const next = JSON.parse(JSON.stringify(profile)) as TagProfile
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     let obj: any = next
     for (let i = 0; i < path.length - 1; i++) obj = obj[path[i]]
     obj[path[path.length - 1]] = val
@@ -31,9 +30,7 @@ const ProfileFormSection: React.FC<Props> = ({ profile, onChange }) => {
 
   return (
     <div className="tp-form-grid">
-      {/* Left column */}
       <div className="tp-form-col">
-        {/* Identity */}
         <SectionCard title="Identity" subtitle="Profile identification">
           <FieldInput label="Tag ID *" value={profile.tag_id}
             onChange={v => set(['tag_id'], v)}
@@ -50,9 +47,7 @@ const ProfileFormSection: React.FC<Props> = ({ profile, onChange }) => {
             type="textarea" help="Optional notes about the tag or wearer." />
         </SectionCard>
 
-        {/* Calibration equations */}
         <SectionCard title="Calibration Equations" subtitle="Distance correction per anchor">
-          {/* Enable / Disable toggle */}
           <div className="tp-cal-toggle-row">
             <span className="tp-field-label">Enable editing</span>
             <button
@@ -88,9 +83,7 @@ const ProfileFormSection: React.FC<Props> = ({ profile, onChange }) => {
         </SectionCard>
       </div>
 
-      {/* Right column */}
       <div className="tp-form-col">
-        {/* Device */}
         <SectionCard title="Device" subtitle="Physical device configuration">
           <FieldInput label="MAC Address" value={profile.device.mac_address}
             onChange={v => set(['device', 'mac_address'], v)}
@@ -101,7 +94,6 @@ const ProfileFormSection: React.FC<Props> = ({ profile, onChange }) => {
             type="select" options={DEVICE_TYPES}
             help="Form factor of the wearable. Determines which height field is active." />
 
-          {/* Only the active height field is shown prominently */}
           <div className="tp-height-fields">
             {(['wrist_to_floor_ft', 'arm_to_floor_ft', 'hip_to_floor_ft', 'breast_to_floor_ft'] as const).map(hf => (
               <FieldInput key={hf}
@@ -119,7 +111,6 @@ const ProfileFormSection: React.FC<Props> = ({ profile, onChange }) => {
             type="textarea" />
         </SectionCard>
 
-        {/* Notes */}
         <SectionCard title="Notes" subtitle="Operational notes">
           <FieldInput label="Notes" value={profile.notes}
             onChange={v => set(['notes'], v)}

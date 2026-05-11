@@ -1,7 +1,3 @@
-# BRIGID — Launch Script
-# ========================
-# Starts the Electron frontend in dev mode.
-# Optionally starts the Python backend as well.
 
 param(
     [switch]$WithBackend
@@ -15,7 +11,6 @@ Write-Host "   BRIGID RTLS Desktop Platform"       -ForegroundColor Cyan
 Write-Host "=====================================" -ForegroundColor Cyan
 Write-Host ""
 
-# Start backend if requested
 if ($WithBackend) {
     Write-Host "[*] Starting Python backend..." -ForegroundColor Yellow
     $backendDir = Join-Path $root "backend"
@@ -25,7 +20,6 @@ if ($WithBackend) {
     Write-Host ""
 }
 
-# Start frontend
 Write-Host "[*] Starting Electron frontend..." -ForegroundColor Yellow
 $frontendDir = Join-Path $root "frontend"
 Push-Location $frontendDir

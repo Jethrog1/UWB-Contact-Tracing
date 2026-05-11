@@ -35,7 +35,6 @@ const statusColor = (status: string): string => {
   return '#ff5b4d'
 }
 
-// ── Point log parser ────────────────────────────────────────────────
 interface ParsedPoint { anchor: string; index: number; raw: number; trueDist: number }
 function parsePointLog(lines: string[]): ParsedPoint[] {
   return lines.flatMap(line => {
@@ -81,7 +80,6 @@ const toMapState = (map: CalibrationMapRuntime): CalibrationMapRuntime => ({
   height_offset: map.height_offset,
 })
 
-// ── Controlled number input (avoids reset while typing) ─────────────
 interface NumInputProps {
   value: number
   className?: string
@@ -120,7 +118,6 @@ const NumInput: React.FC<NumInputProps> = ({ value, className, step, onChange })
   )
 }
 
-// ── Inline canvas editor overlay ────────────────────────────────────
 type InlineEdit =
   | { kind: 'anchor'; anchorId: AnchorId; screenX: number; screenY: number; value: string }
   | { kind: 'refdot'; screenX: number; screenY: number; value: string }
@@ -161,12 +158,10 @@ const CalibrationTool: React.FC<CalibrationToolProps> = ({ workspaceId, workspac
 
   graphCollapsedRef.current = graphCollapsed
 
-  // Track which fields are being actively edited so background polls don't overwrite drafts.
   const refDistFocusRef = useRef<Record<AnchorId, boolean>>({ A0: false, A1: false, A2: false, A3: false })
   const refHeightFocusRef = useRef(false)
   const equationFocusRef = useRef<Record<AnchorId, boolean>>({ A0: false, A1: false, A2: false, A3: false })
 
-  // ── Tag color palette ─────────────────────────────────────────────
   const tagIds = runtime.tags.map(t => t.tag_id).join('|')
   const tagColors = useMemo(() => {
     const map: Record<string, string> = {}
@@ -197,9 +192,7 @@ const CalibrationTool: React.FC<CalibrationToolProps> = ({ workspaceId, workspac
     if (snapshot.selected_port) setSerialPort(snapshot.selected_port)
     else if (!serialPort && snapshot.auto_detect_port) setSerialPort(snapshot.auto_detect_port)
     setSelectedTagId(current => {
-      // Keep the current tag selected if it still exists — prevents panel glitch
       if (current && snapshot.tags.some(tag => tag.tag_id === current)) return current
-      // If current tag is gone, pick the first one or keep the current (sticky)
       if (snapshot.tags.length > 0) return current ?? snapshot.tags[0].tag_id
       return current
     })
@@ -213,7 +206,7 @@ const CalibrationTool: React.FC<CalibrationToolProps> = ({ workspaceId, workspac
       )
       const data = await response.json() as CalibrationRuntimeSnapshot
       if (data.success) applySnapshot(data)
-    } catch { /* silent while backend boots */ }
+    } catch {  }
   }
 
   useEffect(() => {
@@ -225,7 +218,6 @@ const CalibrationTool: React.FC<CalibrationToolProps> = ({ workspaceId, workspac
     }
   }, [workspaceId, workspaceName]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // View commands from top TabStrip
   useEffect(() => {
     const handler = (e: Event) => {
       const detail = (e as CustomEvent).detail as { cmd: string; workspaceId: string }
@@ -249,13 +241,10 @@ const CalibrationTool: React.FC<CalibrationToolProps> = ({ workspaceId, workspac
   }, [workspaceId])
 
   useEffect(() => {
-    // Skip poll-driven overwrites while the user is typing into any anchor
-    // coordinate input, otherwise mid-typing poll snapshots clobber their draft.
     if (mapSyncBlockedRef.current || anyAnchorFocusedRef.current) return
     setMapState(toMapState(runtime.map))
   }, [mapSignature, runtime.map])
 
-  // Sync reference-distance drafts ONLY on tag change (avoids wiping user input on every poll).
   useEffect(() => {
     if (!selectedTag) return
     setReferenceDistances({
@@ -267,7 +256,6 @@ const CalibrationTool: React.FC<CalibrationToolProps> = ({ workspaceId, workspac
     setReferenceHeight(String(selectedTag.reference_height ?? 0))
   }, [selectedTagId]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Apply backend-driven distance changes (e.g. Place-on-Map) only to inputs not currently focused.
   useEffect(() => {
     if (!selectedTag) return
     setReferenceDistances(prev => {
@@ -294,7 +282,6 @@ const CalibrationTool: React.FC<CalibrationToolProps> = ({ workspaceId, workspac
     })
   }, [selectedTagId]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Backend-driven equation refreshes (e.g. after fit recalculation) skip focused inputs.
   useEffect(() => {
     if (!selectedTag) return
     setEquationDrafts(prev => {
@@ -308,7 +295,6 @@ const CalibrationTool: React.FC<CalibrationToolProps> = ({ workspaceId, workspac
   }, [equationSignature]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const postJson = async <T,>(path: string, body?: unknown): Promise<T> => {
-    // Append workspace_id query param so each tab targets its own backend runtime.
     const separator = path.includes('?') ? '&' : '?'
     const url = `${API}${path}${separator}workspace_id=${encodeURIComponent(workspaceId)}`
     const response = await fetch(url, {
@@ -506,7 +492,6 @@ const CalibrationTool: React.FC<CalibrationToolProps> = ({ workspaceId, workspac
     } catch { showStatus('Could not reach backend.', 'error') }
   }
 
-  // ── Line helpers (shared by canvas + right-panel) ───────────────
   const keyForLine = (a: string, b: string) => `${a}-${b}`
   const matchLineKey = (key: string, line: string[]) => (
     keyForLine(line[0], line[1]) === key || keyForLine(line[1], line[0]) === key
@@ -528,8 +513,6 @@ const CalibrationTool: React.FC<CalibrationToolProps> = ({ workspaceId, workspac
     void persistMap({ ...base, lines: [...base.lines, [a, b]] })
   }
 
-  // Delete-key fallback when the right-panel line row is selected but the
-  // canvas isn't focused. Ignored when the user is typing into any input.
   useEffect(() => {
     if (!selectedLineKey) return
     const onKey = (event: KeyboardEvent) => {
@@ -546,7 +529,6 @@ const CalibrationTool: React.FC<CalibrationToolProps> = ({ workspaceId, workspac
     return () => window.removeEventListener('keydown', onKey)
   }, [selectedLineKey]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ── Inline editor commit ─────────────────────────────────────────
   const commitInlineEdit = (edit: InlineEdit) => {
     const parts = edit.value.split(',').map(s => s.trim())
     const x = Number.parseFloat(parts[0])
@@ -561,12 +543,10 @@ const CalibrationTool: React.FC<CalibrationToolProps> = ({ workspaceId, workspac
     setInlineEdit(null)
   }
 
-  // ── Anchor coordinate drafts (prevent reset while typing) ─────────
   const anchorDraftRef = useRef<Record<AnchorId, string>>({ A0: '', A1: '', A2: '', A3: '' })
   const anchorFocusedRef = useRef<Record<AnchorId, boolean>>({ A0: false, A1: false, A2: false, A3: false })
   const [, setForceRender] = useState(0)
 
-  // Sync anchor drafts from mapState when not focused
   const getAnchorDraft = (anchorId: AnchorId) => {
     if (!anchorFocusedRef.current[anchorId]) {
       anchorDraftRef.current[anchorId] = `${mapState.anchors[anchorId][0]}, ${mapState.anchors[anchorId][1]}`
@@ -574,13 +554,11 @@ const CalibrationTool: React.FC<CalibrationToolProps> = ({ workspaceId, workspac
     return anchorDraftRef.current[anchorId]
   }
 
-  // Debounced persist for anchor coordinate editing
   const debouncedPersistMap = (nextMap: CalibrationMapRuntime) => {
     if (persistTimerRef.current) window.clearTimeout(persistTimerRef.current)
     persistTimerRef.current = window.setTimeout(() => { void persistMap(nextMap) }, 600)
   }
 
-  // ── Parsed captured points ────────────────────────────────────────
   const parsedPoints = useMemo(
     () => selectedTag ? parsePointLog(selectedTag.captured_points_log) : [],
     [selectedTag?.captured_points_log],
@@ -620,7 +598,6 @@ const CalibrationTool: React.FC<CalibrationToolProps> = ({ workspaceId, workspac
             onLineCreate={createLine}
           />
 
-          {/* Inline canvas coordinate editor */}
           {inlineEdit && (
             <div
               className="ct-inline-editor"
@@ -647,7 +624,6 @@ const CalibrationTool: React.FC<CalibrationToolProps> = ({ workspaceId, workspac
           <div className="ct-canvas-hint">Drag to pan · Scroll to zoom · Drag anchors · Double-click to edit</div>
         </div>
 
-        {/* ── Right panel ────────────────────────────────────────────── */}
         <div className="ct-right-panel">
           <div className="ct-panel-header">
             <div className="ct-panel-header-left">
@@ -664,7 +640,6 @@ const CalibrationTool: React.FC<CalibrationToolProps> = ({ workspaceId, workspac
 
           <div className="ct-panel-scroll">
 
-            {/* CONNECTIVITY */}
             <section className="ct-section">
               <div className="ct-section-title">Connectivity</div>
               {(() => {
@@ -723,7 +698,6 @@ const CalibrationTool: React.FC<CalibrationToolProps> = ({ workspaceId, workspac
               </div>
             </section>
 
-            {/* MAP GEOMETRY */}
             <section className="ct-section">
               <div className="ct-section-title">Map Geometry</div>
               {ANCHOR_IDS.map(anchorId => (
@@ -739,7 +713,6 @@ const CalibrationTool: React.FC<CalibrationToolProps> = ({ workspaceId, workspac
                       const x = Number.parseFloat(xRaw)
                       const y = Number.parseFloat(yRaw)
                       if (Number.isFinite(x) && Number.isFinite(y)) {
-                        // Update local preview only; defer backend sync until blur/Enter.
                         setMapState(c => ({ ...c, anchors: { ...c.anchors, [anchorId]: [x, y] as [number, number] } }))
                       }
                     }}
@@ -751,9 +724,6 @@ const CalibrationTool: React.FC<CalibrationToolProps> = ({ workspaceId, workspac
                       anchorFocusedRef.current[anchorId] = false
                       anyAnchorFocusedRef.current = Object.values(anchorFocusedRef.current).some(Boolean)
                       if (persistTimerRef.current) window.clearTimeout(persistTimerRef.current)
-                      // Always parse the user's current draft for this anchor and merge on
-                      // top of the latest map state. Poll-driven state resets can otherwise
-                      // leave mapState stale between keystrokes and Enter.
                       const draft = anchorDraftRef.current[anchorId] ?? ''
                       const [xRaw, yRaw] = draft.split(',').map(s => s.trim())
                       const x = Number.parseFloat(xRaw)
@@ -779,7 +749,6 @@ const CalibrationTool: React.FC<CalibrationToolProps> = ({ workspaceId, workspac
                 </div>
               ))}
 
-              {/* Line list */}
               <div className="ct-lines-list">
                 {mapState.lines.map(line => {
                   const key = line.join('-')
@@ -808,7 +777,6 @@ const CalibrationTool: React.FC<CalibrationToolProps> = ({ workspaceId, workspac
                 })}
               </div>
 
-              {/* Create new line */}
               {!linePickerMode ? (
                 <button className="ct-btn ct-btn--ghost ct-btn--full" onClick={() => setLinePickerMode(true)}>
                   + Create Line
@@ -851,7 +819,6 @@ const CalibrationTool: React.FC<CalibrationToolProps> = ({ workspaceId, workspac
                 </div>
               )}
 
-              {/* Height offset */}
               <div className="ct-field-inline" style={{ marginTop: 10 }}>
                 <label className="ct-field-inline-label" style={{ fontSize: 9.5, whiteSpace: 'nowrap', minWidth: 60 }}>Height (ft)</label>
                 <NumInput
@@ -863,7 +830,6 @@ const CalibrationTool: React.FC<CalibrationToolProps> = ({ workspaceId, workspac
               </div>
             </section>
 
-            {/* SELECTED TAG */}
             <section className="ct-section">
               <div className="ct-section-title">Selected Tag</div>
               <div className="ct-tag-tabs">
@@ -906,7 +872,6 @@ const CalibrationTool: React.FC<CalibrationToolProps> = ({ workspaceId, workspac
 
             {selectedTag && (
               <>
-                {/* REFERENCE DISTANCES */}
                 <section className="ct-section">
                   <div className="ct-section-title">Reference Distances</div>
                   {ANCHOR_IDS.map(anchorId => (
@@ -950,7 +915,6 @@ const CalibrationTool: React.FC<CalibrationToolProps> = ({ workspaceId, workspac
                   </div>
                 </section>
 
-                {/* CALIBRATION FIT (collection controls only) */}
                 <section className="ct-section">
                   <div className="ct-section-title">Calibration Fit</div>
                   <div className="ct-lock-grid">
@@ -994,7 +958,6 @@ const CalibrationTool: React.FC<CalibrationToolProps> = ({ workspaceId, workspac
                   })}
                 </section>
 
-                {/* CAPTURED POINTS */}
                 <section className="ct-section">
                   <div className="ct-section-title">Captured Points</div>
                   {parsedPoints.length > 0 ? (
@@ -1024,11 +987,9 @@ const CalibrationTool: React.FC<CalibrationToolProps> = ({ workspaceId, workspac
                   }}>Clear Data</button>
                 </section>
 
-                {/* EQUATIONS */}
                 <section className="ct-section">
                   <div className="ct-section-title">Equations</div>
 
-                  {/* Anchor selector */}
                   <div className="ct-tag-tabs">
                     {ANCHOR_IDS.map(anchorId => (
                       <button
@@ -1041,7 +1002,6 @@ const CalibrationTool: React.FC<CalibrationToolProps> = ({ workspaceId, workspac
                     ))}
                   </div>
 
-                  {/* Active anchor controls */}
                   {activeFit && (
                     <div className="ct-eq-detail">
                       <div className="ct-field-inline" style={{ marginBottom: 8 }}>
@@ -1101,7 +1061,6 @@ const CalibrationTool: React.FC<CalibrationToolProps> = ({ workspaceId, workspac
                     </div>
                   )}
 
-                  {/* Equations summary table */}
                   <div className="ct-eq-table">
                     {ANCHOR_IDS.map(anchorId => (
                       <div
@@ -1137,7 +1096,6 @@ const CalibrationTool: React.FC<CalibrationToolProps> = ({ workspaceId, workspac
                   </button>
                 </section>
 
-                {/* SMOOTHING FILTER */}
                 <section className="ct-section">
                   <div className="ct-section-title">Smoothing Filter</div>
                   <div className="ct-tag-tabs">

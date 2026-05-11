@@ -25,7 +25,6 @@ const TopBar: React.FC<TopBarProps> = ({ activeModule, onModuleChange }) => {
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.4, ease: [0.4, 0, 0.2, 1] }}
     >
-      {/* ---- Left: App Brand + Search ---- */}
       <div className="topbar__left electron-no-drag">
         <div className="topbar__brand-mark">
           <span className="topbar__brand-name">BRIGID</span>
@@ -37,7 +36,6 @@ const TopBar: React.FC<TopBarProps> = ({ activeModule, onModuleChange }) => {
         </div>
       </div>
 
-      {/* ---- Center: Module Tabs ---- */}
       <nav className="topbar__center electron-no-drag">
         {modules.map((mod) => (
           <button
@@ -57,7 +55,6 @@ const TopBar: React.FC<TopBarProps> = ({ activeModule, onModuleChange }) => {
         ))}
       </nav>
 
-      {/* ---- Right: Workspace Info + Actions ---- */}
       <div className="topbar__right electron-no-drag">
         <div className="topbar__save-indicator">
           <Icon icon="tick-circle" size={12} className="topbar__save-icon" />

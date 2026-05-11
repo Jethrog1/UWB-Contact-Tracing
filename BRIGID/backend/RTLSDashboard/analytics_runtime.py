@@ -1,11 +1,3 @@
-"""
-analytics_runtime.py
-====================
-
-Transforms RTLS CSV logs into model-ready exposure windows for the RTLS
-Dashboard analytics tab. The bundled model is evaluated against real logged
-tag-to-tag interactions; simulated bots are intentionally not used here.
-"""
 
 from __future__ import annotations
 
@@ -18,7 +10,6 @@ from typing import Any
 
 import pickle
 
-
 CHUNK_MINUTES = 15
 MODEL_BUNDLE_PATH = Path(__file__).resolve().parent.parent.parent / "assets" / "ML" / "final_model_bundle.pkl"
 MODEL_SKLEARN_VERSION = "1.2.2"
@@ -29,7 +20,6 @@ COMPAT_PYTHON_PATH = (
     else BACKEND_ROOT / ".conda-ml-compat" / "bin" / "python"
 )
 WORKER_SCRIPT_PATH = Path(__file__).resolve().parent / "analytics_worker.py"
-
 
 def _require_ml_stack():
     try:
@@ -42,16 +32,7 @@ def _require_ml_stack():
         ) from exc
     return np, pd
 
-
 def _install_sklearn_tree_pickle_compat() -> None:
-    """
-    Allow sklearn>=1.3 to unpickle decision trees serialized by sklearn 1.2.x.
-
-    The bundled RandomForest was trained with sklearn 1.2.2, whose tree node
-    dtype did not yet include the ``missing_go_to_left`` field. Newer sklearn
-    expects that field during unpickling, so we adapt legacy node arrays before
-    the compiled Tree loader validates them.
-    """
 
     np, _ = _require_ml_stack()
     try:
@@ -90,15 +71,7 @@ def _install_sklearn_tree_pickle_compat() -> None:
     _tree._check_node_ndarray = _patched_check_node_ndarray
     _tree._brigid_pickle_compat_installed = True
 
-
 def _upgrade_legacy_sklearn_objects(bundle: dict[str, Any]) -> dict[str, Any]:
-    """
-    Fill in estimator attributes introduced after sklearn 1.2.x.
-
-    The bundled model predates some newer runtime-only attributes that sklearn
-    now expects during prediction. We add conservative defaults so inference can
-    proceed without changing the trained parameters themselves.
-    """
 
     model = bundle.get("model")
     if model is None:
@@ -114,14 +87,12 @@ def _upgrade_legacy_sklearn_objects(bundle: dict[str, Any]) -> dict[str, Any]:
 
     return bundle
 
-
 def _current_sklearn_version() -> str | None:
     try:
         import sklearn
     except ModuleNotFoundError:
         return None
     return getattr(sklearn, "__version__", None)
-
 
 def _run_compat_worker(csv_path: str) -> dict[str, Any]:
     if not COMPAT_PYTHON_PATH.exists():
@@ -159,7 +130,6 @@ def _run_compat_worker(csv_path: str) -> dict[str, Any]:
         raise RuntimeError(payload.get("error") or "Compatibility analytics worker failed.")
     return payload
 
-
 @lru_cache(maxsize=1)
 def _load_model_bundle() -> dict[str, Any]:
     if not MODEL_BUNDLE_PATH.exists():
@@ -175,7 +145,6 @@ def _load_model_bundle() -> dict[str, Any]:
             f"RTLS analytics could not load the model bundle because {missing} is not installed."
         ) from exc
 
-
 def _risk_band(probability: float) -> str:
     if probability >= 0.85:
         return "Critical"
@@ -185,7 +154,6 @@ def _risk_band(probability: float) -> str:
         return "Elevated"
     return "Low"
 
-
 def _iso(value: Any) -> str | None:
     if value is None:
         return None
@@ -193,7 +161,6 @@ def _iso(value: Any) -> str | None:
         return value.isoformat()
     except AttributeError:
         return str(value)
-
 
 def _analyze_csv_log_local(csv_path: str) -> dict[str, Any]:
     np, pd = _require_ml_stack()
@@ -492,7 +459,6 @@ def _analyze_csv_log_local(csv_path: str) -> dict[str, Any]:
         "tag_leaderboard": tag_rows,
         "trend": trend_rows,
     }
-
 
 def analyze_csv_log(csv_path: str) -> dict[str, Any]:
     if _current_sklearn_version() != MODEL_SKLEARN_VERSION:

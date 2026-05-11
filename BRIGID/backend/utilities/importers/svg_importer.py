@@ -1,15 +1,9 @@
-"""
-svg_importer.py
-Parse SVG files and return styled line segments for the BRIGID CAD engine.
-Pure Python — no Qt dependency.
-"""
 
 import xml.etree.ElementTree as ET
 import re
 from typing import Optional
 
 NON_WALL_STROKE = "#8e949c"
-
 
 def _normalize_stroke_color(value: Optional[str]) -> str:
     if not value:
@@ -27,7 +21,6 @@ def _normalize_stroke_color(value: Optional[str]) -> str:
         return f"#{r:02x}{g:02x}{b:02x}"
     return stroke
 
-
 def _effective_stroke(elem) -> str:
     stroke = _normalize_stroke_color(elem.attrib.get("stroke"))
     if stroke:
@@ -39,19 +32,13 @@ def _effective_stroke(elem) -> str:
             return _normalize_stroke_color(part.split(":", 1)[1])
     return ""
 
-
 def extract_styled_segments_from_svg(filepath: str):
-    """
-    Returns (entries, error) where each entry is:
-      {"segment": (x1, y1, x2, y2), "color": "#rrggbb", "role": "wall"|"non_wall"}
-    """
     try:
         tree = ET.parse(filepath)
         root = tree.getroot()
     except Exception as e:
         return [], f"Failed to parse SVG: {e}"
 
-    # Determine SVG height for Y-flip
     vb = root.attrib.get("viewBox", "")
     svg_height = None
     if vb:
@@ -68,7 +55,6 @@ def extract_styled_segments_from_svg(filepath: str):
         except (ValueError, TypeError):
             svg_height = None
 
-    # Check for embedded CAD metadata for perfect roundtrip
     cad_scale = root.attrib.get("data-cad-scale")
     cad_min_x = root.attrib.get("data-cad-min-x")
     cad_min_y = root.attrib.get("data-cad-min-y")
@@ -164,12 +150,9 @@ def extract_styled_segments_from_svg(filepath: str):
 
     return entries, None
 
-
 def extract_lines_from_svg(filepath: str):
-    """Simplified: returns (segments, error) without color metadata."""
     entries, error = extract_styled_segments_from_svg(filepath)
     return [e["segment"] for e in entries], error
-
 
 def _parse_path(d: str, add_segment):
     tokens = re.findall(
@@ -204,7 +187,7 @@ def _parse_path(d: str, add_segment):
 
         elif val_tok:
             if current_cmd in ('C', 'c', 'S', 's', 'Q', 'q', 'T', 't', 'A', 'a'):
-                pass  # skip curve args
+                pass                   
             else:
                 coords.append(float(val_tok))
 
@@ -233,12 +216,10 @@ def _parse_path(d: str, add_segment):
                 add_segment(current_pt[0], current_pt[1], new_pt[0], new_pt[1])
                 current_pt = new_pt; coords = []
 
-    # Flush any trailing coords
     if current_cmd and coords:
         segs, _, _ = _flush(current_cmd, coords, current_pt, first_pt)
         for seg in segs:
             add_segment(*seg)
-
 
 def _flush(cmd, coords, cp, fp):
     segs = []

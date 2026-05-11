@@ -1,4 +1,3 @@
-/* ── CentralCanvas ──────────────────────────────────────────────────── */
 .central-canvas {
   grid-area: canvas;
   position: relative;
@@ -7,7 +6,6 @@
   min-height: 0;
 }
 
-/* ── Grid pattern ── */
 .central-canvas__grid {
   position: absolute;
   inset: 0;
@@ -45,7 +43,6 @@
   50% { opacity: 0.8; transform: translate(-50%, -50%) scale(1.15); }
 }
 
-/* ── Module label ── */
 .central-canvas__module-label {
   position: absolute;
   top: 16px;
@@ -71,7 +68,6 @@
   opacity: 0.5;
 }
 
-/* ── Center prompt ── */
 .central-canvas__center-prompt {
   position: absolute;
   top: 50%;
@@ -128,7 +124,6 @@
   max-width: 280px;
 }
 
-/* ── Coordinate overlays ── */
 .central-canvas__coord {
   position: absolute;
   z-index: 2;
@@ -152,7 +147,6 @@
   opacity: 0.35;
 }
 
-/* ── Status bar ── */
 .central-canvas__status-bar {
   position: absolute;
   bottom: 0;

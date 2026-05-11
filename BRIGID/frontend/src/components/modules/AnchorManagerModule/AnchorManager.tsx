@@ -188,7 +188,7 @@ const AnchorManager: React.FC<AnchorManagerProps> = ({ workspaceId, workspaceNam
           setWorkspacePaths({ svg: data.svg, rooms: data.rooms })
         }
       })
-      .catch(() => { /* workspace paths are optional */ })
+      .catch(() => {  })
     return () => { cancelled = true }
   }, [workspaceId, workspaceName])
 
@@ -613,7 +613,6 @@ const AnchorManager: React.FC<AnchorManagerProps> = ({ workspaceId, workspaceNam
       }),
     }))
   }, [commitWorkspaceState])
-
 
   const handleAnchorUpdate = useCallback((roomName: string, anchorId: string, patch: Partial<AnchorData>) => {
     commitWorkspaceState(current => ({

@@ -132,8 +132,6 @@ const WorkspaceHost: React.FC<{
   )
 }
 
-// ── Workspace folder helpers ───────────────────────────────────────────────────
-
 async function registerWorkspaceFolder(workspaceId: string, workspaceName: string): Promise<void> {
   try {
     await fetch(`${API}/api/workspace/register`, {
@@ -142,7 +140,6 @@ async function registerWorkspaceFolder(workspaceId: string, workspaceName: strin
       body: JSON.stringify({ workspace_id: workspaceId, workspace_name: workspaceName }),
     })
   } catch {
-    // ignore
   }
 }
 
@@ -154,7 +151,6 @@ async function renameWorkspaceFolder(workspaceId: string, oldName: string, newNa
       body: JSON.stringify({ workspace_id: workspaceId, old_name: oldName, new_name: newName }),
     })
   } catch {
-    // ignore
   }
 }
 
@@ -166,7 +162,6 @@ async function deleteWorkspaceFolderIfEmpty(workspaceId: string, workspaceName: 
       body: JSON.stringify({ workspace_id: workspaceId, workspace_name: workspaceName }),
     })
   } catch {
-    // ignore
   }
 }
 
@@ -181,16 +176,13 @@ async function fetchExistingWorkspaces(): Promise<WorkspaceInfo[]> {
   }
 }
 
-// ── Main App ──────────────────────────────────────────────────────────────────
-
 const App: React.FC = () => {
   const nextTabNumRef = useRef(1)
   const [tabs, setTabs] = useState<WorkspaceTab[]>([])
-  
-  // Track active tab and whether we are on the global 'Home' screen instead
+
   const [activeTabId, setActiveTabId] = useState<string | null>(null)
   const [isHome, setIsHome] = useState<boolean>(true)
-  
+
   const [existingWorkspaces, setExistingWorkspaces] = useState<WorkspaceInfo[]>([])
   const [isLoading, setIsLoading] = useState(true)
 
@@ -198,8 +190,7 @@ const App: React.FC = () => {
   const [bleIdleAvailable, setBleIdleAvailable] = useState(true)
   const [bleIdleTags, setBleIdleTags] = useState<Array<{ tag_id: string; mac_address: string; status: string }>>([])
   const [bleIdleDetail, setBleIdleDetail] = useState<string>('')
-  
-  // Track per-tab workspace name for renaming (keeps names stable)
+
   const tabNamesRef = useRef<Record<string, string>>({})
 
   const activeTab = useMemo(
@@ -207,7 +198,6 @@ const App: React.FC = () => {
     [activeTabId, tabs],
   )
 
-  // On first load: discover existing workspace folders, seed nextTabNum, delay
   useEffect(() => {
     fetchExistingWorkspaces().then(existing => {
       setExistingWorkspaces(existing)
@@ -239,7 +229,6 @@ const App: React.FC = () => {
   }, [])
 
   const handleOpenWorkspace = useCallback((wsName: string) => {
-    // Check if it's already open
     const existingObj = Object.entries(tabNamesRef.current).find(([, name]) => name === wsName)
     if (existingObj) {
       setActiveTabId(existingObj[0])
@@ -266,7 +255,6 @@ const App: React.FC = () => {
           return
         }
       } catch {
-        // fall through to folder picker
       }
     }
     if (window.api?.openFolder) {
@@ -344,7 +332,6 @@ const App: React.FC = () => {
   const activeModule = activeTab?.module ?? null
 
   const handleModuleChange = useCallback((module: AppModule) => {
-    // If we're on Home Screen but have an activeTab context, switch to it seamlessly
     if (isHome && activeTabId) {
        setIsHome(false)
        setTabs(prev => prev.map(tab => (tab.id === activeTabId ? { ...tab, module } : tab)))
@@ -398,7 +385,7 @@ const App: React.FC = () => {
         ? data.svg
         : data.tags
       if (folderPath) await window.api?.openPath?.(folderPath)
-    } catch { /* ignore */ }
+    } catch {  }
   }, [activeTabId, activeTab, activeModule])
 
   const canCloseTab = tabs.length > 0 && activeTabId !== null
@@ -447,7 +434,6 @@ const App: React.FC = () => {
         setBleIdleTags(Array.isArray(data.tags) ? data.tags : [])
         setBleIdleDetail(typeof data.detail === 'string' ? data.detail : '')
       } catch {
-        // ignore
       }
     }
     poll()
@@ -465,7 +451,6 @@ const App: React.FC = () => {
         const data = await res.json().catch(() => ({}))
         setBleIdleEnabled(Boolean(data.enabled))
       } catch {
-        // ignore
       }
       return
     }
@@ -495,7 +480,7 @@ const App: React.FC = () => {
       <ConfirmHost />
       <AnimatePresence>
         {isLoading && (
-          <motion.div 
+          <motion.div
             className="app-loader"
             initial={{ opacity: 1 }}
             exit={{ opacity: 0 }}
@@ -547,11 +532,11 @@ const App: React.FC = () => {
             onOpenFolder={handleOpenFolder}
           />
 
-          <LeftRail 
-            activeModule={isHome ? null : activeModule} 
-            onModuleChange={handleModuleChange} 
+          <LeftRail
+            activeModule={isHome ? null : activeModule}
+            onModuleChange={handleModuleChange}
             onHomeClick={() => setIsHome(true)}
-            disabled={!activeTab && isHome === false} 
+            disabled={!activeTab && isHome === false}
           />
 
           {tabs.map(tab => (

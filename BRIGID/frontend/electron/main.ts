@@ -110,10 +110,8 @@ async function killProcessTree(pid: number): Promise<void> {
       process.kill(pid, 0)
       process.kill(pid, 'SIGKILL')
     } catch {
-      // Process exited after SIGTERM.
     }
   } catch {
-    // The process may already be gone.
   }
 }
 
@@ -203,7 +201,6 @@ async function stopCadServer(): Promise<void> {
       try {
         child.kill('SIGTERM')
       } catch {
-        // The process may already be exiting.
       }
       await sleep(300)
       await killProcessTree(child.pid)
@@ -218,8 +215,6 @@ async function stopCadServer(): Promise<void> {
     shutdownPromise = null
   }
 }
-
-// ── Paths ──────────────────────────────────────────────────────────────
 
 const brigidRoot = is.dev
   ? join(app.getAppPath(), '..')          // BRIGID/frontend/.. → BRIGID/
@@ -241,8 +236,6 @@ ipcMain.handle('fs:read-text-file', async (_event, path: string) => {
     return { success: false, error: String(error) }
   }
 })
-
-// ── File dialogs ───────────────────────────────────────────────────────
 
 ipcMain.handle('dialog:open-file', async (_event, options: Electron.OpenDialogOptions) => {
   if (!mainWindow) return { canceled: true, filePaths: [] }

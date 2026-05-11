@@ -34,7 +34,6 @@ const CADRightPanel: React.FC<Props> = ({ state, onCommand, status, workspaceId,
     let cancelled = false
 
     if (workspaceId && workspaceName) {
-      // Fetch workspace-specific svg/ and pdf/ paths from the backend
       fetch(`${API}/api/workspace/paths/${encodeURIComponent(workspaceId)}?workspace_name=${encodeURIComponent(workspaceName)}`)
         .then(r => r.json())
         .then(data => {

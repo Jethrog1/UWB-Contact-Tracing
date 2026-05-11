@@ -1,17 +1,10 @@
-# snap.py
+
 import math
 
 class SnapController:
-    """
-    Centralizes all snapping helpers. Methods mirror the original
-    functions from main_cad.py to preserve behavior and minimize diffs.
-    """
     def __init__(self, app):
         self.app = app
 
-    # -------------------------
-    # Angle snap
-    # -------------------------
     def _get_angle_snap_list(self):
         vals = []
         for sv in self.app.snap_angle_vars:
@@ -71,14 +64,10 @@ class SnapController:
         ax, ay, snapped = self._angle_snap_if_close(x_fixed, y_fixed, x_free, y_free)
         return (ax, ay) if snapped else (x_free, y_free)
 
-    # -------------------------
-    # Snapping helpers
-    # -------------------------
     def _find_snap(self, wx, wy, ignore_line=None, ignore_points=None):
         if ignore_points is None:
             ignore_points = set()
 
-        # Clear guides (line match guides are re-added later)
         self.app.alignment_guides = []
         self.app.parallel_guides = []
         self.app.equal_length_guides = []
@@ -86,7 +75,6 @@ class SnapController:
         best_ep = None
         best_ep_d = 1e18
 
-        # Collect all endpoints
         all_endpoints = []
         for ln in self.app.lines:
             if ignore_line is not None and ln is ignore_line:
@@ -98,7 +86,6 @@ class SnapController:
             if self.app._vkey(*p2) not in ignore_points:
                 all_endpoints.append(p2)
 
-        # Endpoint snapping
         for p in all_endpoints:
             d = math.hypot(wx - p[0], wy - p[1])
             if d < best_ep_d:
@@ -108,7 +95,6 @@ class SnapController:
         if best_ep is not None and best_ep_d <= getattr(self.app, "snap_dist_endpoint", 0.20):
             return best_ep[0], best_ep[1], "endpoint"
 
-        # Optional axis alignment snapping
         snap_axis_on = bool(getattr(self.app, "snap_axis_var", None).get()) if hasattr(self.app,
                                                                                        "snap_axis_var") else False
 
@@ -147,7 +133,6 @@ class SnapController:
             if best_x_align is not None or best_y_align is not None:
                 return final_x, final_y, "alignment"
 
-        # Line snapping
         best_p = None
         best_ld = 1e18
         for ln in self.app.lines:
@@ -165,12 +150,7 @@ class SnapController:
         return wx, wy, None
 
     def _apply_line_match_snap(self, x0, y0, wx, wy, ignore_line=None):
-        """
-        Line Match snapping core (parallel axis snap + equal-length check + guide generation).
-        This was previously _apply_line_match_snap on the app; logic preserved.
-        """
 
-        # HARD GATE: if Line Match toggle is OFF, do nothing (prevents hidden snapping in manipulate-line mode)
         if hasattr(self.app, "line_match_var") and not bool(self.app.line_match_var.get()):
             self.app.parallel_guides = []
             self.app.equal_length_guides = []
@@ -194,7 +174,6 @@ class SnapController:
             ux = dx / L
             uy = dy / L
 
-            # Project (wx, wy) onto infinite line defined by ln
             px = wx - ln.x1
             py = wy - ln.y1
             proj_t = px * ux + py * uy
@@ -207,7 +186,6 @@ class SnapController:
 
         result_x, result_y = wx, wy
 
-        # If multiple candidates, try to snap to intersection of their axes
         if len(active_lines) >= 2:
             best = None
             best_d = 1e18
@@ -219,7 +197,7 @@ class SnapController:
                     ln2, ux2, uy2, _, _ = active_lines[j]
                     det = ux1 * (-uy2) - (-ux2) * uy1
                     if abs(det) < 1e-9:
-                        continue  # parallel axes
+                        continue                 
 
                     rhsx = ln2.x1 - ln1.x1
                     rhsy = ln2.y1 - ln1.y1
@@ -238,7 +216,6 @@ class SnapController:
                 self.app.equal_length_guides = []
                 return result_x, result_y
 
-        # Else: snap to the closest single axis
         if active_lines:
             ln1, ux1, uy1, cx, cy = min(
                 active_lines,
@@ -246,7 +223,6 @@ class SnapController:
             )
             result_x, result_y = cx, cy
 
-            # Equal-length check relative to THAT axis, if the start (x0,y0) is also on the primary axis
             start_px = x0 - ln1.x1
             start_py = y0 - ln1.y1
             start_perp = abs(start_px * uy1 - start_py * ux1)
@@ -262,39 +238,34 @@ class SnapController:
                         result_y = y0 + sgn * ref_len * uy1
                         self.app.equal_length_guides = [(x0, y0, result_x, result_y, ln1)]
 
-            # Store guides for visualization
             self.app.parallel_guides = [(x0, y0, result_x, result_y, ln) for ln, *_ in active_lines]
             return result_x, result_y
 
-        # No axis candidates; clear guides
         self.app.parallel_guides = []
         self.app.equal_length_guides = []
         return result_x, result_y
     def _apply_snap_for_cursor(self, wx, wy, ignore_line=None, ignore_points=None):
-        # First apply standard snapping (endpoints, alignment, lines)
+
         sx, sy, kind = self._find_snap(wx, wy, ignore_line=ignore_line, ignore_points=ignore_points)
 
         if kind == "endpoint":
             self.app.cursor_world_snapped = (sx, sy)
             self.app.snap_hint = ("endpoint", sx, sy)
-            # Clear guides if we snapped to a hard geometry point
+
             self.app.parallel_guides = []
             self.app.equal_length_guides = []
             return
 
-        # If drawing a line, check for axis snapping (start point exists)
         if self.app.temp_line_start:
             x0, y0 = self.app.temp_line_start
 
-            # First apply angle snap
             ax, ay = self._apply_angle_snap_for_line(x0, y0, sx, sy)
 
-            # Then apply slope axis snap ONLY if line match is enabled
             if self.app.line_match_var.get():
                 px, py = self._apply_line_match_snap(x0, y0, ax, ay, ignore_line=None)
             else:
                 px, py = ax, ay
-                # Clear guides when line match is off
+
                 self.app.parallel_guides = []
                 self.app.equal_length_guides = []
 
@@ -302,18 +273,16 @@ class SnapController:
             self.app.snap_hint = None
             return
 
-        # When NOT drawing (just hovering cursor), check slope axes ONLY if enabled
         else:
             self.app.parallel_guides = []
             self.app.equal_length_guides = []
 
             if self.app.line_match_var.get():
                 axis_snap_distance = 0.35
-                intersection_tol = 0.55  # Tolerance to snap to a calculated intersection
+                intersection_tol = 0.55                                                  
 
                 candidates = []
 
-                # 1. Gather all lines where cursor is close to infinite slope axis
                 for ln in self.app.lines:
                     dx_ln = ln.x2 - ln.x1
                     dy_ln = ln.y2 - ln.y1
@@ -325,11 +294,9 @@ class SnapController:
                     ux_ln = dx_ln / len_ln
                     uy_ln = dy_ln / len_ln
 
-                    # Calculate perpendicular distance from cursor to the infinite line
                     px = sx - ln.x1
                     py = sy - ln.y1
 
-                    # Project cursor onto axis to get closest point
                     proj_t = px * ux_ln + py * uy_ln
                     closest_x = ln.x1 + proj_t * ux_ln
                     closest_y = ln.y1 + proj_t * uy_ln
@@ -340,15 +307,14 @@ class SnapController:
                         candidates.append((perp_dist, ln, ux_ln, uy_ln, closest_x, closest_y))
 
                 if candidates:
-                    # Sort by distance to the axis
+
                     candidates.sort(key=lambda x: x[0])
 
                     best_snap = None
                     active_guides = []
 
-                    # 2. Check for Intersection between top candidates
                     if len(candidates) >= 2:
-                        # Check pairs for valid intersection near cursor
+
                         for i in range(len(candidates)):
                             if best_snap: break
                             for j in range(i + 1, len(candidates)):
@@ -356,9 +322,8 @@ class SnapController:
                                 _, ln2, ux2, uy2, _, _ = candidates[j]
 
                                 det = ux1 * (-uy2) - (-ux2) * uy1
-                                if abs(det) < 1e-9: continue  # Lines are parallel
+                                if abs(det) < 1e-9: continue                      
 
-                                # Solve intersection
                                 rhsx = ln2.x1 - ln1.x1
                                 rhsy = ln2.y1 - ln1.y1
                                 t = (rhsx * (-uy2) - (-ux2) * rhsy) / det
@@ -366,22 +331,18 @@ class SnapController:
                                 ix = ln1.x1 + t * ux1
                                 iy = ln1.y1 + t * uy1
 
-                                # Only snap if intersection is actually near the cursor
                                 if math.hypot(sx - ix, sy - iy) < intersection_tol:
                                     best_snap = (ix, iy)
                                     active_guides = [ln1, ln2]
                                     break
 
-                    # 3. Fallback to single closest axis if no intersection found
                     if not best_snap:
                         _, ln, _, _, cx, cy = candidates[0]
                         best_snap = (cx, cy)
                         active_guides = [ln]
 
-                    # Apply snap
                     self.app.cursor_world_snapped = best_snap
 
-                    # Generate guides for visualization
                     gx, gy = best_snap
                     self.app.parallel_guides = [(gx, gy, gx, gy, ln) for ln in active_guides]
 
@@ -391,9 +352,6 @@ class SnapController:
         self.app.cursor_world_snapped = (sx, sy)
         self.app.snap_hint = None
 
-    # -------------------------
-    # Vertex helpers
-    # -------------------------
     def _find_vertex_near(self, wx, wy):
         best = None
         best_d = 1e18
@@ -442,4 +400,4 @@ class SnapController:
                 best = (cx, cy)
         return best
 
-#123aaaadd1122bbccdd1/1
+                       

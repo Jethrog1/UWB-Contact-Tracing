@@ -1,4 +1,3 @@
-/* ── CAD Right Panel — glassmorphism matching calibration tool ──── */
 
 .cad-right-panel {
   position: absolute;
@@ -24,7 +23,6 @@
 .cad-right-panel::-webkit-scrollbar { width: 4px; }
 .cad-right-panel::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.08); }
 
-/* ── Connection status ───────────────────────────────────────────── */
 .crp-status {
   display: flex;
   align-items: center;
@@ -53,7 +51,6 @@
   letter-spacing: 0.04em;
 }
 
-/* ── Sections ────────────────────────────────────────────────────── */
 .crp-section {
   padding: 8px 10px;
   border-bottom: 1px solid var(--border-subtle);
@@ -70,7 +67,6 @@
   margin-bottom: 6px;
 }
 
-/* ── Tool grid ───────────────────────────────────────────────────── */
 .crp-tool-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -119,7 +115,7 @@
   font-size: 13px;
   line-height: 1;
   flex-shrink: 0;
-  display: none; /* Hidden per user request */
+  display: none;
 }
 
 .crp-tool-label {
@@ -129,7 +125,6 @@
   text-overflow: ellipsis;
 }
 
-/* ── Icon button row ─────────────────────────────────────────────── */
 .crp-icon-row {
   display: flex;
   gap: 4px;
@@ -168,7 +163,6 @@
   color: #ff5b4d;
 }
 
-/* ── Toggle rows ─────────────────────────────────────────────────── */
 .crp-toggle-row {
   display: flex;
   align-items: center;
@@ -217,7 +211,6 @@
   background: var(--accent-primary);
 }
 
-/* ── Angle snap inputs ───────────────────────────────────────────── */
 .crp-angle-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -241,7 +234,6 @@
   border-color: var(--border-active);
 }
 
-/* ── File I/O section ─────────────────────────────────────────────── */
 .crp-section--io {
   border-top: 1px solid var(--border-subtle);
   margin-top: 2px;

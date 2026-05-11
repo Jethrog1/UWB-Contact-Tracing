@@ -12,19 +12,11 @@ from utilities.importers.image_importer import extract_lines_from_image
 from utilities.exporters.svg_exporter import export_lines_to_svg
 from utilities.exporters.pdf_exporter import export_lines_to_pdf
 
-
 CTRL_MASK = 0x0004
 SHIFT_MASK = 0x0001
 BUTTON1_MASK = 0x0100
 
-
 class CADEngine:
-    """
-    Thin command bridge over the restored headless CAD document.
-
-    Geometry behavior lives in backend/CAD/*.
-    This class only adapts frontend commands into the original Python event flow.
-    """
 
     def __init__(self, canvas_w: int = 800, canvas_h: int = 600):
         self.doc = HeadlessCADDocument(canvas_w=canvas_w, canvas_h=canvas_h)
@@ -129,7 +121,7 @@ class CADEngine:
             elif kind == "context_close":
                 self.doc.dropdown.close_menu()
             elif kind == "open_cad":
-                self.doc.lines.clear()  # Replace existing design
+                self.doc.lines.clear()                           
                 self._handle_import(str(cmd.get("filepath", "")))
             elif kind == "import_file":
                 self._handle_import(str(cmd.get("filepath", "")))
@@ -257,8 +249,6 @@ class CADEngine:
             self.doc.trim.trim2_var.set(text)
             self.doc.trim._on_entry_change(2)
 
-    # ── Import / Export ────────────────────────────────────────────────
-
     def _handle_import(self, filepath: str) -> None:
         if not filepath:
             self.doc.post_error("Import", "No file path provided.")
@@ -284,7 +274,6 @@ class CADEngine:
             self.doc.post_error("Import", "No geometry found in file.")
             return
 
-        # Centre imported geometry on the current viewport
         all_wx = [e["segment"][0] for e in entries] + [e["segment"][2] for e in entries]
         all_wy = [e["segment"][1] for e in entries] + [e["segment"][3] for e in entries]
         geo_cx = (min(all_wx) + max(all_wx)) / 2.0

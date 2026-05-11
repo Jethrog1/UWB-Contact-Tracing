@@ -5,26 +5,10 @@ from .runtime import notify_error
 EPS = 1e-9
 
 class DimensionErrors:
-    """
-    DimensionErrors: a non-invasive "referee" for dimension clashes.
-
-    Philosophy:
-      - Never changes your existing dimensioning rules.
-      - It simply snapshots state -> lets the rule run -> validates ALL existing constraints.
-      - If ANY old constraint is violated, it rolls back and reports an error.
-
-    Also hosts the "width retry" behavior:
-      - Try user selection order (first is base, second moves)
-      - If that breaks ANY old constraint -> rollback and try swapped
-      - If both break -> rollback and fail
-    """
 
     def __init__(self, app):
         self.app = app
 
-    # -------------------------
-    # Snapshot / restore (in-place)
-    # -------------------------
     def snap_state_inplace(self):
         import copy
         app = self.app
@@ -54,15 +38,9 @@ class DimensionErrors:
         if hasattr(app, "_solver_drag_lines"):
             app._solver_drag_lines = set(snap.get("_solver_drag_lines", set()))
 
-    # -------------------------
-    # Popup helper
-    # -------------------------
     def post_error(self, title, msg):
         notify_error(self.app, title, msg)
 
-    # -------------------------
-    # Constraint validation
-    # -------------------------
     def _angle_between_lines_at_vertex(self, A, B, vx, vy):
         def out_vec(ln):
             if abs(ln.x1 - vx) < 1e-6 and abs(ln.y1 - vy) < 1e-6:
@@ -83,20 +61,8 @@ class DimensionErrors:
         return math.degrees(math.acos(d))
 
     def check_all_constraints_ok(self, except_dist_pair=None, len_tol=1e-3, dist_tol=1e-3, ang_tol=2.0):
-        """
-        Returns True if ALL constraints are satisfied.
-
-        Tolerances are intentionally relaxed to match legacy behavior:
-          - Your solvers often land near-exact (not perfectly exact) due to iterative / float drift.
-          - We only want to error on REAL clashes, not tiny numerical noise.
-
-        except_dist_pair:
-          - tuple(LineA, LineB) to ignore an *existing* distance constraint between them.
-            Important when we are applying/editing that same width dimension.
-        """
         app = self.app
 
-        # 1) fixed lengths
         for ln, meta in getattr(app, "fixed_lengths", {}).items():
             try:
                 want = float(meta.get("len", 0.0))
@@ -108,7 +74,6 @@ class DimensionErrors:
             if abs(got - want) > len_tol:
                 return False
 
-        # 2) distances
         try:
             from .dimension_tool import _closest_points_between_segments
         except Exception:
@@ -144,7 +109,6 @@ class DimensionErrors:
             if abs(float(d0) - want) > dist_tol:
                 return False
 
-        # 3) angles
         for ent in getattr(app, "angle_constraints", []):
             a = ent.get("a")
             b = ent.get("b")
@@ -159,7 +123,6 @@ class DimensionErrors:
 
             got = self._angle_between_lines_at_vertex(a, b, vx, vy)
 
-            # Normalize to smallest equivalent difference (helps around 0/180)
             diff = abs(got - want)
             if diff > 180:
                 diff = 360 - diff
@@ -169,15 +132,7 @@ class DimensionErrors:
 
         return True
 
-    # -------------------------
-    # Generic "run rule then verify"
-    # -------------------------
     def run_rule_with_guard(self, title, msg, rule_fn, except_dist_pair=None):
-        """
-        rule_fn: callable that performs the change (using your existing logic).
-        If it breaks ANY existing constraint, rollback and show error.
-        Returns True on success, False on rollback.
-        """
         snap = self.snap_state_inplace()
         try:
             rule_fn()
@@ -191,17 +146,7 @@ class DimensionErrors:
             self.post_error(title, msg)
             return False
 
-    # -------------------------
-    # Width/distance apply with retry (selection-order guard)
-    # -------------------------
     def apply_distance_with_retry(self, rules, a, b, target_dist, apply_once_fn, closest_fn):
-        """
-        apply_once_fn(base, move, target_dist) -> (Pa, Pb)
-          - does ONE attempt (base fixed, move altered) using your current rules.
-
-        closest_fn(a, b) -> (Pa, Pb)
-          - returns closest points between the actual a/b after success.
-        """
         target_dist = float(target_dist)
 
         def attempt(base, move):
@@ -216,12 +161,10 @@ class DimensionErrors:
                 self.restore_state_inplace(snap)
                 return None, None
 
-        # try user order first
         Pa, Pb = attempt(a, b)
         if Pa is not None and Pb is not None:
             return Pa, Pb
 
-        # try swapped
         Pa, Pb = attempt(b, a)
         if Pa is not None and Pb is not None:
             return Pa, Pb
@@ -232,36 +175,13 @@ class DimensionErrors:
         )
         return None, None
 
-
 class DimensionRules:
-    """
-    Centralized "dimension application rules" layer.
-
-    Goal: applying a dimension should behave like precise manual manipulation:
-      - protect any preset dimensions/constraints
-      - avoid unwanted rotation/drift
-      - when possible, drive a closed rectangle by moving its vertices like a user drag would
-    """
 
     def __init__(self, app):
         self.app = app
         self.errors = DimensionErrors(app)
 
-    # -------------------------
-    # Public API
-    # -------------------------
     def apply_length_dimension(self, ln, target_len):
-        """
-        Apply a length dimension without breaking existing constraints.
-
-        - Keeps the existing rectangle rule for fully 90°-dimensioned rectangles.
-        - Otherwise applies length using a "manual drag" style move:
-            * If the line touches any angle constraints, try anchoring one endpoint and
-              dragging the other along the line direction (both directions, retry).
-            * Fall back to midpoint-resize driver for unconstrained cases.
-        - Returns False if it cannot satisfy the new length while keeping all existing
-          dimensions/constraints valid.
-        """
         if ln is None:
             return False
 
@@ -274,7 +194,6 @@ class DimensionRules:
 
         app = self.app
 
-        # --- helpers ---
         def snap_state():
             return app._snapshot_state()
 
@@ -282,8 +201,7 @@ class DimensionRules:
             app._restore_state(snap)
 
         def line_has_angle_at_endpoints(L):
-            # True if any angle constraint references this line and is anchored at (approximately)
-            # either endpoint of the line.
+
             x1, y1 = L.x1, L.y1
             x2, y2 = L.x2, L.y2
             for ent in getattr(app, "angle_constraints", []):
@@ -302,7 +220,6 @@ class DimensionRules:
                     continue
             return False
 
-        # --- rectangle rule stays exactly as-is ---
         loop = self._find_right_angle_rect_loop(ln)
         if loop:
             snap = snap_state()
@@ -312,7 +229,6 @@ class DimensionRules:
                 return False
             return True
 
-        # --- non-rectangle: prefer "vertex drag" style if angles are involved ---
         snap = snap_state()
 
         if line_has_angle_at_endpoints(ln):
@@ -327,7 +243,6 @@ class DimensionRules:
                     return True
             restore_state(snap)
 
-        # --- fallback: midpoint driver (original behavior) ---
         snap = snap_state()
         self._set_line_length_as_driver(ln, float(target_len), iterations=12)
         if not self._constraints_satisfied():
@@ -337,14 +252,6 @@ class DimensionRules:
         return True
 
     def apply_distance_dimension(self, a, b, target_dist):
-        """
-        Rule v1 (Right-angle rectangle width/height):
-        If a and b are opposite sides of the same 90°-dimensioned rectangle loop:
-          - lock axis-aligned (no rotation)
-          - preserve the other rectangle dimension (prefer fixed length dims if present)
-          - set distance between those opposite sides to target_dist
-        Otherwise fallback to app._apply_distance_constraint.
-        """
         if a is None or b is None:
             return None, None
 
@@ -364,19 +271,6 @@ class DimensionRules:
         )
 
     def apply_angle_dimension(self, lnA, lnB, vx, vy, target_deg):
-        """
-        Angle dimension rules (v2 - FIXED TRIANGLE CASE):
-
-        The core principle: if manual vertex manipulation can achieve a configuration,
-        the dimension system should also succeed using the same mechanism.
-
-        Strategy:
-          1. Try rotating line B with A as driver (standard case)
-          2. Try rotating line A with B as driver (swapped)
-          3. TRIANGLE RULE: If both legs are fixed-length, identify the opposite edge
-             and make it the ONLY drag line, allowing it to absorb all changes
-          4. Use increased solver iterations for challenging cases
-        """
 
         app = self.app
         if lnA is None or lnB is None:
@@ -386,7 +280,6 @@ class DimensionRules:
         if target_deg <= 0.0 or target_deg >= 180.0:
             return False
 
-        # ---------- helpers (local) ----------
         def snap_state():
             return app._snapshot_state()
 
@@ -416,8 +309,7 @@ class DimensionRules:
             return math.degrees(math.acos(d))
 
         def check_all_constraints_ok(except_pair=None, angle_tol=0.75, len_tol=1e-3, dist_tol=1e-3):
-            # except_pair: (lnA, lnB, vx, vy) to exclude the one we're currently applying
-            # 1) fixed lengths
+
             for ln, meta in list(app.fixed_lengths.items()):
                 try:
                     want = float(meta.get("len", 0.0))
@@ -429,7 +321,6 @@ class DimensionRules:
                 except Exception:
                     return False
 
-            # 2) distances
             for ent in list(app.distance_constraints):
                 try:
                     a = ent["a"]
@@ -445,7 +336,6 @@ class DimensionRules:
                 except Exception:
                     return False
 
-            # 3) angles
             for ent in list(app.angle_constraints):
                 try:
                     a = ent["a"]
@@ -473,14 +363,12 @@ class DimensionRules:
             prev_active = getattr(app, "_solver_drag_lines", set())
 
             try:
-                # 1) One-shot rotate to get close
+
                 app._apply_angle_constraint(pre_keep, pre_rotate, vx, vy, target_deg)
 
-                # 2) Solve with chosen driver set
                 app._solver_drag_lines = set(active_drag_lines) if active_drag_lines else set()
                 app._solve_constraints(int(iterations))
 
-                # 3) Validate all existing constraints still satisfied
                 if not check_all_constraints_ok(except_pair=(lnA, lnB, vx, vy)):
                     restore_state(snap)
                     return False
@@ -489,15 +377,9 @@ class DimensionRules:
             finally:
                 app._solver_drag_lines = prev_active
 
-        # ---------- Decide which rule applies ----------
-
         fixedA = lnA in app.fixed_lengths
         fixedB = lnB in app.fixed_lengths
 
-        # TRIANGLE RULE (FIXED):
-        # If both legs are length-constrained, the only way to change the angle
-        # is to adjust the opposite edge (the edge connecting the two non-vertex endpoints).
-        # This matches what happens during manual vertex dragging.
         if fixedA and fixedB:
             pa = other_endpoint(lnA, vx, vy)
             pb = other_endpoint(lnB, vx, vy)
@@ -505,7 +387,6 @@ class DimensionRules:
             def pts_match(p, q, tol=1e-6):
                 return math.hypot(p[0] - q[0], p[1] - q[1]) <= tol
 
-            # Find the line connecting the two opposite endpoints
             tri_opposite = None
             for ln in list(app.lines):
                 if ln is lnA or ln is lnB:
@@ -517,29 +398,23 @@ class DimensionRules:
                     break
 
             if tri_opposite is not None:
-                # KEY FIX: Use MORE iterations and make ONLY the opposite edge the drag line
-                # This allows the solver to find the solution that manual dragging would find
+
                 if run_strategy(lnA, lnB, {tri_opposite}, iterations=30):
                     return True
-                # Also try swapped rotation direction
+
                 if run_strategy(lnB, lnA, {tri_opposite}, iterations=30):
                     return True
 
-        # Standard case: try rotating one line while the other is kept
         if run_strategy(lnA, lnB, {lnB}, iterations=22):
             return True
         if run_strategy(lnB, lnA, {lnA}, iterations=22):
             return True
 
-        # Last resort: allow both lines as drag lines (more freedom)
         if run_strategy(lnA, lnB, {lnA, lnB}, iterations=28):
             return True
 
         return False
 
-    # -------------------------
-    # Rectangle detection
-    # -------------------------
     def _find_right_angle_rect_loop(self, seed_line):
         loop = self._find_4_cycle_including_line(seed_line)
         if not loop:
@@ -649,9 +524,6 @@ class DimensionRules:
                     return True
         return False
 
-    # -------------------------
-    # Rectangle axis lock + preserve dimensions
-    # -------------------------
     def _rect_vertices(self, loop):
         pts = []
         seen = set()
@@ -670,7 +542,7 @@ class DimensionRules:
         out = {}
         for x, y in pts:
             left = x <= cx
-            top = y <= cy  # in your world, +Y is down => smaller y is "top"
+            top = y <= cy                                                   
             if left and top:
                 out["TL"] = (x, y)
             elif (not left) and top:
@@ -698,9 +570,6 @@ class DimensionRules:
         return abs(L.x2 - L.x1) >= abs(L.y2 - L.y1)
 
     def _rect_fixed_dims(self, loop):
-        """
-        Returns (w_fixed, h_fixed) from existing fixed length dimensions on the loop if present.
-        """
         app = self.app
         w_vals = []
         h_vals = []
@@ -722,11 +591,6 @@ class DimensionRules:
         return w_fixed, h_fixed
 
     def _rect_set_edge_length(self, loop, driver_ln, new_len):
-        """
-        Driver for length dimensions on a rectangle:
-          - if driver is horizontal-ish => width=new_len, height preserved
-          - if driver is vertical-ish   => height=new_len, width preserved
-        """
         pts = self._rect_vertices(loop)
         if len(pts) != 4:
             return False
@@ -754,11 +618,6 @@ class DimensionRules:
         return True
 
     def _rect_set_distance_between_opposites(self, loop, a, b, target_dist):
-        """
-        If a/b are opposite horizontals => set HEIGHT to target_dist.
-        If a/b are opposite verticals   => set WIDTH to target_dist.
-        Keeps other dimension constant (prefers fixed dims), locks axis, keeps center fixed.
-        """
         pts = self._rect_vertices(loop)
         if len(pts) != 4:
             return False
@@ -792,10 +651,6 @@ class DimensionRules:
         return True
 
     def _apply_rect_corners(self, loop, corners, iterations=10):
-        """
-        Moves the four rectangle vertices to TL/TR/BR/BL coords.
-        Uses weld propagation and then solves constraints with loop lines marked as "drag".
-        """
         app = self.app
         pts = self._rect_vertices(loop)
         cls, _, _ = self._group_by_center(pts)
@@ -838,13 +693,7 @@ class DimensionRules:
 
         return True
 
-    # -------------------------
-    # Fallback manipulation-style apply
-    # -------------------------
     def _set_line_length_as_driver(self, ln, target_len, iterations=12):
-        """
-        Original fallback length-apply: resize about midpoint, weld endpoints, then solve with ln as the drag line.
-        """
         app = self.app
 
         dx = ln.x2 - ln.x1
@@ -876,12 +725,6 @@ class DimensionRules:
             app._solver_drag_lines = prev_active
 
     def _set_line_length_by_drag_endpoint(self, ln, target_len, anchor_end="p1", iterations=18):
-        """
-        Manual-drag style length apply:
-          - Keep one endpoint fixed (anchor_end) and move the other endpoint along the current line direction
-          - Move is applied via the same vertex-ref mechanism used by Manipulate Vertex
-          - Solve constraints with the dragged-vertex incident lines marked as drag lines
-        """
         app = self.app
 
         if anchor_end == "p1":
@@ -901,14 +744,13 @@ class DimensionRules:
         nx = ax + ux * float(target_len)
         ny = ay + uy * float(target_len)
 
-        # Move the "dragged" vertex using the same refs the app uses for vertex manipulation
         try:
             refs = app._collect_vertex_refs(mx, my)
         except Exception:
             refs = None
 
         if not refs:
-            # fallback: at least move this one endpoint on ln
+
             if anchor_end == "p1":
                 ln.x2, ln.y2 = nx, ny
             else:
@@ -917,10 +759,9 @@ class DimensionRules:
             try:
                 app.snap._set_refs_vertex(refs, nx, ny)
             except Exception:
-                # fallback to weld propagation if refs path isn't available
+
                 app._weld_propagate_vertex_move(mx, my, nx, ny, ignore_line=None)
 
-        # Build drag line set exactly like Manipulate Vertex (all lines incident to the dragged vertex)
         drag_lines = set()
         if refs:
             try:
@@ -941,18 +782,8 @@ class DimensionRules:
         return True
 
     def _constraints_satisfied(self, len_tol=1e-3, dist_tol=1e-3, angle_tol=0.75):
-        """
-        Check that all stored constraints/dimensions are currently satisfied.
-
-        - Fixed lengths are enforced to within len_tol.
-        - Distance (width) constraints are enforced to within dist_tol.
-        - Angle constraints are enforced to within angle_tol (degrees).
-
-        NOTE: This intentionally does NOT care about unconstrained line lengths/angles.
-        """
         app = self.app
 
-        # ---- fixed lengths ----
         for ln, meta in list(getattr(app, "fixed_lengths", {}).items()):
             try:
                 want = float(meta.get("len", 0.0))
@@ -964,7 +795,6 @@ class DimensionRules:
             except Exception:
                 return False
 
-        # ---- distance constraints ----
         try:
             from .dimension_tool import _closest_points_between_segments
         except Exception:
@@ -986,7 +816,6 @@ class DimensionRules:
             except Exception:
                 return False
 
-        # ---- angle constraints ----
         def out_vec(ln, vx, vy):
             if (ln.x1 - vx) * (ln.x1 - vx) + (ln.y1 - vy) * (ln.y1 - vy) <= 1e-6:
                 return (ln.x2 - vx, ln.y2 - vy)
@@ -1021,9 +850,6 @@ class DimensionRules:
 
         return True
 
-    # -------------------------
-    # Closest points helper (for width/distance dims)
-    # -------------------------
     def _closest_points_between_lines(self, a, b):
         def dot(ax, ay, bx, by):
             return ax * bx + ay * by
@@ -1088,4 +914,3 @@ class DimensionRules:
 
         return (Px, Py), (Qx, Qy)
 
-#123aaaadd1122bbccdd1/1112/2

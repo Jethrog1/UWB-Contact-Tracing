@@ -1,9 +1,3 @@
-"""
-BRIGID Backend — FastAPI Stub
-============================
-This is a placeholder backend for the BRIGID RTLS Desktop Platform.
-No real functionality is implemented yet.
-"""
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -14,7 +8,6 @@ app = FastAPI(
     version="0.1.0",
 )
 
-# CORS for Electron renderer
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -23,16 +16,12 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-
 @app.get("/health")
 async def health_check():
-    """Health check endpoint."""
     return {"status": "ok", "service": "brigid-api", "version": "0.1.0"}
-
 
 @app.get("/api/v1/status")
 async def system_status():
-    """Placeholder system status endpoint."""
     return {
         "system": "online",
         "modules": {

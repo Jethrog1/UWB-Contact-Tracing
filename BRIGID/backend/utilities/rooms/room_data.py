@@ -1,7 +1,3 @@
-"""
-room_data.py — Room and Anchor dataclasses (no PyQt6).
-Ported from 2DLCAD/room_data.py with QPolygonF replaced by ray-casting.
-"""
 
 from __future__ import annotations
 
@@ -19,14 +15,8 @@ from .geometry_utils import (
 Segment = Tuple[float, float, float, float]
 Point = Tuple[float, float]
 
-
-# ---------------------------------------------------------------------------
-# Segment comparison
-# ---------------------------------------------------------------------------
-
 def _points_close(a: Point, b: Point, eps: float = 1e-3) -> bool:
     return abs(float(a[0]) - float(b[0])) <= eps and abs(float(a[1]) - float(b[1])) <= eps
-
 
 def segments_equal(seg_a: Segment, seg_b: Segment, eps: float = 1e-3) -> bool:
     ax1, ay1, ax2, ay2 = seg_a
@@ -38,7 +28,6 @@ def segments_equal(seg_a: Segment, seg_b: Segment, eps: float = 1e-3) -> bool:
         _points_close((ax1, ay1), (bx2, by2), eps)
         and _points_close((ax2, ay2), (bx1, by1), eps)
     )
-
 
 def segments_match(segments_a: List[Segment], segments_b: List[Segment], eps: float = 1e-3) -> bool:
     if len(segments_a) != len(segments_b):
@@ -52,18 +41,13 @@ def segments_match(segments_a: List[Segment], segments_b: List[Segment], eps: fl
         unmatched.pop(match_index)
     return not unmatched
 
-
-# ---------------------------------------------------------------------------
-# Anchor
-# ---------------------------------------------------------------------------
-
 @dataclass
 class Anchor:
-    id: str           # Dashboard ID e.g. "R1A0", "R1A1"
-    x: float          # local x-coord in room (feet)
-    y: float          # local y-coord in room (feet)
-    hw_id: str = ""   # Physical hardware anchor ID e.g. "A0", "A3" (set by user)
-    z: float = 0.0    # height from floor in feet
+    id: str                                             
+    x: float                                        
+    y: float                                        
+    hw_id: str = ""                                                              
+    z: float = 0.0                               
 
     def to_dict(self) -> dict:
         return {
@@ -85,35 +69,26 @@ class Anchor:
             z=float(d.get("z_ft", d.get("z", 0.0))),
         )
 
-
-# ---------------------------------------------------------------------------
-# Room
-# ---------------------------------------------------------------------------
-
 @dataclass
 class Room:
     name: str
-    segments: List[Segment]                          # boundary in world coords
+    segments: List[Segment]                                                    
     interior_segments: List[Segment] = field(default_factory=list)
     anchors: List[Anchor] = field(default_factory=list)
     edges: List[Tuple[str, str]] = field(default_factory=list)
     rtls_settings: dict = field(default_factory=dict)
     reference_anchor_id: Optional[str] = None
 
-    # Bounding box in world coordinates (auto-computed)
     min_x: float = 0.0
     min_y: float = 0.0
     max_x: float = 0.0
     max_y: float = 0.0
 
-    # Ordered polygon in local coords (auto-built)
     _local_polygon: List[Point] = field(init=False, default_factory=list)
 
     def __post_init__(self) -> None:
         self._compute_bounds()
         self._build_polygon()
-
-    # --- Bounds ----------------------------------------------------------------
 
     def _compute_bounds(self) -> None:
         if not self.segments:
@@ -128,18 +103,13 @@ class Room:
     def height(self) -> float:
         return max(self.max_y - self.min_y, 0.0)
 
-    # --- Coordinate transforms -------------------------------------------------
-
     def world_to_local(self, wx: float, wy: float) -> Tuple[float, float]:
         return (wx - self.min_x, wy - self.min_y)
 
     def local_to_world(self, lx: float, ly: float) -> Tuple[float, float]:
         return (lx + self.min_x, ly + self.min_y)
 
-    # --- Polygon (pure Python, no PyQt6) --------------------------------------
-
     def _build_polygon(self) -> None:
-        """Chain boundary segments into an ordered polygon in local coordinates."""
         if not self.segments:
             self._local_polygon = []
             return
@@ -151,14 +121,10 @@ class Room:
         self._local_polygon = chain_segments_to_polygon(local_segs)
 
     def rebuild_polygon(self) -> None:
-        """Call after segments change."""
         self._compute_bounds()
         self._build_polygon()
 
-    # --- Containment ----------------------------------------------------------
-
     def contains_local_point(self, lx: float, ly: float) -> bool:
-        """True if the local point is inside the room boundary polygon."""
         if len(self._local_polygon) < 3:
             return False
         return point_in_polygon(lx, ly, self._local_polygon)
@@ -170,7 +136,6 @@ class Room:
     def contains_world_point_with_tolerance(
         self, wx: float, wy: float, tolerance_ft: float = 1.0
     ) -> bool:
-        """Accept points inside the room or within tolerance_ft of a wall."""
         lx, ly = self.world_to_local(wx, wy)
         if self.contains_local_point(lx, ly):
             return True
@@ -183,10 +148,7 @@ class Room:
                 return True
         return False
 
-    # --- Next anchor ID -------------------------------------------------------
-
     def next_anchor_id(self, room_index: int = 1) -> str:
-        """Generate next available anchor ID like R1A0, R1A1, ..."""
         prefix = f"R{room_index}A"
         existing = {a.id for a in self.anchors}
         for i in range(26):
@@ -194,8 +156,6 @@ class Room:
             if candidate not in existing:
                 return candidate
         return f"{prefix}{len(self.anchors)}"
-
-    # --- Serialization --------------------------------------------------------
 
     def to_dict(self) -> dict:
         reference_anchor_id = self.reference_anchor_id

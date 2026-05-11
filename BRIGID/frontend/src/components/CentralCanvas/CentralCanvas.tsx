@@ -41,18 +41,15 @@ const CentralCanvas: React.FC<CentralCanvasProps> = ({ activeModule }) => {
       animate={{ opacity: 1 }}
       transition={{ duration: 0.8, delay: 0.2 }}
     >
-      {/* ---- Grid pattern overlay ---- */}
       <div className="central-canvas__grid" />
       <div className="central-canvas__vignette" />
       <div className="central-canvas__glow" />
 
-      {/* ---- Module workspace indicator ---- */}
       <div className="central-canvas__module-label">
         <span className="central-canvas__module-icon">{info.icon}</span>
         <span className="central-canvas__module-title">{info.title}</span>
       </div>
 
-      {/* ---- Center crosshair / workspace prompt ---- */}
       <div className="central-canvas__center-prompt">
         <div className="central-canvas__crosshair">
           <div className="central-canvas__crosshair-h" />
@@ -73,7 +70,6 @@ const CentralCanvas: React.FC<CentralCanvasProps> = ({ activeModule }) => {
         </motion.div>
       </div>
 
-      {/* ---- Coordinate overlays ---- */}
       <div className="central-canvas__coord central-canvas__coord--tl">
         <span className="central-canvas__coord-text">0.000 ft</span>
       </div>
@@ -81,7 +77,6 @@ const CentralCanvas: React.FC<CentralCanvasProps> = ({ activeModule }) => {
         <span className="central-canvas__coord-text">0.000 ft</span>
       </div>
 
-      {/* ---- Status bar ---- */}
       <div className="central-canvas__status-bar">
         <div className="central-canvas__status-item">
           <span className="central-canvas__status-dot central-canvas__status-dot--online" />

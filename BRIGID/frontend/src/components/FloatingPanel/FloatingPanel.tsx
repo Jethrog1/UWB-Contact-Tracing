@@ -12,7 +12,6 @@ const FloatingPanel: React.FC = () => {
       animate={{ opacity: 1, y: 0, scale: 1 }}
       transition={{ duration: 0.5, delay: 0.4, ease: [0.4, 0, 0.2, 1] }}
     >
-      {/* ---- Header ---- */}
       <div className="floating-panel__header">
         <div className="floating-panel__title-row">
           <h3 className="floating-panel__title">Satellite Observation</h3>
@@ -27,12 +26,10 @@ const FloatingPanel: React.FC = () => {
         </div>
       </div>
 
-      {/* ---- Description ---- */}
       <div className="floating-panel__description">
         <PlaceholderBlock type="text" label="Analysis summary — detection model output narrative will appear here" />
       </div>
 
-      {/* ---- Model Source Row ---- */}
       <div className="floating-panel__model-row">
         <div className="floating-panel__model-info">
           <div className="floating-panel__model-icon">
@@ -56,7 +53,6 @@ const FloatingPanel: React.FC = () => {
         </div>
       </div>
 
-      {/* ---- Image Comparison ---- */}
       <div className="floating-panel__images">
         <div className="floating-panel__image-card">
           <PlaceholderBlock type="image" label="Before" height="130px" />
@@ -68,7 +64,6 @@ const FloatingPanel: React.FC = () => {
         </div>
       </div>
 
-      {/* ---- Footer Actions ---- */}
       <div className="floating-panel__footer">
         <span className="floating-panel__footer-label">ACTIONS</span>
         <div className="floating-panel__footer-actions">

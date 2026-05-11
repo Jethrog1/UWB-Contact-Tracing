@@ -1,29 +1,18 @@
-"""
-geometry_utils.py — Geometric helpers for room/anchor management (no PyQt6).
-"""
 
 from __future__ import annotations
 
 import math
 from typing import List, Optional, Tuple
 
-
-Segment = Tuple[float, float, float, float]  # (x1, y1, x2, y2)
+Segment = Tuple[float, float, float, float]                    
 Point = Tuple[float, float]
-
-
-# ---------------------------------------------------------------------------
-# Point / Segment helpers
-# ---------------------------------------------------------------------------
 
 def _points_close(a: Point, b: Point, eps: float = 1e-4) -> bool:
     return abs(float(a[0]) - float(b[0])) <= eps and abs(float(a[1]) - float(b[1])) <= eps
 
-
 def point_to_segment_distance(px: float, py: float,
                                x1: float, y1: float,
                                x2: float, y2: float) -> float:
-    """Perpendicular distance from point (px, py) to finite segment (x1,y1)-(x2,y2)."""
     dx = x2 - x1
     dy = y2 - y1
     seg_len_sq = dx * dx + dy * dy
@@ -34,17 +23,7 @@ def point_to_segment_distance(px: float, py: float,
     proj_y = y1 + t * dy
     return math.hypot(px - proj_x, py - proj_y)
 
-
-# ---------------------------------------------------------------------------
-# Polygon containment — pure Python ray-casting (replaces QPolygonF)
-# ---------------------------------------------------------------------------
-
 def point_in_polygon(px: float, py: float, polygon: List[Point]) -> bool:
-    """
-    Ray-casting point-in-polygon test (OddEven fill rule).
-    polygon: ordered list of (x, y) vertices.
-    Returns True if (px, py) is strictly inside.
-    """
     n = len(polygon)
     if n < 3:
         return False
@@ -58,17 +37,7 @@ def point_in_polygon(px: float, py: float, polygon: List[Point]) -> bool:
         j = i
     return inside
 
-
-# ---------------------------------------------------------------------------
-# Polygon building — chain segments into ordered vertex list
-# ---------------------------------------------------------------------------
-
 def chain_segments_to_polygon(segments: List[Segment], eps: float = 1e-4) -> List[Point]:
-    """
-    Greedily chain unordered line segments into a continuous polygon vertex list.
-    Handles disconnected segments by simply appending them (graceful degradation).
-    Returns a list of (x, y) points.
-    """
     if not segments:
         return []
 
@@ -109,13 +78,7 @@ def chain_segments_to_polygon(segments: List[Segment], eps: float = 1e-4) -> Lis
 
     return chain
 
-
-# ---------------------------------------------------------------------------
-# Bounding box
-# ---------------------------------------------------------------------------
-
 def build_room_bounds(segments: List[Segment]) -> Tuple[float, float, float, float]:
-    """Return (min_x, min_y, max_x, max_y) from a list of segments."""
     if not segments:
         return 0.0, 0.0, 0.0, 0.0
     xs: List[float] = []
@@ -125,27 +88,17 @@ def build_room_bounds(segments: List[Segment]) -> Tuple[float, float, float, flo
         ys.extend([float(y1), float(y2)])
     return min(xs), min(ys), max(xs), max(ys)
 
-
-# ---------------------------------------------------------------------------
-# Segment connectivity
-# ---------------------------------------------------------------------------
-
 def find_connected_segments(
     all_segments: List[Segment],
     start_idx: int,
     eps: float = 1e-3,
 ) -> List[int]:
-    """
-    BFS/flood-fill: find all segment indices connected (sharing endpoints) to
-    all_segments[start_idx].  Returns a list of indices (including start_idx).
-    """
     if not all_segments or start_idx < 0 or start_idx >= len(all_segments):
         return []
 
     visited = {start_idx}
     queue = [start_idx]
 
-    # Build adjacency: endpoint → segment indices
     from collections import defaultdict
     endpoint_map: dict[tuple, list[int]] = defaultdict(list)
     for idx, (x1, y1, x2, y2) in enumerate(all_segments):
@@ -167,27 +120,16 @@ def find_connected_segments(
 
     return sorted(visited)
 
-
-# ---------------------------------------------------------------------------
-# Segment normalization (for deduplication / comparison)
-# ---------------------------------------------------------------------------
-
 def normalize_segment(seg: Segment) -> tuple:
     x1, y1, x2, y2 = seg
     a = (round(float(x1), 4), round(float(y1), 4))
     b = (round(float(x2), 4), round(float(y2), 4))
     return (a, b) if a <= b else (b, a)
 
-
-# ---------------------------------------------------------------------------
-# Smart Select — minimal face detection (ported from 2DLCAD/map_canvas.py)
-# ---------------------------------------------------------------------------
-
 def _intersect_t_on_a(
     ax1: float, ay1: float, ax2: float, ay2: float,
     bx1: float, by1: float, bx2: float, by2: float,
 ) -> Optional[float]:
-    """Return t on segment A where it intersects segment B, or None."""
     dax = ax2 - ax1;  day = ay2 - ay1
     dbx = bx2 - bx1;  dby = by2 - by1
     denom = dax * dby - day * dbx
@@ -201,7 +143,6 @@ def _intersect_t_on_a(
         return max(0.0, min(1.0, t))
     return None
 
-
 def _project_t_on_a(
     ax1: float, ay1: float, ax2: float, ay2: float,
     px: float, py: float,
@@ -212,9 +153,7 @@ def _project_t_on_a(
         return 0.0
     return max(0.0, min(1.0, ((px - ax1) * dx + (py - ay1) * dy) / seg_len_sq))
 
-
 def _segment_breaks(segments: List[Segment], seg_idx: int) -> List[float]:
-    """Return sorted, deduplicated t breakpoints for segment[seg_idx]."""
     x1, y1, x2, y2 = segments[seg_idx]
     dx, dy = x2 - x1, y2 - y1
     seg_len_sq = dx * dx + dy * dy
@@ -243,9 +182,7 @@ def _segment_breaks(segments: List[Segment], seg_idx: int) -> List[float]:
             deduped.append(t)
     return deduped
 
-
 def _all_atomic_subsegments(segments: List[Segment]) -> List[Segment]:
-    """Split all segments at intersections and return unique atomic pieces."""
     unique: List[Segment] = []
     seen: set = set()
 
@@ -275,17 +212,11 @@ def _all_atomic_subsegments(segments: List[Segment]) -> List[Segment]:
             unique.append(seg)
     return unique
 
-
 def detect_room_boundary(
     segments: List[Segment],
     wx: float,
     wy: float,
 ) -> Optional[List[Segment]]:
-    """
-    Find the smallest closed face containing the clicked world point (wx, wy).
-    Ported directly from 2DLCAD/map_canvas.py _detect_room_boundary.
-    Returns a list of (x1,y1,x2,y2) tuples, or None if no face found.
-    """
     atomic = _all_atomic_subsegments(segments)
     if len(atomic) < 3:
         return None
@@ -399,17 +330,12 @@ def detect_room_boundary(
             boundary.append(seg)
     return boundary
 
-
 def compute_subsegment(
     segments: List[Segment],
     seg_idx: int,
     wx: float,
     wy: float,
 ) -> Segment:
-    """
-    Return the sub-segment of segments[seg_idx] that brackets the clicked
-    world point (wx, wy). Ported from 2DLCAD/map_canvas.py _compute_subsegment.
-    """
     x1, y1, x2, y2 = segments[seg_idx]
     dx, dy = x2 - x1, y2 - y1
     seg_len_sq = dx * dx + dy * dy

@@ -1,6 +1,3 @@
-"""
-constants.py — Tag Profiler constants and configuration.
-"""
 
 DEVICE_TYPES = ["Wrist Band", "Arm Band", "Belt Clip-on", "Breast Pocket"]
 

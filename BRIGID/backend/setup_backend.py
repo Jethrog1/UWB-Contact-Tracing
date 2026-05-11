@@ -1,10 +1,4 @@
 #!/usr/bin/env python3
-"""
-BRIGID backend setup helper.
-
-This script is intentionally safe to run multiple times. It prepares optional
-runtime pieces that should not block the rest of the app if they are missing.
-"""
 
 from __future__ import annotations
 
@@ -15,7 +9,6 @@ from pathlib import Path
 import shutil
 import subprocess
 import sys
-
 
 BACKEND_ROOT = Path(__file__).resolve().parent
 PROJECT_ROOT = BACKEND_ROOT.parent
@@ -35,10 +28,8 @@ ML_COMPAT_SPEC = {
     "joblib": "1.5.3",
 }
 
-
 def _log(message: str) -> None:
     print(f"[setup] {message}")
-
 
 def _run(command: list[str], *, cwd: Path | None = None) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
@@ -50,10 +41,8 @@ def _run(command: list[str], *, cwd: Path | None = None) -> subprocess.Completed
         env={**os.environ, "PYTHONUNBUFFERED": "1"},
     )
 
-
 def _find_conda() -> str | None:
     return os.environ.get("CONDA_EXE") or shutil.which("conda")
-
 
 def _read_ml_versions() -> dict[str, str] | None:
     if not ML_COMPAT_PYTHON.exists():
@@ -78,12 +67,10 @@ def _read_ml_versions() -> dict[str, str] | None:
     except Exception:
         return None
 
-
 def _matches_ml_spec(versions: dict[str, str] | None) -> bool:
     if not versions:
         return False
     return all(str(versions.get(key)) == expected for key, expected in ML_COMPAT_SPEC.items())
-
 
 def ensure_ml_compat() -> int:
     if not MODEL_BUNDLE_PATH.exists():
@@ -136,7 +123,6 @@ def ensure_ml_compat() -> int:
     _log("ML compatibility runtime did not verify cleanly.")
     return 1
 
-
 def main() -> int:
     parser = argparse.ArgumentParser(description="Prepare optional BRIGID backend runtime components.")
     parser.add_argument(
@@ -151,7 +137,6 @@ def main() -> int:
 
     parser.print_help()
     return 0
-
 
 if __name__ == "__main__":
     raise SystemExit(main())

@@ -1,9 +1,5 @@
-/* ============================================================
-   BRIGID Design System — Palantir Gotham Aesthetic
-   ============================================================ */
 
 :root {
-  /* ---- Background Palette — layered dark charcoals and deep grays ---- */
   --bg-primary:   #0a0b0d;
   --bg-secondary: #0d0f12;
   --bg-panel:     #121418;
@@ -12,20 +8,17 @@
   --bg-hover:     #1f242b;
   --bg-active:    #252b34;
 
-  /* ---- Border Colors — ultra faint, rigid 1px ---- */
   --border-subtle:  rgba(255, 255, 255, 0.04);
   --border-default: rgba(255, 255, 255, 0.08);
   --border-active:  rgba(255, 255, 255, 0.2);
   --border-focus:   #5a90c8;
 
-  /* ---- Text Colors — dense terminal readouts ---- */
   --text-primary:   #c1c9d4;
   --text-secondary: #8c96a5;
   --text-muted:     #5b6574;
   --text-accent:    #7baae2;
   --text-warning:   #d97706;
 
-  /* ---- Accent Colors — technical, tactical, un-saturated blue/steel ---- */
   --accent-blue:   #4b729f;
   --accent-indigo: #4b529a;
   --accent-teal:   #2b8279;
@@ -37,23 +30,19 @@
   --accent-primary: #4b729f;
   --accent-cyan:   #4b729f;
 
-  /* ---- Shadows — suppressed heavily for dense flat design ---- */
   --shadow-panel:    0 4px 10px rgba(0, 0, 0, 0.5);
   --shadow-elevated: 0 8px 24px rgba(0, 0, 0, 0.6);
   --shadow-floating: 0 10px 40px rgba(0, 0, 0, 0.8), 0 0 0 1px rgba(255, 255, 255, 0.1);
 
-  /* ---- Typography — Technical, small, dense ---- */
   --font-primary: 'Inter', 'Roboto', 'Segoe UI', -apple-system, sans-serif;
   --font-mono:    'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace;
 
-  /* Sized down to 10px base logic */
   --text-xs:   8px;
   --text-sm:   9px;
   --text-base: 10px;
   --text-md:   11px;
   --text-lg:   13px;
 
-  /* ---- Spacing — tighter, zero padding fluff ---- */
   --space-1: 3px;
   --space-2: 6px;
   --space-3: 9px;
@@ -61,16 +50,13 @@
   --space-5: 16px;
   --space-6: 20px;
 
-  /* ---- Transitions — instant responses, low animation delays ---- */
   --transition-fast:   80ms cubic-bezier(0.4, 0, 0.2, 1);
   --transition-smooth: 150ms cubic-bezier(0.4, 0, 0.2, 1);
 
-  /* ---- Radii — completely sharp panels for enterprise feel ---- */
   --radius-sm: 0px;
   --radius-md: 0px;
   --radius-lg: 1px;
 
-  /* ---- Semantic Aliases ---- */
   --bg-base:           var(--bg-primary);
   --surface-1:         var(--bg-panel);
   --surface-2:         var(--bg-elevated);
@@ -80,7 +66,6 @@
   --accent-warning:    var(--accent-amber);
 }
 
-/* ---- Reset & Base ---- */
 *, *::before, *::after {
   box-sizing: border-box;
   margin: 0;
@@ -98,20 +83,17 @@ html, body, #root {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   line-height: 1.4;
-  letter-spacing: 0.02em; /* Increase legibility slightly for small 10px text */
+  letter-spacing: 0.02em;
 }
 
-/* Electron drag region */
 .electron-drag    { -webkit-app-region: drag; }
 .electron-no-drag { -webkit-app-region: no-drag; }
 
-/* ---- Scrollbar ---- */
 ::-webkit-scrollbar       { width: 4px; height: 4px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.1); }
 ::-webkit-scrollbar-thumb:hover { background: rgba(255, 255, 255, 0.2); }
 
-/* ---- Blueprint.js Dark Theme Overrides ---- */
 .bp5-dark {
   background-color: var(--bg-primary) !important;
 }
@@ -158,13 +140,11 @@ html, body, #root {
   padding: 4px 6px;
 }
 
-/* ---- Selection ---- */
 ::selection {
   background: rgba(123, 170, 226, 0.2);
   color: #fff;
 }
 
-/* ---- Utility ---- */
 .text-muted     { color: var(--text-muted); }
 .text-secondary { color: var(--text-secondary); }
 .text-accent    { color: var(--text-accent); }

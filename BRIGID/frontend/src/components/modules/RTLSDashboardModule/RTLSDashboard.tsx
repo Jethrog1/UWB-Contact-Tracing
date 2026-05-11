@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { RoomData, SegmentData } from '../../../types'
 import RTLSDashboardCanvas, {
@@ -435,10 +434,10 @@ const RTLSDashboard: React.FC<RTLSDashboardProps> = ({ workspaceId, workspaceNam
           rtls: data.rtls,
         })
       })
-      .catch(() => { /* optional */ })
+      .catch(() => {  })
     void window.api?.getPaths?.()
       .then(paths => { if (!cancelled) setProfileRootPath(paths.profile) })
-      .catch(() => { /* optional */ })
+      .catch(() => {  })
     return () => { cancelled = true }
   }, [workspaceId, workspaceName])
 
@@ -563,7 +562,6 @@ const RTLSDashboard: React.FC<RTLSDashboardProps> = ({ workspaceId, workspaceNam
       const data = await res.json()
       if (data.success) setSnap(data as RTLSSnapshot)
     } catch {
-      /* backend may not be ready */
     } finally {
       busyRef.current = false
     }
@@ -858,7 +856,6 @@ const RTLSDashboard: React.FC<RTLSDashboardProps> = ({ workspaceId, workspaceNam
         body: JSON.stringify(next),
       })
     } catch {
-      /* ignore */
     }
   }, [snap.filter])
 
@@ -872,7 +869,6 @@ const RTLSDashboard: React.FC<RTLSDashboardProps> = ({ workspaceId, workspaceNam
         body: JSON.stringify({ override: next.override, value_ft: next.value_ft }),
       })
     } catch {
-      /* ignore */
     }
   }, [snap.elevation])
 
@@ -885,7 +881,6 @@ const RTLSDashboard: React.FC<RTLSDashboardProps> = ({ workspaceId, workspaceNam
         body: JSON.stringify({ enabled }),
       })
     } catch {
-      /* ignore */
     }
   }, [])
 
@@ -1022,7 +1017,6 @@ const RTLSDashboard: React.FC<RTLSDashboardProps> = ({ workspaceId, workspaceNam
             if (anyConnected) break
           }
         } catch {
-          /* backend blip — keep polling */
         }
         await sleep(500)
       }
