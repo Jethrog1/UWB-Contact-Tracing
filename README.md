@@ -16,6 +16,27 @@ BRIGID is a desktop application for disease spread monitoring and mitigation, pr
 - Anchor manager to place real-life anchor locations onto the floor plan for accurate lateration calculations
 - Real-time Locating System Dashboard to visualize live data feeds, supported by proximity heat-maps, interpersonal distance lines, and machine learning analytics for digestible and actionable intel
 
+## Local Data Folders
+
+BRIGID creates local workspace/profile data folders when the app runs for the first time.
+
+These folders are used for things like:
+- saved profiles
+- workspace files
+- room data
+- RTLS exports
+- temporary project data
+
+They are intentionally not tracked in Git, so a fresh clone of the repository will not include populated local user data.
+
+After first run, BRIGID may create local folders such as:
+
+- `BRIGID/profile/`
+- `BRIGID/Profile/`
+- `BRIGID/.tmp_project/`
+
+This is expected behavior to ensure local data stays isolated per user, supporting privacy, security, and offline reliability requirements for naval applications. 
+
 ## Tech Stack
 
 - Frontend: Electron, React, TypeScript, Vite, Blueprint.js
