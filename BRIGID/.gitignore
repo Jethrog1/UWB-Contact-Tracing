@@ -1,5 +1,5 @@
 .DS_Store
 backend/.conda-ml-compat/
 backend/.venv/
-profile/Workspace */rooms/*.json
-profile/Workspace */tags/*.json
+.tmp_project/
+profile/
