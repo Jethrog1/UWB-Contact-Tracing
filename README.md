@@ -1,8 +1,10 @@
 # UWB-Contact-Tracing
 1st Place 2025-2026 BME Team 6 Senior Design Project
 
+## Project Overview
 This project produced a Real-time Locating System for monitoring and mitigating disease spread for naval environments using wearable Ultra-Wideband (UWB) boards for collecting sailor's interpersonal distance between other sailors. The wearables communicate with at least two stationary anchors in each room, which allows for lateration calculations to be conducted for live mapping on a 2D floor plan. The data is transmitted from the hardware to this program via serial port or Bluetooth Low Energy (BLE), where it is ultimately processed into real-time analytics and actionable information, allowing users to identify high-risk individuals and apply early interventions on exposed sailors. 
 
+## BRIGID
 This repo holds all code responsible for our app: BRIGID (Behavioral Real-time Interaction Graphing for Infectious Diseases)
 
 BRIGID is a desktop application for disease spread monitoring and mitigation, processing and visualizing data collected via DW3000 UWB hardware modules. It combines an Electron + React frontend with a Python/FastAPI backend to deliver data preprocessing, CAD tools, a profile manager, calibration tool, anchor manager, RTLS dashboard, and machine learning analytics. 
@@ -43,6 +45,15 @@ This is expected behavior to ensure local data stays isolated per user, supporti
 - Backend: Python, FastAPI, Uvicorn
 - Device/runtime support: BLE, serial, local ML compatibility environment
 
+## Hardware Code
+
+This repository also includes the embedded code used with the DW3000 UWB hardware modules that feed BRIGID.
+
+- `HardwareCode/tag_code.ino` contains the firmware for wearable tag devices
+- `HardwareCode/anchor_code.ino` contains the firmware for fixed anchor devices
+- `HardwareCode/Xiao_Serial_reading_RTLS.ino` contains supporting serial-reading logic for RTLS data flow and hardware-side communication testing
+
+
 ## Repository Structure
 
 ```text
@@ -53,4 +64,5 @@ UWB-Contact-Tracing/
 │   ├── assets/      # App assets and bundled resources
 │   ├── start.sh     # macOS/Linux launcher
 │   └── start.ps1    # Windows launcher
+├── HardwareCode/    # Arduino / embedded firmware for UWB tags and anchors
 └── README.md
