@@ -53,6 +53,10 @@ This repository also includes the embedded code used with the DW3000 UWB hardwar
 - `HardwareCode/anchor_code.ino` contains the firmware for fixed anchor devices
 - `HardwareCode/Xiao_Serial_reading_RTLS.ino` contains supporting serial-reading logic for RTLS data flow and hardware-side communication testing
 
+## Supplementary Files 
+
+- The `SolidworksDrawings/` folder contains the SolidWorks CAD files for the tag housing assembly and anchor housing assembly, as well as subparts used in each model
+- The file `BME-Demo-Day-Poster Team 6.pdf` contains the final presentation poster for this award winning project
 
 ## Repository Structure
 
