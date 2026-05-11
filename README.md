@@ -43,7 +43,7 @@ This is expected behavior to ensure local data stays isolated per user, supporti
 
 - Frontend: Electron, React, TypeScript, Vite, Blueprint.js
 - Backend: Python, FastAPI, Uvicorn
-- Device/runtime support: BLE, serial, local ML compatibility environment
+- Device/runtime support: NimBLE, Adafruit SSD1306, ESP32S3 Dev Module (compiler), local ML compatibility environment
 
 ## Hardware Code
 
