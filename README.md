@@ -7,7 +7,7 @@ This project produced a Real-time Locating System for monitoring and mitigating 
 ## BRIGID
 This repo holds all code responsible for our app: BRIGID (Behavioral Real-time Interaction Graphing for Infectious Diseases)
 
-BRIGID is a desktop application for disease spread monitoring and mitigation, processing and visualizing data collected via DW3000 UWB hardware modules. It combines an Electron + React frontend with a Python/FastAPI backend to deliver data preprocessing, CAD tools, a profile manager, calibration tool, anchor manager, RTLS dashboard, and machine learning analytics. 
+BRIGID is a desktop application for disease spread monitoring and mitigation, processing and visualizing data collected via DW3000 UWB hardware modules. It combines an Electron + React frontend with a Python/FastAPI backend to deliver data preprocessing, CAD modeling of floor plans, a profile manager, calibration tools for wearable tags, anchor placement, and machine learning analytics. 
 
 ## Features 
 
