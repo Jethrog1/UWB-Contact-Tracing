@@ -1,5 +1,6 @@
 # UWB-Contact-Tracing
 1st Place 2025-2026 BME Team 6 Senior Design Project
+
 For setup, please see `BRIGID/README.md`
 
 ## Project Overview
